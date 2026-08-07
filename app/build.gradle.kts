@@ -37,15 +37,29 @@ android {
         setProperty("archivesBaseName", "mereni-v$appVersionName")
     }
 
+    // Stejný debug klíč v CI i lokálně → aktualizace APK bez odinstalace
+    signingConfigs {
+        create("sharedDebug") {
+            storeFile = rootProject.file("app/keystore/mereni-debug.jks")
+            storePassword = "mereni-debug"
+            keyAlias = "mereni"
+            keyPassword = "mereni-debug"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("sharedDebug")
+        }
         release {
+            // Unsigned release zůstává pro budoucí store signing;
+            // pro tablety používej debug APK se sharedDebug klíčem.
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
         }
-        // debug i release sdílí applicationId cz.mereni.app → aktualizace na zařízení bez přeinstalace
     }
 
     compileOptions {
