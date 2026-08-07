@@ -10,8 +10,9 @@ object MereniColors {
     val SurfaceAlt = Color(0xFFE2EAF0)
     val Text = Color(0xFF152033)
     val TextMuted = Color(0xFF5A6A7A)
-    val Accent = Color(0xFF0B6E4F)
-    val AccentDark = Color(0xFF08553C)
+    /** Systémová barva — Uložit, Zavřít, vyhledávač stanic (ne barvy typů). */
+    val Accent = Color(0xFF456A8A)
+    val AccentDark = Color(0xFF345270)
     val Danger = Color(0xFFB33A3A)
 
     /** Spojka (X/S) — měděná */
@@ -35,7 +36,7 @@ object MereniColors {
     val ChipBg = Color(0xFFFFFFFF)
     val ChipText = Color(0xFF152033)
     val ChipBorder = Color(0xFFB0BEC8)
-    val Dash = Color(0xFF0B6E4F)
+    val Dash = Color(0xFF456A8A)
 
     /** Pozadí klávesy už uložené v CSV — šedé, typ rozlišuje okraj/text. */
     val UsedKeyBg = Color(0xFFD5DBE0)

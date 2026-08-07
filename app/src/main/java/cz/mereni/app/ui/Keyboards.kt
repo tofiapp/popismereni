@@ -6,7 +6,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -301,26 +300,28 @@ private fun KolejKeyWithPicker(
                         open = false
                     }
                     if (children.isNotEmpty()) {
-                        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                            val gap = 8.dp
-                            // Max 3 podkoleje vedle sebe, další řady stejně
-                            val perRow = minOf(3, children.size.coerceAtLeast(1))
-                            val cellW = (maxWidth - gap * (perRow - 1)) / perRow
-                            FlowRow(
-                                horizontalArrangement = Arrangement.spacedBy(gap),
-                                verticalArrangement = Arrangement.spacedBy(gap),
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                children.forEach { child ->
-                                    PickerOption(
-                                        label = child.label,
-                                        color = MereniColors.Kolej.copy(alpha = 0.88f),
-                                        large = false,
-                                        used = child.label in usedLabels,
-                                        modifier = Modifier.width(cellW),
-                                    ) {
-                                        onKey(child)
-                                        open = false
+                        val gap = 8.dp
+                        // Max 3 podkoleje vedle sebe; další řádky stejně (1A 1B 1C | 1D …)
+                        Column(verticalArrangement = Arrangement.spacedBy(gap)) {
+                            children.chunked(3).forEach { rowItems ->
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(gap),
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    rowItems.forEach { child ->
+                                        PickerOption(
+                                            label = child.label,
+                                            color = MereniColors.Kolej.copy(alpha = 0.88f),
+                                            large = false,
+                                            used = child.label in usedLabels,
+                                            modifier = Modifier.weight(1f),
+                                        ) {
+                                            onKey(child)
+                                            open = false
+                                        }
+                                    }
+                                    repeat(3 - rowItems.size) {
+                                        Spacer(modifier = Modifier.weight(1f))
                                     }
                                 }
                             }
@@ -748,12 +749,6 @@ fun CustomTokenDialog(
                 color = MereniColors.Text,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 18.sp,
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                "Vlastní hodnota (odlišná barva)",
-                color = MereniColors.Custom,
-                fontSize = 13.sp,
             )
             Spacer(modifier = Modifier.height(10.dp))
             BasicTextField(
