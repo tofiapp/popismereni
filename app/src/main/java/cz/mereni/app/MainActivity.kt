@@ -412,10 +412,7 @@ fun MereniApp(
                 }
                 FieldPanel(
                     selected = activeField == ActiveField.CAS,
-                    onClick = {
-                        activeField = ActiveField.CAS
-                        if (!timeChosen) useNow()
-                    },
+                    onClick = { activeField = ActiveField.CAS },
                     modifier = Modifier.weight(0.7f),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -431,13 +428,13 @@ fun MereniApp(
                         )
                     } else {
                         Text(
-                            text = "čas",
+                            text = "čas (volitelně)",
                             color = if (activeField == ActiveField.CAS) {
                                 MereniColors.Accent
                             } else {
                                 MereniColors.Accent.copy(alpha = 0.55f)
                             },
-                            fontSize = if (activeField == ActiveField.CAS) 22.sp else 14.sp,
+                            fontSize = if (activeField == ActiveField.CAS) 16.sp else 13.sp,
                             fontWeight = FontWeight.Bold,
                             textAlign = TextAlign.Center,
                             modifier = Modifier.fillMaxWidth(),
@@ -546,6 +543,7 @@ fun MereniApp(
                         pasportKeys = stationKeys,
                         hour = hour,
                         minute = minute,
+                        timeChosen = timeChosen,
                         onPasportKey = { key ->
                             val token = SelectedToken(nextId(), key.label, key.kind)
                             when (activeField) {
@@ -561,6 +559,7 @@ fun MereniApp(
                         onHourChange = { hour = it; timeChosen = true },
                         onMinuteChange = { minute = it; timeChosen = true },
                         onUseNow = { useNow() },
+                        onClearTime = { timeChosen = false },
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f),
