@@ -1,5 +1,5 @@
 {
-  "version": "0.7.0",
+  "version": "0.8.0",
   "source": "DZS_PASPORT_TPI.sqlite / DZS_SUPER_RO_TPI + DZS_SUPER_MT_SL",
   "note": "Ukázka — nahraď exportem tools/export_pasport_v0.3.0.py",
   "stations": [

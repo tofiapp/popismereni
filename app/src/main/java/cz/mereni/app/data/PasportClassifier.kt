@@ -3,8 +3,9 @@ package cz.mereni.app.data
 /**
  * Klasifikace DZS_SUPER_RO_TPI:
  * - Výhybka: neprázdná POLOHA
- * - Spojka: prázdná POLOHA + COBJEKT_TPI = zhl + IOB ∈ {X,S}
- * - Kolej: prázdná POLOHA + prázdné COBJEKT_TPI + IOB ∉ {X,S}
+ * - Spojka: prázdná POLOHA + IOB ∈ {X, S}
+ *   (COBJEKT_TPI smí být zhl i u koleje — nerozhoduje)
+ * - Kolej: prázdná POLOHA + IOB ∉ {X, S} (včetně prázdného IOB)
  */
 object PasportClassifier {
 
@@ -32,20 +33,16 @@ object PasportClassifier {
 
     fun classify(row: RawRow): PasportKind? {
         val poloha = norm(row.poloha).uppercase()
-        val tpi = norm(row.cobjektTpi)
         val iob = norm(row.iob).uppercase()
         val cobjekt = norm(row.cobjekt)
         if (cobjekt.isEmpty()) return null
 
-        val tpiIsZhl = tpi.equals("zhl", ignoreCase = true)
-
         return when {
             poloha.isNotEmpty() -> PasportKind.VYHYBKA
-            // Spojka: musí mít X nebo S (2A/2B sem nepatří)
-            tpiIsZhl && iob in SPOJKA_IOB -> PasportKind.SPOJKA
-            // Kolej: bez zhl, IOB není X/S (prázdné, A, B, …)
-            !tpiIsZhl && iob !in SPOJKA_IOB -> PasportKind.KOLEJ
-            else -> null
+            // Spojka — rozhoduje jen IOB X/S (zhl může mít i kolej)
+            iob in SPOJKA_IOB -> PasportKind.SPOJKA
+            // Kolej — prázdné IOB nebo A/B/… (nikdy X/S)
+            else -> PasportKind.KOLEJ
         }
     }
 
@@ -81,15 +78,14 @@ object PasportClassifier {
                 val variants = unique
                     .filter { !it.iob.isNullOrEmpty() }
                     .sortedBy { it.iob }
-                if (main != null) {
-                    listOf(main.copy(children = variants))
-                } else {
-                    // jen varianty A/B… — syntetický hlavní bez IOB + children
-                    val synthetic = unique.first().copy(
-                        iob = null,
-                        children = variants,
-                    )
-                    listOf(synthetic)
+                when {
+                    main != null -> listOf(main.copy(children = variants))
+                    variants.isNotEmpty() -> {
+                        // jen podkoleje A/B — nabídni i „hlavní“ číslo bez IOB
+                        val head = variants.first().copy(iob = null, children = variants)
+                        listOf(head)
+                    }
+                    else -> emptyList()
                 }
             }
             .sortedBy { naturalKey(it.cobjekt) }
