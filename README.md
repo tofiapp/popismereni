@@ -1,52 +1,41 @@
 # Měření
 
-Tabletová aplikace pro zapisování měření. Tři horní pole + UDU picker;
+Tabletová aplikace pro zapisování měření. Tři horní pole + vyhledávání stanice;
 záznam se ukládá do CSV.
 
-**Aktuální verze: `v0.2.0`** ([`VERSION`](VERSION), [`VERSIONING.md`](VERSIONING.md)).
+**Aktuální verze: `v0.3.0`** ([`VERSION`](VERSION), [`VERSIONING.md`](VERSIONING.md)).
 
 ## Obrazovka
 
 ```
-UDU [picker]                                      mereni.csv • 12
+Stanice [Meziměstí ▾]                             mereni.csv • 12
 ┌────────────────────┬────────────────┬──────────┐
 │  [10] [2X]         │  [1A] [3]      │  [07:30] │  ← stejná výška
 │  (širší)           │                │          │
 └────────────────────┴────────────────┴──────────┘
-  [Uložit záznam] [Vymazat]
-┌──────────────────────────┬─────────────────────┐
-│ Koleje (scroll)          │ Spojky (scroll)     │  ← pole 1
-└──────────────────────────┴─────────────────────┘
 ```
 
-- **Pole 1** (širší): klávesnice půl koleje / půl spojky, obě scrollovatelné.
-- **Pole 2**: výhybky ze SQLite (POLOHA ∈ JAP…CH).
-- **Pole 3**: aktuální čas, ±1 min, wheel time picker.
-- Obdélníčky (klávesy i chipy) mají stejnou výšku.
-- Žádné „Teplota/Tlak“, žádné popisky „obdélník 1/2“ ani „ODKUD–KAM“.
+- **Stanice:** vyhledávání podle `JMENO` (bez prefixů `žst.` / `odb.` / `z.`).
+  Interně UDU = prvních 5 znaků `TUDU`, join na `REPRE_TUDU` v `DZS_SUPER_MT_SL`.
+- **Pole 1** (širší): půl koleje / půl spojky (scroll).
+- **Pole 2:** výhybky.
+- **Pole 3:** čas (Teď, ±1 min, wheel picker).
+- Obdélníčky kláves i chipů mají jednotnou větší výšku.
 
 ## Data
 
-Pasport: `DZS_PASPORT_TPI.sqlite` → `DZS_SUPER_RO_TPI` →
-`app/src/main/assets/pasport_tpi_v0.2.0.json`
-
 ```bash
-python3 tools/export_pasport_v0.2.0.py path/to/DZS_PASPORT_TPI.sqlite
+python3 tools/export_pasport_v0.3.0.py path/to/DZS_PASPORT_TPI.sqlite
 ```
 
-CSV `mereni.csv`: `zapsano;udu;pole1;pole2;cas_mereni` (UTF-8 BOM, `;`).
+Export čte:
+- `DZS_SUPER_RO_TPI` — objekty + `TUDU` (UDU = `TUDU[:5]`)
+- `DZS_SUPER_MT_SL` — `REPRE_TUDU` + `JMENO` → stanice v pickeru
+
+Výstup: `app/src/main/assets/pasport_tpi_v0.3.0.json`
+
+CSV `mereni.csv`: `zapsano;udu;pole1;pole2;cas_mereni`
 
 ## Aktualizace na tabletu
 
-`applicationId` je vždy `cz.mereni.app` (debug i release). Nové APK
-se stejnou signaturou jen aktualizuje stávající instalaci.
-
-```bash
-./gradlew assembleDebug
-# app/build/outputs/apk/debug/mereni-v0.2.0-debug.apk
-adb install -r app/build/outputs/apk/debug/mereni-v0.2.0-debug.apk
-```
-
-## CI
-
-Artefakt `apk-v0.2.0` obsahuje verzované APK. Tag `v0.2.0` založí GitHub Release.
+`applicationId` vždy `cz.mereni.app` → `adb install -r …mereni-v0.3.0-debug.apk`

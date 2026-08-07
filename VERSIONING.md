@@ -6,19 +6,19 @@ a číslo verze musí být i v názvu souboru**.
 ## Zdroj pravdy
 
 Soubor [`VERSION`](VERSION) v kořeni repa, formát `MAJOR.MINOR.PATCH`
-(aktuálně `0.2.0`).
+(aktuálně `0.3.0`).
 
 Z něj se odvozuje:
 
 | Místo | Forma |
 |---|---|
-| Android `versionName` | `0.2.0` |
-| Android `versionCode` | `MAJOR*10000 + MINOR*200 + PATCH` → `200` |
-| APK artefakty | `mereni-v0.2.0-debug.apk`, `mereni-v0.2.0-release-unsigned.apk` |
-| Pasport JSON v assets | `pasport_tpi_v0.2.0.json` |
-| Exportní skript | `tools/export_pasport_v0.2.0.py` |
-| Git tag / GitHub Release | `v0.2.0` |
-| UI | zobrazení `v0.2.0` vedle názvu aplikace |
+| Android `versionName` | `0.3.0` |
+| Android `versionCode` | `MAJOR*10000 + MINOR*300 + PATCH` → `300` |
+| APK artefakty | `mereni-v0.3.0-debug.apk`, `mereni-v0.3.0-release-unsigned.apk` |
+| Pasport JSON v assets | `pasport_tpi_v0.3.0.json` |
+| Exportní skript | `tools/export_pasport_v0.3.0.py` |
+| Git tag / GitHub Release | `v0.3.0` |
+| UI | zobrazení `v0.3.0` vedle názvu aplikace |
 
 ## Pravidla
 
