@@ -6,19 +6,21 @@ import org.json.JSONObject
 import java.io.File
 
 /**
- * Načtený pasport TPI: klávesy + seznam UDU.
+ * Načtený pasport TPI: klávesy + stanice (UDU ↔ JMENO).
  */
 data class PasportData(
     val version: String,
     val keys: List<PasportKey>,
-    val uduList: List<String>,
-)
+    val stations: List<Station>,
+) {
+    @Deprecated("Použij stations")
+    val uduList: List<String> get() = stations.map { it.udu }
+}
 
 /**
  * Načte klávesy z assets.
  *
  * Očekávaný soubor (s verzí v názvu): `pasport_tpi_v{VERSION}.json`
- * Fallback: `pasport_tpi.json`
  */
 object PasportRepository {
 
@@ -39,10 +41,30 @@ object PasportRepository {
     fun parse(jsonText: String, fallbackVersion: String = ""): PasportData {
         val root = JSONObject(jsonText)
         val version = root.optString("version").ifBlank { fallbackVersion }
+
+        val stations = buildList {
+            val arr = root.optJSONArray("stations")
+            if (arr != null) {
+                for (i in 0 until arr.length()) {
+                    val o = arr.getJSONObject(i)
+                    val udu = o.optString("udu").trim()
+                    val raw = o.optString("jmeno_raw").ifBlank { o.optString("jmeno") }.trim()
+                    val jmeno = o.optString("jmeno").ifBlank {
+                        StationNameCleaner.clean(raw)
+                    }.trim()
+                    if (udu.isNotEmpty() && jmeno.isNotEmpty()) {
+                        add(Station(udu = udu, jmeno = StationNameCleaner.clean(jmeno), jmenoRaw = raw))
+                    }
+                }
+            }
+        }.distinctBy { it.udu }.sortedBy { it.jmeno.lowercase() }
+
         val rowsJson = root.optJSONArray("rows") ?: JSONArray()
         val rows = buildList {
             for (i in 0 until rowsJson.length()) {
                 val o = rowsJson.getJSONObject(i)
+                val tudu = o.optString("tudu").ifBlank { o.optString("udu") }
+                val udu = tudu.trim().take(5).ifBlank { null }
                 add(
                     PasportClassifier.RawRow(
                         cobjekt = o.optString("cobjekt").ifBlank { null },
@@ -51,26 +73,24 @@ object PasportRepository {
                         cobjektTpi = o.optString("cobjekt_tpi").ifBlank {
                             o.optString("cobjektTpi").ifBlank { null }
                         },
-                        udu = o.optString("udu").ifBlank { null },
+                        udu = udu,
                     )
                 )
             }
         }
 
-        val uduFromArray = buildList {
-            val arr = root.optJSONArray("udu") ?: return@buildList
-            for (i in 0 until arr.length()) {
-                val v = arr.optString(i).trim()
-                if (v.isNotEmpty()) add(v)
-            }
+        // Fallback: pokud stations chybí, sestav z unique UDU v řádcích
+        val finalStations = stations.ifEmpty {
+            rows.mapNotNull { it.udu?.trim()?.takeIf { u -> u.isNotEmpty() } }
+                .distinct()
+                .sorted()
+                .map { Station(udu = it, jmeno = it) }
         }
-        val uduFromRows = rows.mapNotNull { row -> row.udu?.trim()?.takeIf { u -> u.isNotEmpty() } }
-        val uduList = (uduFromArray + uduFromRows).distinct().sorted()
 
         return PasportData(
             version = version,
             keys = PasportClassifier.buildKeys(rows),
-            uduList = uduList,
+            stations = finalStations,
         )
     }
 

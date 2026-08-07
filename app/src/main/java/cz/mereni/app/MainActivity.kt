@@ -38,11 +38,12 @@ import cz.mereni.app.data.MeasurementStore
 import cz.mereni.app.data.PasportData
 import cz.mereni.app.data.PasportKey
 import cz.mereni.app.data.PasportRepository
+import cz.mereni.app.data.Station
 import cz.mereni.app.ui.ChipToken
 import cz.mereni.app.ui.FieldKeyboard
 import cz.mereni.app.ui.FieldPanel
 import cz.mereni.app.ui.MereniColors
-import cz.mereni.app.ui.UduPicker
+import cz.mereni.app.ui.StationSearchPicker
 import java.util.Calendar
 
 class MainActivity : ComponentActivity() {
@@ -75,7 +76,7 @@ fun MereniApp(
     onSave: (udu: String, pole1: String, pole2: String, casMereni: String) -> Int,
 ) {
     var activeField by remember { mutableStateOf(ActiveField.POLE1) }
-    var selectedUdu by remember { mutableStateOf<String?>(pasport.uduList.firstOrNull()) }
+    var selectedStation by remember { mutableStateOf<Station?>(pasport.stations.firstOrNull()) }
     val pole1 = remember { mutableStateListOf<String>() }
     val pole2 = remember { mutableStateListOf<String>() }
     var recordCount by remember { mutableIntStateOf(initialCount) }
@@ -102,6 +103,12 @@ fun MereniApp(
     }
 
     fun timeLabel(): String = "%02d:%02d".format(hour, minute)
+
+    val filteredKeys = remember(pasport.keys, selectedStation) {
+        val udu = selectedStation?.udu
+        if (udu.isNullOrBlank()) pasport.keys
+        else pasport.keys.filter { it.udu == null || it.udu == udu }
+    }
 
     Box(
         modifier = Modifier
@@ -133,10 +140,14 @@ fun MereniApp(
                     fontWeight = FontWeight.Medium,
                 )
                 Spacer(modifier = Modifier.width(16.dp))
-                UduPicker(
-                    options = pasport.uduList,
-                    selected = selectedUdu,
-                    onSelect = { selectedUdu = it },
+                StationSearchPicker(
+                    stations = pasport.stations,
+                    selected = selectedStation,
+                    onSelect = {
+                        selectedStation = it
+                        pole1.clear()
+                        pole2.clear()
+                    },
                     modifier = Modifier.weight(1f),
                 )
                 Text(
@@ -152,7 +163,6 @@ fun MereniApp(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                // Obdélník 1 — trochu širší
                 FieldPanel(
                     selected = activeField == ActiveField.POLE1,
                     onClick = { activeField = ActiveField.POLE1 },
@@ -161,7 +171,6 @@ fun MereniApp(
                     ChipRow(pole1) { pole1.removeAt(it) }
                 }
 
-                // Obdélník 2 — výhybky
                 FieldPanel(
                     selected = activeField == ActiveField.POLE2,
                     onClick = { activeField = ActiveField.POLE2 },
@@ -170,7 +179,6 @@ fun MereniApp(
                     ChipRow(pole2) { pole2.removeAt(it) }
                 }
 
-                // Obdélník 3 — čas
                 FieldPanel(
                     selected = activeField == ActiveField.CAS,
                     onClick = {
@@ -202,7 +210,7 @@ fun MereniApp(
                         val cas = if (timeChosen) timeLabel() else ""
                         if (pole1.isNotEmpty() || pole2.isNotEmpty() || cas.isNotBlank()) {
                             recordCount = onSave(
-                                selectedUdu.orEmpty(),
+                                selectedStation?.udu.orEmpty(),
                                 pole1.joinToString(" "),
                                 pole2.joinToString(" "),
                                 cas,
@@ -232,9 +240,7 @@ fun MereniApp(
 
             FieldKeyboard(
                 activeField = activeField,
-                pasportKeys = pasport.keys.filter { key ->
-                    selectedUdu == null || key.udu == null || key.udu == selectedUdu
-                },
+                pasportKeys = filteredKeys,
                 hour = hour,
                 minute = minute,
                 onPasportKey = { key: PasportKey ->

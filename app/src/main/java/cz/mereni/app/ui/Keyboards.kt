@@ -46,9 +46,9 @@ import cz.mereni.app.data.PasportKey
 import cz.mereni.app.data.PasportKind
 
 /** Jednotná výška kláves / chipů. */
-val KeyHeight: Dp = 44.dp
-val ChipHeight: Dp = 44.dp
-val FieldPanelHeight: Dp = 88.dp
+val KeyHeight: Dp = 56.dp
+val ChipHeight: Dp = 56.dp
+val FieldPanelHeight: Dp = 104.dp
 
 @Composable
 fun FieldKeyboard(
@@ -462,17 +462,24 @@ fun FieldPanel(
 }
 
 @Composable
-fun UduPicker(
-    options: List<String>,
-    selected: String?,
-    onSelect: (String) -> Unit,
+fun StationSearchPicker(
+    stations: List<cz.mereni.app.data.Station>,
+    selected: cz.mereni.app.data.Station?,
+    onSelect: (cz.mereni.app.data.Station) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var open by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+    val filtered = remember(stations, query) {
+        val q = query.trim().lowercase()
+        if (q.isEmpty()) stations
+        else stations.filter { it.jmeno.lowercase().contains(q) }
+    }
+
     Column(modifier = modifier) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = "UDU",
+                text = "Stanice",
                 color = MereniColors.TextMuted,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -482,46 +489,130 @@ fun UduPicker(
                 contentAlignment = Alignment.CenterStart,
                 modifier = Modifier
                     .height(KeyHeight)
+                    .weight(1f, fill = false)
+                    .width(240.dp)
                     .clip(RoundedCornerShape(8.dp))
                     .background(MereniColors.Surface)
                     .border(1.dp, MereniColors.Accent.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-                    .clickable { open = !open }
+                    .clickable {
+                        open = !open
+                        if (open) query = ""
+                    }
                     .padding(horizontal = 14.dp)
-                    .width(180.dp)
             ) {
                 Text(
-                    text = selected ?: "vyber UDU",
+                    text = selected?.jmeno ?: "hledej stanici",
                     color = if (selected == null) MereniColors.TextMuted else MereniColors.Text,
                     fontWeight = FontWeight.Medium,
+                    maxLines = 1,
                 )
             }
         }
+
         AnimatedVisibility(visible = open) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            Column(
                 modifier = Modifier
                     .padding(top = 8.dp)
-                    .horizontalScroll(rememberScrollState())
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MereniColors.SurfaceAlt)
+                    .padding(10.dp)
             ) {
-                if (options.isEmpty()) {
-                    Text(
-                        text = "UDU se načte z pasportu",
-                        color = MereniColors.TextMuted,
-                        fontSize = 12.sp,
-                    )
-                } else {
-                    options.forEach { udu ->
-                        KeyRect(
-                            label = udu,
-                            color = if (udu == selected) MereniColors.AccentDark else MereniColors.SurfaceAlt,
-                            onClick = {
-                                onSelect(udu)
-                                open = false
-                            },
+                androidx.compose.foundation.text.BasicTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    singleLine = true,
+                    textStyle = androidx.compose.ui.text.TextStyle(
+                        color = MereniColors.Text,
+                        fontSize = 16.sp,
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(KeyHeight)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MereniColors.Surface)
+                        .padding(horizontal = 12.dp, vertical = 14.dp),
+                    decorationBox = { inner ->
+                        Box {
+                            if (query.isEmpty()) {
+                                Text(
+                                    text = "Meziměstí…",
+                                    color = MereniColors.TextMuted,
+                                    fontSize = 16.sp,
+                                )
+                            }
+                            inner()
+                        }
+                    },
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(160.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    if (stations.isEmpty()) {
+                        Text(
+                            text = "Stanice se načtou z DZS_SUPER_MT_SL",
+                            color = MereniColors.TextMuted,
+                            fontSize = 12.sp,
                         )
+                    } else if (filtered.isEmpty()) {
+                        Text(
+                            text = "Nic nenalezeno",
+                            color = MereniColors.TextMuted,
+                            fontSize = 12.sp,
+                        )
+                    } else {
+                        filtered.forEach { station ->
+                            val isSelected = station.udu == selected?.udu
+                            Box(
+                                contentAlignment = Alignment.CenterStart,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(KeyHeight)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(
+                                        if (isSelected) MereniColors.AccentDark
+                                        else MereniColors.Surface
+                                    )
+                                    .clickable {
+                                        onSelect(station)
+                                        open = false
+                                        query = ""
+                                    }
+                                    .padding(horizontal = 12.dp)
+                            ) {
+                                Text(
+                                    text = station.jmeno,
+                                    color = MereniColors.Text,
+                                    fontWeight = FontWeight.Medium,
+                                    fontSize = 15.sp,
+                                )
+                            }
+                        }
                     }
                 }
             }
         }
     }
+}
+
+/** @deprecated nahrazeno StationSearchPicker */
+@Composable
+fun UduPicker(
+    options: List<String>,
+    selected: String?,
+    onSelect: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    // ponecháno prázdné kvůli kompatibilitě — nepoužívat
+    StationSearchPicker(
+        stations = options.map { cz.mereni.app.data.Station(udu = it, jmeno = it) },
+        selected = selected?.let { cz.mereni.app.data.Station(udu = it, jmeno = it) },
+        onSelect = { onSelect(it.udu) },
+        modifier = modifier,
+    )
 }
