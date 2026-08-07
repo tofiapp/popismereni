@@ -30,17 +30,17 @@ class MeasurementStore(context: Context) {
         return (lines.size - 1).coerceAtLeast(0)
     }
 
-    fun append(coSeMeri: String, odkudKam: String, casMereni: String) {
+    fun append(udu: String, pole1: String, pole2: String, casMereni: String) {
         ensureHeader()
         val stamp = STAMP.format(Date())
-        val line = listOf(stamp, coSeMeri, odkudKam, casMereni)
+        val line = listOf(stamp, udu, pole1, pole2, casMereni)
             .joinToString(";") { escape(it) }
         csvFile.appendText(line + "\n", UTF8)
     }
 
     companion object {
         const val CSV_NAME = "mereni.csv"
-        private const val HEADER = "zapsano;co_se_meri;odkud_kam;cas_mereni"
+        private const val HEADER = "zapsano;udu;pole1;pole2;cas_mereni"
         private const val BOM = "\uFEFF"
         private val UTF8: Charset = Charsets.UTF_8
         private val STAMP = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)

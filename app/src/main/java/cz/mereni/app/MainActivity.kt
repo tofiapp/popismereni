@@ -5,7 +5,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,11 +17,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -32,21 +29,21 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cz.mereni.app.data.MeasurementStore
+import cz.mereni.app.data.PasportData
 import cz.mereni.app.data.PasportKey
 import cz.mereni.app.data.PasportRepository
 import cz.mereni.app.ui.ChipToken
-import cz.mereni.app.ui.DashSeparator
 import cz.mereni.app.ui.FieldKeyboard
 import cz.mereni.app.ui.FieldPanel
 import cz.mereni.app.ui.MereniColors
+import cz.mereni.app.ui.UduPicker
+import java.util.Calendar
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -59,10 +56,10 @@ class MainActivity : ComponentActivity() {
         setContent {
             MereniApp(
                 appVersion = version,
-                pasportKeys = pasport,
+                pasport = pasport,
                 initialCount = store.count(),
-                onSave = { co, odkudKam, cas ->
-                    store.append(co, odkudKam, cas)
+                onSave = { udu, pole1, pole2, cas ->
+                    store.append(udu, pole1, pole2, cas)
                     store.count()
                 },
             )
@@ -73,36 +70,38 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MereniApp(
     appVersion: String,
-    pasportKeys: List<PasportKey>,
+    pasport: PasportData,
     initialCount: Int,
-    onSave: (coSeMeri: String, odkudKam: String, casMereni: String) -> Int,
+    onSave: (udu: String, pole1: String, pole2: String, casMereni: String) -> Int,
 ) {
-    var activeField by remember { mutableStateOf(ActiveField.CO_SE_MERI) }
-    var odkudKamSide by remember { mutableStateOf(OdkudKamSide.ODKUD) }
-    val coSeMeri = remember { mutableStateListOf<String>() }
-    val odkud = remember { mutableStateListOf<String>() }
-    val kam = remember { mutableStateListOf<String>() }
-    val casMereni = remember { mutableStateListOf<String>() }
+    var activeField by remember { mutableStateOf(ActiveField.POLE1) }
+    var selectedUdu by remember { mutableStateOf<String?>(pasport.uduList.firstOrNull()) }
+    val pole1 = remember { mutableStateListOf<String>() }
+    val pole2 = remember { mutableStateListOf<String>() }
     var recordCount by remember { mutableIntStateOf(initialCount) }
 
-    fun clearAll() {
-        coSeMeri.clear()
-        odkud.clear()
-        kam.clear()
-        casMereni.clear()
-        odkudKamSide = OdkudKamSide.ODKUD
-        activeField = ActiveField.CO_SE_MERI
+    val now = remember { Calendar.getInstance() }
+    var hour by remember { mutableIntStateOf(now.get(Calendar.HOUR_OF_DAY)) }
+    var minute by remember { mutableIntStateOf(now.get(Calendar.MINUTE)) }
+    var timeChosen by remember { mutableStateOf(false) }
+
+    fun useNow() {
+        val c = Calendar.getInstance()
+        hour = c.get(Calendar.HOUR_OF_DAY)
+        minute = c.get(Calendar.MINUTE)
+        timeChosen = true
     }
 
-    fun formatOdkudKam(): String {
-        val left = odkud.joinToString(" ")
-        val right = kam.joinToString(" ")
-        return when {
-            left.isNotEmpty() && right.isNotEmpty() -> "$left – $right"
-            left.isNotEmpty() -> left
-            else -> right
-        }
+    fun clearAll() {
+        pole1.clear()
+        pole2.clear()
+        timeChosen = false
+        useNow()
+        timeChosen = false
+        activeField = ActiveField.POLE1
     }
+
+    fun timeLabel(): String = "%02d:%02d".format(hour, minute)
 
     Box(
         modifier = Modifier
@@ -133,9 +132,15 @@ fun MereniApp(
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
                 )
-                Spacer(modifier = Modifier.weight(1f))
+                Spacer(modifier = Modifier.width(16.dp))
+                UduPicker(
+                    options = pasport.uduList,
+                    selected = selectedUdu,
+                    onSelect = { selectedUdu = it },
+                    modifier = Modifier.weight(1f),
+                )
                 Text(
-                    text = "mereni.csv • $recordCount záznamů",
+                    text = "mereni.csv • $recordCount",
                     color = MereniColors.TextMuted,
                     fontSize = 13.sp,
                 )
@@ -147,84 +152,42 @@ fun MereniApp(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
+                // Obdélník 1 — trochu širší
                 FieldPanel(
-                    title = "CO SE MĚŘÍ",
-                    selected = activeField == ActiveField.CO_SE_MERI,
-                    onClick = { activeField = ActiveField.CO_SE_MERI },
-                    modifier = Modifier.weight(1.1f),
+                    selected = activeField == ActiveField.POLE1,
+                    onClick = { activeField = ActiveField.POLE1 },
+                    modifier = Modifier.weight(1.25f),
                 ) {
-                    ChipRow(coSeMeri) { coSeMeri.removeAt(it) }
+                    ChipRow(pole1) { pole1.removeAt(it) }
                 }
 
+                // Obdélník 2 — výhybky
                 FieldPanel(
-                    title = "ODKUD – KAM",
-                    selected = activeField == ActiveField.ODKUD_KAM,
-                    onClick = { activeField = ActiveField.ODKUD_KAM },
-                    modifier = Modifier.weight(1.4f),
+                    selected = activeField == ActiveField.POLE2,
+                    onClick = { activeField = ActiveField.POLE2 },
+                    modifier = Modifier.weight(1f),
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState())
-                    ) {
-                        OdkudKamSlot(
-                            placeholder = "obdélník 1",
-                            items = odkud,
-                            highlighted = activeField == ActiveField.ODKUD_KAM &&
-                                odkudKamSide == OdkudKamSide.ODKUD,
-                            onSelect = {
-                                activeField = ActiveField.ODKUD_KAM
-                                odkudKamSide = OdkudKamSide.ODKUD
-                            },
-                            onRemove = { odkud.removeAt(it) },
-                        )
-                        DashSeparator()
-                        OdkudKamSlot(
-                            placeholder = "obdélník 2",
-                            items = kam,
-                            highlighted = activeField == ActiveField.ODKUD_KAM &&
-                                odkudKamSide == OdkudKamSide.KAM,
-                            onSelect = {
-                                activeField = ActiveField.ODKUD_KAM
-                                odkudKamSide = OdkudKamSide.KAM
-                            },
-                            onRemove = { kam.removeAt(it) },
-                        )
-                    }
-                    Row {
-                        TextButton(onClick = {
-                            activeField = ActiveField.ODKUD_KAM
-                            odkudKamSide = OdkudKamSide.ODKUD
-                        }) {
-                            Text(
-                                text = "← ODKUD",
-                                color = if (odkudKamSide == OdkudKamSide.ODKUD) MereniColors.Accent
-                                else MereniColors.TextMuted,
-                                fontSize = 11.sp,
-                            )
-                        }
-                        TextButton(onClick = {
-                            activeField = ActiveField.ODKUD_KAM
-                            odkudKamSide = OdkudKamSide.KAM
-                        }) {
-                            Text(
-                                text = "KAM →",
-                                color = if (odkudKamSide == OdkudKamSide.KAM) MereniColors.Accent
-                                else MereniColors.TextMuted,
-                                fontSize = 11.sp,
-                            )
-                        }
-                    }
+                    ChipRow(pole2) { pole2.removeAt(it) }
                 }
 
+                // Obdélník 3 — čas
                 FieldPanel(
-                    title = "ČAS MĚŘENÍ",
-                    selected = activeField == ActiveField.CAS_MERENI,
-                    onClick = { activeField = ActiveField.CAS_MERENI },
-                    modifier = Modifier.weight(0.8f),
+                    selected = activeField == ActiveField.CAS,
+                    onClick = {
+                        activeField = ActiveField.CAS
+                        if (!timeChosen) useNow()
+                    },
+                    modifier = Modifier.weight(0.7f),
                 ) {
-                    ChipRow(casMereni) { casMereni.removeAt(it) }
+                    if (timeChosen) {
+                        ChipToken(label = timeLabel(), onRemove = { timeChosen = false })
+                    } else {
+                        Text(
+                            text = "čas",
+                            color = MereniColors.TextMuted,
+                            fontSize = 13.sp,
+                        )
+                    }
                 }
             }
 
@@ -236,11 +199,14 @@ fun MereniApp(
             ) {
                 Button(
                     onClick = {
-                        val co = coSeMeri.joinToString(" ")
-                        val od = formatOdkudKam()
-                        val cas = casMereni.joinToString("")
-                        if (co.isNotBlank() || od.isNotBlank() || cas.isNotBlank()) {
-                            recordCount = onSave(co, od, cas)
+                        val cas = if (timeChosen) timeLabel() else ""
+                        if (pole1.isNotEmpty() || pole2.isNotEmpty() || cas.isNotBlank()) {
+                            recordCount = onSave(
+                                selectedUdu.orEmpty(),
+                                pole1.joinToString(" "),
+                                pole2.joinToString(" "),
+                                cas,
+                            )
                             clearAll()
                         }
                     },
@@ -266,54 +232,29 @@ fun MereniApp(
 
             FieldKeyboard(
                 activeField = activeField,
-                odkudKamSide = odkudKamSide,
-                pasportKeys = pasportKeys,
-                onPasportKey = { key ->
-                    when (odkudKamSide) {
-                        OdkudKamSide.ODKUD -> odkud.add(key.label)
-                        OdkudKamSide.KAM -> kam.add(key.label)
-                    }
+                pasportKeys = pasport.keys.filter { key ->
+                    selectedUdu == null || key.udu == null || key.udu == selectedUdu
                 },
-                onTextKey = { label ->
+                hour = hour,
+                minute = minute,
+                onPasportKey = { key: PasportKey ->
                     when (activeField) {
-                        ActiveField.CO_SE_MERI -> coSeMeri.add(label)
-                        ActiveField.CAS_MERENI -> casMereni.add(label)
-                        ActiveField.ODKUD_KAM -> Unit
+                        ActiveField.POLE1 -> pole1.add(key.label)
+                        ActiveField.POLE2 -> pole2.add(key.label)
+                        ActiveField.CAS -> Unit
                     }
                 },
+                onHourChange = {
+                    hour = it
+                    timeChosen = true
+                },
+                onMinuteChange = {
+                    minute = it
+                    timeChosen = true
+                },
+                onUseNow = { useNow() },
                 modifier = Modifier.fillMaxWidth(),
             )
-        }
-    }
-}
-
-@Composable
-private fun OdkudKamSlot(
-    placeholder: String,
-    items: List<String>,
-    highlighted: Boolean,
-    onSelect: () -> Unit,
-    onRemove: (Int) -> Unit,
-) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(if (highlighted) MereniColors.SurfaceAlt else Color.Transparent)
-            .clickable(onClick = onSelect)
-            .padding(2.dp)
-    ) {
-        if (items.isEmpty()) {
-            Text(
-                text = placeholder,
-                color = MereniColors.TextMuted,
-                fontSize = 12.sp,
-                modifier = Modifier.padding(8.dp),
-            )
-        } else {
-            items.forEachIndexed { index, label ->
-                ChipToken(label = label, onRemove = { onRemove(index) })
-            }
         }
     }
 }
@@ -330,7 +271,7 @@ private fun ChipRow(items: List<String>, onRemove: (Int) -> Unit) {
             Text(
                 text = "klepni klávesu",
                 color = MereniColors.TextMuted,
-                fontSize = 12.sp,
+                fontSize = 13.sp,
             )
         } else {
             items.forEachIndexed { index, label ->

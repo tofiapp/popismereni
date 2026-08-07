@@ -25,6 +25,7 @@ object PasportClassifier {
         val iob: String?,
         val poloha: String?,
         val cobjektTpi: String?,
+        val udu: String? = null,
     )
 
     fun classify(row: RawRow): PasportKind? {
@@ -62,6 +63,7 @@ object PasportClassifier {
                 iob = row.iob?.trim()?.takeIf { it.isNotEmpty() },
                 poloha = row.poloha?.trim()?.takeIf { it.isNotEmpty() },
                 cobjektTpi = row.cobjektTpi?.trim()?.takeIf { it.isNotEmpty() },
+                udu = row.udu?.trim()?.takeIf { it.isNotEmpty() },
             )
         }
 
