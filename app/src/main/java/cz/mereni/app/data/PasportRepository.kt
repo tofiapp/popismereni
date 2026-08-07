@@ -50,6 +50,7 @@ object PasportRepository {
     private fun loadAssetsFallback(context: Context, appVersion: String): PasportData? {
         val candidates = listOf(
             "pasport_tpi_v$appVersion.json",
+            "pasport_tpi_v0.15.0.json",
             "pasport_tpi_v0.14.0.json",
             "pasport_tpi_v0.13.0.json",
             "pasport_tpi_v0.12.0.json",
@@ -73,6 +74,7 @@ object PasportRepository {
 
         val stations = buildList {
             val arr = root.optJSONArray("stations") ?: return@buildList
+            val namesByUdu = linkedMapOf<String, MutableList<Pair<String, String>>>()
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
                 val udu = PasportSqliteLoader.normalizeUdu(o.optString("udu"))
@@ -80,11 +82,17 @@ object PasportRepository {
                 val jmeno = StationNameCleaner.clean(
                     o.optString("jmeno").ifBlank { raw }
                 )
-                if (udu.isNotEmpty() && jmeno.isNotEmpty()) {
-                    add(Station(udu = udu, jmeno = jmeno, jmenoRaw = raw))
-                }
+                if (udu.isEmpty() || jmeno.isEmpty()) continue
+                namesByUdu.getOrPut(udu) { mutableListOf() }.add(jmeno to raw)
             }
-        }.distinctBy { it.udu }.sortedBy { it.jmeno.lowercase() }
+            for ((udu, pairs) in namesByUdu) {
+                val names = pairs.map { it.first }
+                val preferred = StationNameCleaner.preferName(names)
+                val raw = pairs.firstOrNull { it.first == preferred }?.second ?: preferred
+                val aliases = names.distinct().filter { it != preferred }
+                add(Station(udu = udu, jmeno = preferred, jmenoRaw = raw, aliases = aliases))
+            }
+        }.sortedBy { it.jmeno.lowercase() }
 
         val rowsJson = root.optJSONArray("rows") ?: JSONArray()
         val rows = buildList {

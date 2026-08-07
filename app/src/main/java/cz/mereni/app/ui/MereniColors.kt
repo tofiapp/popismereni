@@ -23,11 +23,14 @@ object MereniColors {
     /** Výhybka — lesní zelená */
     val Vyhybka = Color(0xFF2F7A5B)
 
-    /** Čas — jantarová (odlišná od kolej/spojka/výhybka) */
-    val Cas = Color(0xFFA67C2D)
+    /** Čas — měkký oceánský teal */
+    val Cas = Color(0xFF3F8FA0)
 
-    /** Vlastní (+ ) — olivově hnědá, odlišená od kolej/spojka/výhybka */
-    val Custom = Color(0xFF6E5530)
+    /** Vlastní (+) — měkká šalvěj, odlišená od výhybky */
+    val Custom = Color(0xFF6A8F7A)
+
+    /** Poznámka — prašná ocelově modrá */
+    val Poznamka = Color(0xFF5C6E8A)
 
     val ChipBg = Color(0xFFFFFFFF)
     val ChipText = Color(0xFF152033)

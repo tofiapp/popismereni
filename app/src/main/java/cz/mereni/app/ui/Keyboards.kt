@@ -52,6 +52,7 @@ import cz.mereni.app.data.PasportKey
 import cz.mereni.app.data.PasportKind
 import cz.mereni.app.data.SelectedToken
 import cz.mereni.app.data.Station
+import cz.mereni.app.data.StationNameCleaner
 
 val KeyHeight: Dp = 56.dp
 val ChipHeight: Dp = 52.dp
@@ -401,11 +402,6 @@ fun TimeKeyboard(
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.Monospace,
                 letterSpacing = 2.sp,
-            )
-            Text(
-                "čas je volitelný",
-                color = MereniColors.TextMuted,
-                fontSize = 12.sp,
             )
             Spacer(modifier = Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -835,7 +831,7 @@ fun ActiveFieldCaption(activeField: ActiveField) {
 }
 
 /**
- * Kompaktní tlačítko stanice — vyhledávání v dialogu (nerozbíjí layout).
+ * Vyhledávač stanice — větší pole; hledá i v podnázvech a bez diakritiky.
  */
 @Composable
 fun StationSearchPicker(
@@ -846,31 +842,43 @@ fun StationSearchPicker(
 ) {
     var open by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
-    val indexed = remember(stations) { stations.map { it to it.jmeno.lowercase() } }
+    val indexed = remember(stations) {
+        stations.map { st ->
+            val keys = (listOf(st.jmeno) + st.aliases)
+                .map { StationNameCleaner.foldForSearch(it) }
+                .distinct()
+            st to keys
+        }
+    }
     val filtered = remember(indexed, query) {
-        val q = query.trim().lowercase()
+        val q = StationNameCleaner.foldForSearch(query)
         if (q.length < 2) emptyList()
-        else indexed.asSequence().filter { (_, n) -> n.contains(q) }.take(40).map { it.first }.toList()
+        else indexed.asSequence()
+            .filter { (_, keys) -> keys.any { it.contains(q) } }
+            .take(50)
+            .map { it.first }
+            .toList()
     }
 
     Box(
         contentAlignment = Alignment.CenterStart,
         modifier = modifier
-            .height(KeyHeight)
-            .widthIn(min = 160.dp, max = 280.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .height(52.dp)
+            .widthIn(min = 220.dp, max = 380.dp)
+            .clip(RoundedCornerShape(10.dp))
             .background(MereniColors.Surface)
-            .border(1.dp, MereniColors.Accent.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+            .border(1.5.dp, MereniColors.Accent.copy(alpha = 0.55f), RoundedCornerShape(10.dp))
             .clickable {
                 open = true
                 query = ""
             }
-            .padding(horizontal = 12.dp)
+            .padding(horizontal = 14.dp)
     ) {
         Text(
             text = selected?.jmeno ?: "Stanice…",
             color = if (selected == null) MereniColors.TextMuted else MereniColors.Text,
-            fontWeight = FontWeight.Medium,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 17.sp,
             maxLines = 1,
         )
     }
@@ -879,7 +887,7 @@ fun StationSearchPicker(
         Dialog(onDismissRequest = { open = false }) {
             Column(
                 modifier = Modifier
-                    .widthIn(min = 320.dp, max = 480.dp)
+                    .widthIn(min = 360.dp, max = 560.dp)
                     .clip(RoundedCornerShape(14.dp))
                     .background(MereniColors.SurfaceAlt)
                     .padding(16.dp)
@@ -895,17 +903,17 @@ fun StationSearchPicker(
                     value = query,
                     onValueChange = { query = it },
                     singleLine = true,
-                    textStyle = TextStyle(color = MereniColors.Text, fontSize = 16.sp),
+                    textStyle = TextStyle(color = MereniColors.Text, fontSize = 18.sp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(KeyHeight)
+                        .height(56.dp)
                         .clip(RoundedCornerShape(8.dp))
                         .background(MereniColors.Surface)
-                        .padding(horizontal = 12.dp, vertical = 14.dp),
+                        .padding(horizontal = 14.dp, vertical = 16.dp),
                     decorationBox = { inner ->
                         Box {
                             if (query.isEmpty()) {
-                                Text("napiš aspoň 2 písmena…", color = MereniColors.TextMuted, fontSize = 16.sp)
+                                Text("napiš aspoň 2 písmena…", color = MereniColors.TextMuted, fontSize = 18.sp)
                             }
                             inner()
                         }
@@ -928,7 +936,7 @@ fun StationSearchPicker(
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 280.dp)
+                            .heightIn(max = 320.dp)
                     ) {
                         items(filtered.size) { i ->
                             val station = filtered[i]
@@ -936,7 +944,7 @@ fun StationSearchPicker(
                                 contentAlignment = Alignment.CenterStart,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(KeyHeight)
+                                    .height(56.dp)
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(
                                         if (station.udu == selected?.udu) MereniColors.AccentDark
@@ -946,9 +954,14 @@ fun StationSearchPicker(
                                         onSelect(station)
                                         open = false
                                     }
-                                    .padding(horizontal = 12.dp)
+                                    .padding(horizontal = 14.dp)
                             ) {
-                                Text(station.jmeno, color = MereniColors.Text, fontWeight = FontWeight.Medium)
+                                Text(
+                                    station.jmeno,
+                                    color = MereniColors.Text,
+                                    fontWeight = FontWeight.Medium,
+                                    fontSize = 17.sp,
+                                )
                             }
                         }
                     }
