@@ -47,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -187,6 +188,7 @@ fun MereniApp(
     var reorderPole2 by remember { mutableStateOf(false) }
     var usedPole1Labels by remember { mutableStateOf<Set<String>>(emptySet()) }
     var customDialogFor by remember { mutableStateOf<ActiveField?>(null) }
+    var noteFocused by remember { mutableStateOf(false) }
 
     fun refreshUsedLabels(udu: String?) {
         if (udu.isNullOrBlank()) {
@@ -325,62 +327,53 @@ fun MereniApp(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                // Levý blok — brand + stanice
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
+                Text(
+                    text = "Měření",
+                    color = MereniColors.Text,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(text = "v$appVersion", color = MereniColors.Accent, fontSize = 13.sp)
+                Spacer(modifier = Modifier.width(12.dp))
+                StationSearchPicker(
+                    stations = pasport.stations,
+                    selected = selectedStation,
+                    onSelect = { selectStation(it) },
+                )
+                // Kategorie vycentrovaná mezi vyhledávačem a mereni.csv
+                Box(
+                    contentAlignment = Alignment.Center,
                     modifier = Modifier.weight(1f),
                 ) {
-                    Text(
-                        text = "Měření",
-                        color = MereniColors.Text,
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Serif,
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "v$appVersion", color = MereniColors.Accent, fontSize = 13.sp)
-                    Spacer(modifier = Modifier.width(12.dp))
-                    StationSearchPicker(
-                        stations = pasport.stations,
-                        selected = selectedStation,
-                        onSelect = { selectStation(it) },
-                    )
+                    ActiveFieldCaption(activeField = activeField)
                 }
-                // Nápis aktivního pole — uprostřed
-                ActiveFieldCaption(activeField = activeField)
-                // Pravý blok — csv + nastavení
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.End,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text(
-                        text = "mereni.csv • $recordCount",
-                        color = MereniColors.TextMuted,
-                        fontSize = 12.sp,
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    PasportSettingsButton(
-                        statusText = pasportStatusText,
-                        statusOk = load.fromDeviceSqlite && !pasportLoading,
-                        loading = pasportLoading || keysLoading,
-                        onPick = {
-                            pickPasport.launch(
-                                arrayOf(
-                                    "application/octet-stream",
-                                    "application/x-sqlite3",
-                                    "application/vnd.sqlite3",
-                                    "*/*",
-                                )
+                Text(
+                    text = "mereni.csv • $recordCount",
+                    color = MereniColors.TextMuted,
+                    fontSize = 12.sp,
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                PasportSettingsButton(
+                    statusText = pasportStatusText,
+                    statusOk = load.fromDeviceSqlite && !pasportLoading,
+                    loading = pasportLoading || keysLoading,
+                    onPick = {
+                        pickPasport.launch(
+                            arrayOf(
+                                "application/octet-stream",
+                                "application/x-sqlite3",
+                                "application/vnd.sqlite3",
+                                "*/*",
                             )
-                        },
-                        onReload = {
-                            pasportLoading = true
-                            pasportLoadingMsg = "Obnovuji pasport…"
-                            scope.launch { applyLoad(onReload()) }
-                        },
-                    )
-                }
+                        )
+                    },
+                    onReload = {
+                        pasportLoading = true
+                        pasportLoadingMsg = "Obnovuji pasport…"
+                        scope.launch { applyLoad(onReload()) }
+                    },
+                )
             }
 
             if (pasportLoading || keysLoading) {
@@ -452,7 +445,10 @@ fun MereniApp(
                 }
                 FieldPanel(
                     selected = activeField == ActiveField.CAS,
-                    onClick = { activeField = ActiveField.CAS },
+                    onClick = {
+                        activeField = ActiveField.CAS
+                        if (!timeChosen) useNow()
+                    },
                     modifier = Modifier.weight(0.7f),
                     contentAlignment = Alignment.Center,
                     accentColor = MereniColors.Cas,
@@ -490,6 +486,7 @@ fun MereniApp(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth(),
             ) {
+                val noteShape = RoundedCornerShape(8.dp)
                 BasicTextField(
                     value = note,
                     onValueChange = { note = it },
@@ -498,9 +495,17 @@ fun MereniApp(
                     modifier = Modifier
                         .weight(1f)
                         .height(40.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MereniColors.Surface)
-                        .border(1.dp, MereniColors.ChipBorder, RoundedCornerShape(8.dp))
+                        .clip(noteShape)
+                        .background(
+                            if (noteFocused) MereniColors.Poznamka.copy(alpha = 0.14f)
+                            else MereniColors.Surface
+                        )
+                        .border(
+                            width = if (noteFocused) 2.dp else 1.dp,
+                            color = if (noteFocused) MereniColors.Poznamka else MereniColors.ChipBorder,
+                            shape = noteShape,
+                        )
+                        .onFocusChanged { noteFocused = it.isFocused }
                         .padding(horizontal = 12.dp, vertical = 10.dp),
                     decorationBox = { inner ->
                         Box(contentAlignment = Alignment.CenterStart) {

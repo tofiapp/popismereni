@@ -372,9 +372,11 @@ object PasportSqliteLoader {
         )
     }
 
-    /** Jen MT_SL — bez DISTINCT přes celou RO (to zamrzalo). */
+    /** Jen MT_SL — bez DISTINCT přes celou RO (to zamrzalo).
+     * Stejné UDU → jeden záznam s nejběžnějším názvem (Nymburk, Český Těšín…);
+     * podnázvy jdou do aliases pro vyhledávání. */
     private fun loadStations(db: SQLiteDatabase, schema: DbSchema): List<Station> {
-        val byUdu = linkedMapOf<String, Station>()
+        val namesByUdu = linkedMapOf<String, MutableList<Pair<String, String>>>()
         db.rawQuery(
             """SELECT "${schema.cRepre}", "${schema.cJmeno}" FROM "$TABLE_SL"""",
             null,
@@ -385,13 +387,16 @@ object PasportSqliteLoader {
                 if (udu.isEmpty()) continue
                 val jmeno = StationNameCleaner.clean(raw)
                 if (jmeno.isEmpty()) continue
-                val prev = byUdu[udu]
-                if (prev == null || jmeno.length > prev.jmeno.length) {
-                    byUdu[udu] = Station(udu = udu, jmeno = jmeno, jmenoRaw = raw)
-                }
+                namesByUdu.getOrPut(udu) { mutableListOf() }.add(jmeno to raw)
             }
         }
-        return byUdu.values.sortedBy { it.jmeno.lowercase() }
+        return namesByUdu.map { (udu, pairs) ->
+            val names = pairs.map { it.first }
+            val preferred = StationNameCleaner.preferName(names)
+            val raw = pairs.firstOrNull { it.first == preferred }?.second ?: preferred
+            val aliases = names.distinct().filter { it != preferred }
+            Station(udu = udu, jmeno = preferred, jmenoRaw = raw, aliases = aliases)
+        }.sortedBy { it.jmeno.lowercase() }
     }
 
     private fun cell(c: Cursor, column: String): String? {

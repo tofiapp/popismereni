@@ -1,12 +1,13 @@
-# Měření v0.14.0
+# Měření v0.15.0
 
 ## Aktualizace
 ```bash
-adb install -r artifacts/mereni-v0.14.0-debug.apk
+adb install -r artifacts/mereni-v0.15.0-debug.apk
 ```
 
-## UI v0.14.0
-- Horní nápisy (**Koleje a spojky** / **Od, do** / **Čas**) uprostřed, sjednocená kapitálka
-- Zakliknuté pole svítí barvou typu: kolej modrá, výhybky zelená, čas jantarová
-- Karta času má vlastní jantarovou barvu i bez výběru
-- Max 3 podkoleje vedle sebe; pomlčky v 2. poli; **+** vlastní chip
+## UI v0.15.0
+- Příjemnější barvy: vlastní (šalvěj), čas (teal), poznámka (ocelově modrá při fokusu)
+- Čas se nastaví automaticky po klepnutí na kartu
+- „Měření“ ve stejném fontu; větší vyhledávač stanic
+- Kategorie uprostřed mezi vyhledávačem a mereni.csv
+- Stanice se stejným UDU → hlavní název (Nymburk, Český Těšín); hledání i v podnázvech a bez diakritiky
