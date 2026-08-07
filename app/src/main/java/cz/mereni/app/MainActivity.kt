@@ -190,25 +190,29 @@ fun MereniApp(
     var recordCount by remember { mutableIntStateOf(initialCount) }
     var reorderPole1 by remember { mutableStateOf(false) }
     var reorderPole2 by remember { mutableStateOf(false) }
-    var usedLabels by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var usedLabelsA by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var usedLabelsB by remember { mutableStateOf<Set<String>>(emptySet()) }
     var customDialogFor by remember { mutableStateOf<ActiveField?>(null) }
     var noteFocused by remember { mutableStateOf(false) }
 
     val dualMode = stationB != null
     val activeStation = if (activeSlot == 1 && stationB != null) stationB else stationA
     val stationKeys = if (activeSlot == 1 && dualMode) keysB else keysA
-    /** Právě v horních obdélnících — zašedlé a nelze znovu přidat, dokud se neuloží / neodstraní. */
-    val lockedLabels = (pole1.map { it.label } + pole2.map { it.label }).toSet()
+    /** CSV zašednutí jen pro aktivní vyhledávač (přesné UDU). */
+    val usedLabels = if (activeSlot == 1 && dualMode) usedLabelsB else usedLabelsA
+    /**
+     * Právě v horních obdélnících z **tohoto** slotu — zašedlé a nelze znovu přidat.
+     * Slot 1 a slot 2 se navzájem neblokují (stejná kolej 3a na obou OK).
+     */
+    val lockedLabels = (pole1 + pole2)
+        .filter { !dualMode || it.fromSlot == activeSlot }
+        .map { it.label }
+        .toSet()
 
     fun refreshUsedLabels() {
-        val udus = listOfNotNull(stationA?.udu, stationB?.udu).filter { it.isNotBlank() }
-        if (udus.isEmpty()) {
-            usedLabels = emptySet()
-            return
-        }
         scope.launch {
-            val sets = udus.map { onUsedLabels(it) }
-            usedLabels = sets.fold(emptySet()) { acc, s -> acc + s }
+            usedLabelsA = stationA?.udu?.takeIf { it.isNotBlank() }?.let { onUsedLabels(it) } ?: emptySet()
+            usedLabelsB = stationB?.udu?.takeIf { it.isNotBlank() }?.let { onUsedLabels(it) } ?: emptySet()
         }
     }
 
@@ -235,7 +239,8 @@ fun MereniApp(
         note = ""
         reorderPole1 = false
         reorderPole2 = false
-        usedLabels = emptySet()
+        usedLabelsA = emptySet()
+        usedLabelsB = emptySet()
         pasportLoading = false
         pasportLoadingMsg = ""
     }
@@ -345,15 +350,6 @@ fun MereniApp(
             "Pasport OK · ${load.stats.ifBlank { load.sourceLabel }}"
         else ->
             "Pasport chybí — ${PasportSqliteLoader.DB_FILE_NAME} v Download, nebo Vybrat"
-    }
-
-    fun saveUdu(): String {
-        val a = stationA?.udu.orEmpty()
-        val b = stationB?.udu.orEmpty()
-        return when {
-            a.isNotEmpty() && b.isNotEmpty() -> "$a+$b"
-            else -> a
-        }
     }
 
     Box(
@@ -574,18 +570,58 @@ fun MereniApp(
                 Button(
                     onClick = {
                         val cas = if (timeChosen) timeLabel() else ""
-                        if (pole1.isNotEmpty() || pole2.isNotEmpty() || cas.isNotBlank() || note.isNotBlank()) {
-                            val udu = saveUdu()
+                        val noteText = note.trim()
+                        val hasContent = pole1.isNotEmpty() || pole2.isNotEmpty() ||
+                            cas.isNotBlank() || noteText.isNotBlank()
+                        if (!hasContent) return@Button
+
+                        fun saveFor(
+                            udu: String,
+                            p1: List<SelectedToken>,
+                            p2: List<SelectedToken>,
+                            withMeta: Boolean,
+                        ) {
+                            if (p1.isEmpty() && p2.isEmpty() && !withMeta) return
+                            if (udu.isBlank() && p1.isEmpty() && p2.isEmpty() && !withMeta) return
                             recordCount = onSave(
                                 udu,
-                                pole1.joinToString(" ") { it.label },
-                                pole2.joinToString(" - ") { it.label },
-                                cas,
-                                note.trim(),
+                                p1.joinToString(" ") { it.label },
+                                p2.joinToString(" - ") { it.label },
+                                if (withMeta) cas else "",
+                                if (withMeta) noteText else "",
                             )
-                            clearAll()
-                            refreshUsedLabels()
                         }
+
+                        if (dualMode) {
+                            val slots = listOf(
+                                0 to stationA,
+                                1 to stationB,
+                            )
+                            var metaDone = false
+                            for ((slot, st) in slots) {
+                                if (st == null) continue
+                                val p1 = pole1.filter { it.fromSlot == slot }
+                                val p2 = pole2.filter { it.fromSlot == slot }
+                                val withMeta = !metaDone &&
+                                    (p1.isNotEmpty() || p2.isNotEmpty() ||
+                                        cas.isNotBlank() || noteText.isNotBlank())
+                                if (p1.isEmpty() && p2.isEmpty() && !withMeta) continue
+                                saveFor(st.udu, p1, p2, withMeta)
+                                if (withMeta) metaDone = true
+                            }
+                            if (!metaDone && (cas.isNotBlank() || noteText.isNotBlank())) {
+                                saveFor(stationA?.udu.orEmpty(), emptyList(), emptyList(), true)
+                            }
+                        } else {
+                            saveFor(
+                                stationA?.udu.orEmpty(),
+                                pole1.toList(),
+                                pole2.toList(),
+                                true,
+                            )
+                        }
+                        clearAll()
+                        refreshUsedLabels()
                     },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MereniColors.Accent,
