@@ -325,50 +325,62 @@ fun MereniApp(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text(
-                    text = "Měření",
-                    color = MereniColors.Text,
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Serif,
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(text = "v$appVersion", color = MereniColors.Accent, fontSize = 13.sp)
-                Spacer(modifier = Modifier.width(12.dp))
-                StationSearchPicker(
-                    stations = pasport.stations,
-                    selected = selectedStation,
-                    onSelect = { selectStation(it) },
-                )
-                Spacer(modifier = Modifier.width(14.dp))
+                // Levý blok — brand + stanice
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(
+                        text = "Měření",
+                        color = MereniColors.Text,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Serif,
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(text = "v$appVersion", color = MereniColors.Accent, fontSize = 13.sp)
+                    Spacer(modifier = Modifier.width(12.dp))
+                    StationSearchPicker(
+                        stations = pasport.stations,
+                        selected = selectedStation,
+                        onSelect = { selectStation(it) },
+                    )
+                }
+                // Nápis aktivního pole — uprostřed
                 ActiveFieldCaption(activeField = activeField)
-                Spacer(modifier = Modifier.weight(1f))
-                Text(
-                    text = "mereni.csv • $recordCount",
-                    color = MereniColors.TextMuted,
-                    fontSize = 12.sp,
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                PasportSettingsButton(
-                    statusText = pasportStatusText,
-                    statusOk = load.fromDeviceSqlite && !pasportLoading,
-                    loading = pasportLoading || keysLoading,
-                    onPick = {
-                        pickPasport.launch(
-                            arrayOf(
-                                "application/octet-stream",
-                                "application/x-sqlite3",
-                                "application/vnd.sqlite3",
-                                "*/*",
+                // Pravý blok — csv + nastavení
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.End,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(
+                        text = "mereni.csv • $recordCount",
+                        color = MereniColors.TextMuted,
+                        fontSize = 12.sp,
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    PasportSettingsButton(
+                        statusText = pasportStatusText,
+                        statusOk = load.fromDeviceSqlite && !pasportLoading,
+                        loading = pasportLoading || keysLoading,
+                        onPick = {
+                            pickPasport.launch(
+                                arrayOf(
+                                    "application/octet-stream",
+                                    "application/x-sqlite3",
+                                    "application/vnd.sqlite3",
+                                    "*/*",
+                                )
                             )
-                        )
-                    },
-                    onReload = {
-                        pasportLoading = true
-                        pasportLoadingMsg = "Obnovuji pasport…"
-                        scope.launch { applyLoad(onReload()) }
-                    },
-                )
+                        },
+                        onReload = {
+                            pasportLoading = true
+                            pasportLoadingMsg = "Obnovuji pasport…"
+                            scope.launch { applyLoad(onReload()) }
+                        },
+                    )
+                }
             }
 
             if (pasportLoading || keysLoading) {
@@ -390,6 +402,7 @@ fun MereniApp(
                     selected = activeField == ActiveField.POLE1,
                     onClick = { activeField = ActiveField.POLE1 },
                     modifier = Modifier.weight(1.25f),
+                    accentColor = MereniColors.Kolej,
                     showReorderToggle = pole1.size > 1,
                     reorderMode = reorderPole1,
                     onReorderToggle = { reorderPole1 = !reorderPole1 },
@@ -415,6 +428,7 @@ fun MereniApp(
                     selected = activeField == ActiveField.POLE2,
                     onClick = { activeField = ActiveField.POLE2 },
                     modifier = Modifier.weight(1f),
+                    accentColor = MereniColors.Vyhybka,
                     showReorderToggle = pole2.size > 1,
                     reorderMode = reorderPole2,
                     onReorderToggle = { reorderPole2 = !reorderPole2 },
@@ -441,11 +455,13 @@ fun MereniApp(
                     onClick = { activeField = ActiveField.CAS },
                     modifier = Modifier.weight(0.7f),
                     contentAlignment = Alignment.Center,
+                    accentColor = MereniColors.Cas,
+                    tintAlways = true,
                 ) {
                     if (timeChosen) {
                         Text(
                             text = timeLabel(),
-                            color = MereniColors.Text,
+                            color = MereniColors.Cas,
                             fontSize = 28.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace,
@@ -455,7 +471,7 @@ fun MereniApp(
                     } else {
                         Text(
                             text = "—:—",
-                            color = MereniColors.TextMuted,
+                            color = MereniColors.Cas.copy(alpha = 0.55f),
                             fontSize = 22.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace,

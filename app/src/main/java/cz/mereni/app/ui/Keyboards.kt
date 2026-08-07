@@ -396,7 +396,7 @@ fun TimeKeyboard(
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 text = if (timeChosen) "%02d:%02d".format(hour, minute) else "—:—",
-                color = if (timeChosen) MereniColors.Accent else MereniColors.TextMuted,
+                color = if (timeChosen) MereniColors.Cas else MereniColors.TextMuted,
                 fontSize = 64.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.Monospace,
@@ -410,7 +410,7 @@ fun TimeKeyboard(
             Spacer(modifier = Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextButton(onClick = onUseNow) {
-                    Text("Nastavit teď", color = MereniColors.Accent, fontWeight = FontWeight.SemiBold)
+                    Text("Nastavit teď", color = MereniColors.Cas, fontWeight = FontWeight.SemiBold)
                 }
                 if (timeChosen) {
                     TextButton(onClick = onClear) {
@@ -426,7 +426,7 @@ fun TimeKeyboard(
             WheelColumn("Hodiny", hour, 0..23, onHourChange, big = true)
             Text(
                 ":",
-                color = MereniColors.Accent,
+                color = MereniColors.Cas,
                 fontSize = 40.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.Monospace,
@@ -460,7 +460,7 @@ private fun WheelColumn(
                 .width(boxW)
                 .height(boxH)
                 .clip(RoundedCornerShape(10.dp))
-                .border(2.dp, MereniColors.Accent, RoundedCornerShape(10.dp))
+                .border(2.dp, MereniColors.Cas, RoundedCornerShape(10.dp))
                 .background(MereniColors.Surface)
         ) {
             Text(
@@ -644,6 +644,10 @@ fun FieldPanel(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     contentAlignment: Alignment = Alignment.CenterStart,
+    /** Barva typu pole — svítí v zakliknutém stavu (kolej / výhybka / čas). */
+    accentColor: Color = MereniColors.Accent,
+    /** Trvalý jemný nádech (např. karta času). */
+    tintAlways: Boolean = false,
     showReorderToggle: Boolean = false,
     reorderMode: Boolean = false,
     onReorderToggle: (() -> Unit)? = null,
@@ -651,15 +655,23 @@ fun FieldPanel(
     onAddClick: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
+    val shape = RoundedCornerShape(10.dp)
+    val bg = when {
+        selected -> accentColor.copy(alpha = 0.16f)
+        tintAlways -> accentColor.copy(alpha = 0.08f)
+        else -> MereniColors.Surface
+    }
+    val border = when {
+        selected -> Modifier.border(2.5.dp, accentColor, shape)
+        tintAlways -> Modifier.border(1.5.dp, accentColor.copy(alpha = 0.45f), shape)
+        else -> Modifier
+    }
     Box(
         modifier = modifier
             .height(FieldPanelHeight)
-            .clip(RoundedCornerShape(10.dp))
-            .background(if (selected) MereniColors.SurfaceAlt else MereniColors.Surface)
-            .then(
-                if (selected) Modifier.border(2.dp, MereniColors.Accent, RoundedCornerShape(10.dp))
-                else Modifier
-            )
+            .clip(shape)
+            .background(bg)
+            .then(border)
             .clickable(onClick = onClick)
     ) {
         val bottomPad = if (showReorderToggle || showAddButton) 18.dp else 0.dp
@@ -700,7 +712,7 @@ fun FieldPanel(
                     .size(28.dp)
                     .clip(RoundedCornerShape(6.dp))
                     .background(
-                        if (reorderMode) MereniColors.Accent else MereniColors.SurfaceAlt
+                        if (reorderMode) accentColor else MereniColors.SurfaceAlt
                     )
                     .border(1.dp, MereniColors.ChipBorder, RoundedCornerShape(6.dp))
                     .clickable(onClick = onReorderToggle)
@@ -793,7 +805,7 @@ fun CustomTokenDialog(
     }
 }
 
-/** Nápis aktivního pole nahoře vedle pickeru stanice. */
+/** Nápis aktivního pole — sjednocená kapitálka, barvy typů. */
 @Composable
 fun ActiveFieldCaption(activeField: ActiveField) {
     when (activeField) {
@@ -801,22 +813,22 @@ fun ActiveFieldCaption(activeField: ActiveField) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Text("Koleje", color = MereniColors.Kolej, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            Text("a", color = MereniColors.TextMuted, fontSize = 14.sp)
-            Text("spojky", color = MereniColors.Spojka, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Text("Koleje", color = MereniColors.Kolej, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text("a", color = MereniColors.TextMuted, fontSize = 15.sp)
+            Text("spojky", color = MereniColors.Spojka, fontSize = 18.sp, fontWeight = FontWeight.Bold)
         }
         ActiveField.POLE2 -> Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Text("od", color = MereniColors.Vyhybka, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            Text(",", color = MereniColors.TextMuted, fontSize = 14.sp)
-            Text("do", color = MereniColors.Vyhybka, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Text("Od", color = MereniColors.Vyhybka, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text(",", color = MereniColors.TextMuted, fontSize = 15.sp)
+            Text("do", color = MereniColors.Vyhybka, fontSize = 18.sp, fontWeight = FontWeight.Bold)
         }
         ActiveField.CAS -> Text(
-            "čas",
-            color = MereniColors.Accent,
-            fontSize = 16.sp,
+            "Čas",
+            color = MereniColors.Cas,
+            fontSize = 18.sp,
             fontWeight = FontWeight.Bold,
         )
     }
