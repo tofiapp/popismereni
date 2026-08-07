@@ -5,6 +5,7 @@ import android.content.Context
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import android.net.Uri
+import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.provider.OpenableColumns
@@ -15,13 +16,12 @@ data class PasportLoadResult(
     val fromDeviceSqlite: Boolean,
     val sourceLabel: String,
     val error: String? = null,
-    /** Počet stanic / kláves pro diagnostiku */
     val stats: String = "",
 )
 
 /**
- * Načítá DZS_PASPORT_TPI.sqlite ze zařízení.
- * Stanice načte najednou; klávesy vždy **až pro vybrané UDU** (rychlé a správné).
+ * DZS_PASPORT_TPI.sqlite ze zařízení.
+ * Stanice z MT_SL; klávesy per UDU přes cílené SQL (na IO vlákně).
  */
 object PasportSqliteLoader {
 
@@ -29,6 +29,7 @@ object PasportSqliteLoader {
     private const val PREFS = "pasport_prefs"
     private const val KEY_URI = "pasport_uri"
     private const val LOCAL_COPY = "DZS_PASPORT_TPI.sqlite"
+    private const val INDEXED_FLAG = "pasport_indexed_v1"
 
     private const val TABLE_RO = "DZS_SUPER_RO_TPI"
     private const val TABLE_SL = "DZS_SUPER_MT_SL"
@@ -60,117 +61,153 @@ object PasportSqliteLoader {
         return t.take(5)
     }
 
-    /** Najde SQLite na zařízení a zkopíruje ji do filesDir (spolehlivé otevření). */
     fun ensureLocalDatabase(context: Context): File? {
         val local = File(context.filesDir, LOCAL_COPY)
 
-        // 1) Veřejné / známé cesty + MediaStore (čerstvý soubor)
-        findExternalDatabase(context)?.let { found ->
+        // 1) MediaStore / Downloads (Android 10+ často jediná cesta)
+        findAndCopyFromMediaStore(context, local)?.let {
+            ensureIndexes(context, it)
+            return it
+        }
+
+        // 2) Přímé cesty (starší API / když je oprávnění)
+        findExternalFile()?.let { found ->
             runCatching {
                 if (!local.exists() || local.length() != found.length() ||
                     local.lastModified() < found.lastModified()
                 ) {
                     found.copyTo(local, overwrite = true)
+                    context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                        .edit().remove(INDEXED_FLAG).apply()
                 }
+                ensureIndexes(context, local)
                 return local
             }
         }
 
-        // 2) Uložené URI (SAF)
+        // 3) Uložené SAF URI
         savedUri(context)?.let { uri ->
             runCatching {
                 copyUriToLocal(context, uri)
+                ensureIndexes(context, local)
                 return local
             }
         }
 
-        // 3) Už existující lokální kopie
-        if (local.exists() && local.length() > 0L) return local
-
+        if (local.exists() && local.length() > 0L) {
+            ensureIndexes(context, local)
+            return local
+        }
         return null
     }
 
-    fun findExternalDatabase(context: Context): File? {
-        val nameHints = listOf(
-            DB_FILE_NAME,
-            "DZS_PASPORT_TPI.SQLite",
-            "DZS_PASPORT_TPI.db",
-            "dzs_pasport_tpi.sqlite",
+    private fun findExternalFile(): File? {
+        val names = listOf(
+            DB_FILE_NAME, "DZS_PASPORT_TPI.SQLite", "DZS_PASPORT_TPI.db",
+            "dzs_pasport_tpi.sqlite", "DZS_PASPORT_TPI",
         )
-
         val dirs = buildList {
             @Suppress("DEPRECATION")
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)?.let { add(it) }
+            add(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS))
             @Suppress("DEPRECATION")
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)?.let { add(it) }
+            add(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS))
             add(File("/storage/emulated/0/Download"))
             add(File("/storage/emulated/0/Downloads"))
-            add(File("/storage/emulated/0/Documents"))
             add(File("/sdcard/Download"))
-            add(File("/sdcard/Downloads"))
-            context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)?.let { add(it) }
-            context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS)?.let { add(it) }
-            context.getExternalFilesDir(null)?.let { add(it) }
         }
-
         for (dir in dirs) {
-            if (!dir.exists() || !dir.isDirectory) continue
-            for (name in nameHints) {
-                val f = File(dir, name)
-                if (f.exists() && f.canRead() && f.length() > 0L) return f
+            if (dir == null || !dir.isDirectory) continue
+            for (n in names) {
+                val f = File(dir, n)
+                if (f.isFile && f.canRead() && f.length() > 0L) return f
             }
-            // mělký průchod (max 2 úrovně) — soubor může ležet ve složce
             runCatching {
-                dir.walkTopDown().maxDepth(2)
-                    .firstOrNull { file ->
-                        if (!file.isFile || !file.canRead() || file.length() <= 0L) return@firstOrNull false
-                        val nameOk = file.name.contains("DZS_PASPORT", ignoreCase = true)
-                        val extOk = file.extension.equals("sqlite", true) ||
-                            file.extension.equals("db", true)
-                        nameOk && extOk
-                    }
+                dir.listFiles()?.firstOrNull { f ->
+                    f.isFile && f.canRead() && f.length() > 0L &&
+                        f.name.contains("DZS_PASPORT", ignoreCase = true)
+                }
             }.getOrNull()?.let { return it }
         }
-
-        // MediaStore (Android 10+)
-        findViaMediaStore(context)?.let { return it }
-
         return null
     }
 
-    private fun findViaMediaStore(context: Context): File? {
+    /** Najde DB přes MediaStore a zkopíruje do [dest]. */
+    private fun findAndCopyFromMediaStore(context: Context, dest: File): File? {
+        val urisToTry = buildList {
+            if (Build.VERSION.SDK_INT >= 29) {
+                add(MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL))
+                runCatching {
+                    add(MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY))
+                }
+            }
+            add(MediaStore.Files.getContentUri("external"))
+        }
+
+        for (collection in urisToTry) {
+            val found = queryMediaStoreCopy(context, collection, dest)
+            if (found != null) return found
+        }
+        return null
+    }
+
+    private fun queryMediaStoreCopy(context: Context, collection: Uri, dest: File): File? {
         return runCatching {
-            val uri = MediaStore.Files.getContentUri("external")
             val projection = arrayOf(
-                MediaStore.Files.FileColumns._ID,
-                MediaStore.Files.FileColumns.DISPLAY_NAME,
-                MediaStore.Files.FileColumns.DATA,
+                MediaStore.MediaColumns._ID,
+                MediaStore.MediaColumns.DISPLAY_NAME,
+                MediaStore.MediaColumns.SIZE,
             )
-            val selection = "${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE ?"
-            context.contentResolver.query(
-                uri, projection, selection, arrayOf("%DZS_PASPORT%"), null,
-            )?.use { c ->
-                val iId = c.getColumnIndexOrThrow(MediaStore.Files.FileColumns._ID)
-                val iData = c.getColumnIndex(MediaStore.Files.FileColumns.DATA)
+            val selection =
+                "(${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ? OR ${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?)"
+            val args = arrayOf("%DZS_PASPORT%", "%pasport%tpi%")
+            context.contentResolver.query(collection, projection, selection, args, null)?.use { c ->
+                val iId = c.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+                val iName = c.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                val iSize = c.getColumnIndex(MediaStore.MediaColumns.SIZE)
                 while (c.moveToNext()) {
-                    if (iData >= 0) {
-                        val path = c.getString(iData)
-                        if (!path.isNullOrBlank()) {
-                            val f = File(path)
-                            if (f.exists() && f.canRead() && f.length() > 0L) return@use f
-                        }
+                    val name = if (iName >= 0) c.getString(iName).orEmpty() else ""
+                    if (!name.contains("DZS_PASPORT", ignoreCase = true) &&
+                        !name.contains("PASPORT_TPI", ignoreCase = true)
+                    ) continue
+                    val size = if (iSize >= 0 && !c.isNull(iSize)) c.getLong(iSize) else -1L
+                    if (dest.exists() && size > 0 && dest.length() == size) {
+                        return@use dest
                     }
                     val id = c.getLong(iId)
-                    val contentUri = ContentUris.withAppendedId(uri, id)
-                    val dest = File(context.cacheDir, "media_pasport.sqlite")
-                    context.contentResolver.openInputStream(contentUri)?.use { input ->
+                    val itemUri = ContentUris.withAppendedId(collection, id)
+                    context.contentResolver.openInputStream(itemUri)?.use { input ->
                         dest.outputStream().use { output -> input.copyTo(output) }
                     }
-                    if (dest.exists() && dest.length() > 0L) return@use dest
+                    if (dest.exists() && dest.length() > 0L) {
+                        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                            .edit().remove(INDEXED_FLAG).apply()
+                        rememberUri(context, itemUri)
+                        return@use dest
+                    }
                 }
                 null
             }
         }.getOrNull()
+    }
+
+    /** Indexy na lokální kopii — výrazně zrychlí LIKE 'UDU%'. */
+    private fun ensureIndexes(context: Context, file: File) {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (prefs.getBoolean(INDEXED_FLAG, false)) return
+        runCatching {
+            SQLiteDatabase.openDatabase(
+                file.absolutePath, null, SQLiteDatabase.OPEN_READWRITE,
+            ).use { db ->
+                val schema = resolveSchema(db)
+                db.execSQL(
+                    """CREATE INDEX IF NOT EXISTS idx_ro_tudu ON "$TABLE_RO"("${schema.cTudu}")"""
+                )
+                db.execSQL(
+                    """CREATE INDEX IF NOT EXISTS idx_sl_repre ON "$TABLE_SL"("${schema.cRepre}")"""
+                )
+            }
+            prefs.edit().putBoolean(INDEXED_FLAG, true).apply()
+        }
     }
 
     fun load(context: Context): PasportLoadResult {
@@ -179,7 +216,7 @@ object PasportSqliteLoader {
                 data = PasportData("", emptyList(), emptyList()),
                 fromDeviceSqlite = false,
                 sourceLabel = "nenalezeno",
-                error = "Soubor $DB_FILE_NAME na zařízení nebyl nalezen. Dej ho do Download.",
+                error = "Soubor $DB_FILE_NAME v Download nebyl nalezen. Klepni Vybrat a zvol ho ručně (jednou).",
             )
 
         return runCatching {
@@ -187,11 +224,7 @@ object PasportSqliteLoader {
                 val schema = resolveSchema(db)
                 val stations = loadStations(db, schema)
                 PasportLoadResult(
-                    data = PasportData(
-                        version = "device",
-                        keys = emptyList(), // klávesy až po výběru stanice
-                        stations = stations,
-                    ),
+                    data = PasportData("device", emptyList(), stations),
                     fromDeviceSqlite = true,
                     sourceLabel = file.name,
                     stats = "${stations.size} stanic",
@@ -208,6 +241,8 @@ object PasportSqliteLoader {
     }
 
     fun loadFromUri(context: Context, uri: Uri): PasportLoadResult {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().remove(INDEXED_FLAG).apply()
         copyUriToLocal(context, uri)
         rememberUri(context, uri)
         return load(context).let {
@@ -218,15 +253,19 @@ object PasportSqliteLoader {
     }
 
     fun reload(context: Context): PasportLoadResult {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().remove(INDEXED_FLAG).apply()
         File(context.filesDir, LOCAL_COPY).delete()
-        // zkus znovu z URI / Download
         savedUri(context)?.let { uri ->
             runCatching { return loadFromUri(context, uri) }
         }
         return load(context)
     }
 
-    /** Klávesy pro jednu stanici (UDU = 5 znaků). */
+    /**
+     * Klávesy pro UDU — 3 cílené SQL (výhybky / spojky / koleje), ne celá tabulka.
+     * Volat z Dispatchers.IO.
+     */
     fun loadKeysForUdu(context: Context, udu: String): List<PasportKey> {
         val code = normalizeUdu(udu)
         if (code.isEmpty()) return emptyList()
@@ -234,10 +273,72 @@ object PasportSqliteLoader {
         return runCatching {
             openDb(file).use { db ->
                 val schema = resolveSchema(db)
-                val rows = loadRowsForUdu(db, schema, code)
-                PasportClassifier.buildKeys(rows)
+                val like = "$code%"
+                val vyhybky = queryKind(db, schema, like, KindFilter.VYHYBKA)
+                val spojky = queryKind(db, schema, like, KindFilter.SPOJKA)
+                val kolejeRows = queryKind(db, schema, like, KindFilter.KOLEJ)
+                PasportClassifier.buildKeys(spojky + kolejeRows + vyhybky)
             }
         }.getOrDefault(emptyList())
+    }
+
+    private enum class KindFilter { VYHYBKA, SPOJKA, KOLEJ }
+
+    private fun queryKind(
+        db: SQLiteDatabase,
+        schema: DbSchema,
+        tuduLike: String,
+        kind: KindFilter,
+    ): List<PasportClassifier.RawRow> {
+        val poloha = schema.cPoloha?.let { "\"$it\"" }
+        val tpi = schema.cTpi?.let { "\"$it\"" }
+        val iob = schema.cIob?.let { "\"$it\"" }
+        val tudu = "\"${schema.cTudu}\""
+        val cobjekt = "\"${schema.cCobjekt}\""
+
+        fun emptyExpr(col: String?) =
+            if (col == null) "1=1"
+            else """(trim(coalesce(CAST($col AS TEXT),'')) IN ('','-','—','.','null','NULL'))"""
+
+        fun nonEmptyExpr(col: String?) =
+            if (col == null) "0=1"
+            else """(trim(coalesce(CAST($col AS TEXT),'')) NOT IN ('','-','—','.','null','NULL'))"""
+
+        val kindWhere = when (kind) {
+            KindFilter.VYHYBKA -> nonEmptyExpr(poloha)
+            KindFilter.SPOJKA ->
+                "${emptyExpr(poloha)} AND lower(trim(coalesce(CAST(${tpi ?: "''"} AS TEXT),''))) LIKE '%zhl%'"
+            KindFilter.KOLEJ ->
+                "${emptyExpr(poloha)} AND ${emptyExpr(tpi)} AND " +
+                    "upper(trim(coalesce(CAST(${iob ?: "''"} AS TEXT),''))) NOT IN ('X','S')"
+        }
+
+        val cols = listOfNotNull(schema.cCobjekt, schema.cIob, schema.cPoloha, schema.cTpi, schema.cTudu)
+        val select = cols.joinToString(", ") { "\"$it\"" }
+
+        // LIKE 'UDU%' umí využít index na TUDU
+        val sql = """
+            SELECT $select FROM "$TABLE_RO"
+            WHERE CAST($tudu AS TEXT) LIKE ?
+              AND $cobjekt IS NOT NULL
+              AND trim(CAST($cobjekt AS TEXT)) != ''
+              AND ($kindWhere)
+            LIMIT 2000
+        """.trimIndent()
+
+        val rows = ArrayList<PasportClassifier.RawRow>(256)
+        db.rawQuery(sql, arrayOf(tuduLike)).use { c ->
+            while (c.moveToNext()) {
+                rows += PasportClassifier.RawRow(
+                    cobjekt = cell(c, schema.cCobjekt),
+                    iob = schema.cIob?.let { cell(c, it) },
+                    poloha = schema.cPoloha?.let { cell(c, it) },
+                    cobjektTpi = schema.cTpi?.let { cell(c, it) },
+                    udu = tuduLike.removeSuffix("%"),
+                )
+            }
+        }
+        return rows
     }
 
     private fun openDb(file: File): SQLiteDatabase =
@@ -257,7 +358,7 @@ object PasportSqliteLoader {
             return null
         }
         return DbSchema(
-            cCobjekt = pick(ro, "COBJEKT") ?: error("RO bez COBJEKT (sloupce: ${ro.keys})"),
+            cCobjekt = pick(ro, "COBJEKT") ?: error("RO bez COBJEKT"),
             cIob = pick(ro, "IOB"),
             cPoloha = pick(ro, "POLOHA"),
             cTpi = pick(ro, "COBJEKT_TPI"),
@@ -267,6 +368,7 @@ object PasportSqliteLoader {
         )
     }
 
+    /** Jen MT_SL — bez DISTINCT přes celou RO (to zamrzalo). */
     private fun loadStations(db: SQLiteDatabase, schema: DbSchema): List<Station> {
         val byUdu = linkedMapOf<String, Station>()
         db.rawQuery(
@@ -274,10 +376,9 @@ object PasportSqliteLoader {
             null,
         ).use { c ->
             while (c.moveToNext()) {
-                val repre = cell(c, schema.cRepre)
-                val raw = cell(c, schema.cJmeno)
-                val udu = normalizeUdu(repre)
-                if (udu.isEmpty() || raw.isNullOrBlank()) continue
+                val udu = normalizeUdu(cell(c, schema.cRepre))
+                val raw = cell(c, schema.cJmeno) ?: continue
+                if (udu.isEmpty()) continue
                 val jmeno = StationNameCleaner.clean(raw)
                 if (jmeno.isEmpty()) continue
                 val prev = byUdu[udu]
@@ -286,47 +387,7 @@ object PasportSqliteLoader {
                 }
             }
         }
-        // Doplň UDU, které jsou v RO, ale chybí v SL
-        db.rawQuery("""SELECT DISTINCT "${schema.cTudu}" FROM "$TABLE_RO"""", null).use { c ->
-            while (c.moveToNext()) {
-                val udu = normalizeUdu(cell(c, schema.cTudu))
-                if (udu.isNotEmpty() && udu !in byUdu) {
-                    byUdu[udu] = Station(udu = udu, jmeno = udu)
-                }
-            }
-        }
         return byUdu.values.sortedBy { it.jmeno.lowercase() }
-    }
-
-    private fun loadRowsForUdu(
-        db: SQLiteDatabase,
-        schema: DbSchema,
-        udu: String,
-    ): List<PasportClassifier.RawRow> {
-        val cols = listOfNotNull(
-            schema.cCobjekt, schema.cIob, schema.cPoloha, schema.cTpi, schema.cTudu,
-        )
-        val select = cols.joinToString(", ") { "\"$it\"" }
-        // TUDU může být delší — bereme prvních 5 znaků; zkus i přesnou shodu
-        val sql = """
-            SELECT $select FROM "$TABLE_RO"
-            WHERE substr(trim(CAST("${schema.cTudu}" AS TEXT)), 1, 5) = ?
-               OR trim(CAST("${schema.cTudu}" AS TEXT)) = ?
-        """.trimIndent()
-
-        val rows = mutableListOf<PasportClassifier.RawRow>()
-        db.rawQuery(sql, arrayOf(udu, udu)).use { c ->
-            while (c.moveToNext()) {
-                rows += PasportClassifier.RawRow(
-                    cobjekt = cell(c, schema.cCobjekt),
-                    iob = schema.cIob?.let { cell(c, it) },
-                    poloha = schema.cPoloha?.let { cell(c, it) },
-                    cobjektTpi = schema.cTpi?.let { cell(c, it) },
-                    udu = udu,
-                )
-            }
-        }
-        return rows
     }
 
     private fun cell(c: Cursor, column: String): String? {
@@ -339,7 +400,6 @@ object PasportSqliteLoader {
                 if (d == d.toLong().toDouble()) d.toLong().toString() else d.toString()
             }
             Cursor.FIELD_TYPE_STRING -> c.getString(idx)?.trim()?.takeIf { it.isNotEmpty() }
-            Cursor.FIELD_TYPE_BLOB -> null
             else -> c.getString(idx)?.trim()?.takeIf { it.isNotEmpty() }
         }
     }
