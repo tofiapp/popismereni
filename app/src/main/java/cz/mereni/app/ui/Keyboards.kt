@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -56,8 +57,15 @@ val KeyHeight: Dp = 56.dp
 val ChipHeight: Dp = 52.dp
 val FieldPanelHeight: Dp = 140.dp
 
-/** Speciální tokeny vždy v klávesnici výhybek. */
-val ExtraVyhybkaLabels = listOf("po vůz", "kkk")
+/** Speciální tokeny vždy v klávesnici výhybek (poslední dvě červené). */
+data class ExtraVyhybkaOption(val label: String, val color: Color)
+
+val ExtraVyhybkaOptions = listOf(
+    ExtraVyhybkaOption("po vůz", MereniColors.Vyhybka),
+    ExtraVyhybkaOption("kkk", MereniColors.Vyhybka),
+    ExtraVyhybkaOption("obsazeno", MereniColors.Danger),
+    ExtraVyhybkaOption("vyloučeno", MereniColors.Danger),
+)
 
 @Composable
 fun FieldKeyboard(
@@ -65,11 +73,13 @@ fun FieldKeyboard(
     pasportKeys: List<PasportKey>,
     hour: Int,
     minute: Int,
+    timeChosen: Boolean,
     onPasportKey: (PasportKey) -> Unit,
     onExtraLabel: (String) -> Unit,
     onHourChange: (Int) -> Unit,
     onMinuteChange: (Int) -> Unit,
     onUseNow: () -> Unit,
+    onClearTime: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -90,9 +100,11 @@ fun FieldKeyboard(
             ActiveField.CAS -> TimeKeyboard(
                 hour = hour,
                 minute = minute,
+                timeChosen = timeChosen,
                 onHourChange = onHourChange,
                 onMinuteChange = onMinuteChange,
                 onUseNow = onUseNow,
+                onClear = onClearTime,
             )
         }
     }
@@ -135,11 +147,12 @@ fun Pole2Keyboard(
             Modifier.weight(1f),
         )
         Column(
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
                 .fillMaxHeight()
-                .widthIn(min = 96.dp)
+                .widthIn(min = 104.dp)
+                .verticalScroll(rememberScrollState())
                 .padding(start = 4.dp),
         ) {
             Text(
@@ -148,12 +161,12 @@ fun Pole2Keyboard(
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold,
             )
-            ExtraVyhybkaLabels.forEach { label ->
+            ExtraVyhybkaOptions.forEach { opt ->
                 KeyRect(
-                    label = label,
-                    color = MereniColors.Vyhybka,
-                    onClick = { onExtraLabel(label) },
-                    minWidth = 92.dp,
+                    label = opt.label,
+                    color = opt.color,
+                    onClick = { onExtraLabel(opt.label) },
+                    minWidth = 100.dp,
                 )
             }
         }
@@ -206,8 +219,10 @@ private fun KeyboardHalf(
 }
 
 /**
- * Kolej s podkolejemi — klepnutí otevře picker (bez nápisu „hlavní“).
+ * Kolej s podkolejemi — velká karta jen pro číslo bez písmen;
+ * varianty s písmeny vedle sebe, šířka podle počtu.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun KolejKeyWithPicker(key: PasportKey, onKey: (PasportKey) -> Unit) {
     var open by remember(key.label) { mutableStateOf(false) }
@@ -217,42 +232,65 @@ private fun KolejKeyWithPicker(key: PasportKey, onKey: (PasportKey) -> Unit) {
         onClick = { open = true },
     )
     if (open) {
+        val children = key.children
         Dialog(onDismissRequest = { open = false }) {
             Column(
                 modifier = Modifier
-                    .widthIn(min = 280.dp, max = 420.dp)
+                    .widthIn(min = 300.dp, max = 520.dp)
                     .clip(RoundedCornerShape(14.dp))
                     .background(MereniColors.SurfaceAlt)
                     .padding(16.dp)
             ) {
                 Text(
-                    "Kolej ${key.label}",
+                    "Kolej ${key.cobjekt}",
                     color = MereniColors.Text,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 18.sp,
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 Column(
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 320.dp)
+                        .heightIn(max = 360.dp)
                         .verticalScroll(rememberScrollState())
                 ) {
+                    // Velká karta — jen varianta bez písmen (číslo koleje)
                     PickerOption(
-                        label = key.label,
+                        label = key.cobjekt,
                         color = MereniColors.Kolej,
+                        large = true,
+                        modifier = Modifier.fillMaxWidth(),
                     ) {
-                        onKey(key)
+                        onKey(key.copy(iob = null, children = emptyList()))
                         open = false
                     }
-                    key.children.forEach { child ->
-                        PickerOption(
-                            label = child.label,
-                            color = MereniColors.Kolej.copy(alpha = 0.88f),
-                        ) {
-                            onKey(child)
-                            open = false
+                    if (children.isNotEmpty()) {
+                        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                            val gap = 8.dp
+                            val perRow = when {
+                                children.size <= 2 -> children.size.coerceAtLeast(1)
+                                children.size == 3 -> 3
+                                else -> 3
+                            }
+                            val cellW = (maxWidth - gap * (perRow - 1)) / perRow
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(gap),
+                                verticalArrangement = Arrangement.spacedBy(gap),
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                children.forEach { child ->
+                                    PickerOption(
+                                        label = child.label,
+                                        color = MereniColors.Kolej.copy(alpha = 0.88f),
+                                        large = false,
+                                        modifier = Modifier.width(cellW),
+                                    ) {
+                                        onKey(child)
+                                        open = false
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -266,23 +304,31 @@ private fun KolejKeyWithPicker(key: PasportKey, onKey: (PasportKey) -> Unit) {
 }
 
 @Composable
-private fun PickerOption(label: String, color: Color, onClick: () -> Unit) {
+private fun PickerOption(
+    label: String,
+    color: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    large: Boolean = false,
+) {
+    val height = if (large) 72.dp else 52.dp
+    val fontSize = if (large) 26.sp else 18.sp
     Box(
         contentAlignment = Alignment.Center,
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(56.dp)
-            .clip(RoundedCornerShape(10.dp))
+        modifier = modifier
+            .height(height)
+            .clip(RoundedCornerShape(if (large) 12.dp else 10.dp))
             .background(color)
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = 12.dp)
     ) {
         Text(
             text = label,
             color = if (color.luminance() > 0.55f) MereniColors.Text else Color.White,
             fontWeight = FontWeight.SemiBold,
-            fontSize = 18.sp,
+            fontSize = fontSize,
             textAlign = TextAlign.Center,
+            maxLines = 1,
         )
     }
 }
@@ -291,9 +337,11 @@ private fun PickerOption(label: String, color: Color, onClick: () -> Unit) {
 fun TimeKeyboard(
     hour: Int,
     minute: Int,
+    timeChosen: Boolean,
     onHourChange: (Int) -> Unit,
     onMinuteChange: (Int) -> Unit,
     onUseNow: () -> Unit,
+    onClear: () -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxSize(),
@@ -302,16 +350,28 @@ fun TimeKeyboard(
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                text = "%02d:%02d".format(hour, minute),
-                color = MereniColors.Accent,
+                text = if (timeChosen) "%02d:%02d".format(hour, minute) else "—:—",
+                color = if (timeChosen) MereniColors.Accent else MereniColors.TextMuted,
                 fontSize = 64.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.Monospace,
                 letterSpacing = 2.sp,
             )
+            Text(
+                "čas je volitelný",
+                color = MereniColors.TextMuted,
+                fontSize = 12.sp,
+            )
             Spacer(modifier = Modifier.height(8.dp))
-            TextButton(onClick = onUseNow) {
-                Text("Nastavit teď", color = MereniColors.Accent, fontWeight = FontWeight.SemiBold)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = onUseNow) {
+                    Text("Nastavit teď", color = MereniColors.Accent, fontWeight = FontWeight.SemiBold)
+                }
+                if (timeChosen) {
+                    TextButton(onClick = onClear) {
+                        Text("Bez času", color = MereniColors.TextMuted)
+                    }
+                }
             }
         }
         Row(
@@ -406,6 +466,11 @@ fun colorFor(kind: PasportKind): Color = when (kind) {
     PasportKind.VYHYBKA -> MereniColors.Vyhybka
 }
 
+private val DangerExtraLabels = setOf("obsazeno", "vyloučeno")
+
+fun colorForToken(token: SelectedToken): Color =
+    if (token.label in DangerExtraLabels) MereniColors.Danger else colorFor(token.kind)
+
 /**
  * Barevný chip — šipky ‹ › jen v režimu přesunu.
  */
@@ -417,7 +482,7 @@ fun ChipToken(
     onMoveLeft: (() -> Unit)? = null,
     onMoveRight: (() -> Unit)? = null,
 ) {
-    val bg = colorFor(token.kind)
+    val bg = colorForToken(token)
     val fg = if (bg.luminance() > 0.55f) MereniColors.Text else Color.White
     Row(
         verticalAlignment = Alignment.CenterVertically,
