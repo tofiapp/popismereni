@@ -307,9 +307,9 @@ private fun KolejKeyWithPicker(key: PasportKey, onKey: (PasportKey) -> Unit) {
 private fun PickerOption(
     label: String,
     color: Color,
-    onClick: () -> Unit,
     modifier: Modifier = Modifier,
     large: Boolean = false,
+    onClick: () -> Unit,
 ) {
     val height = if (large) 72.dp else 52.dp
     val fontSize = if (large) 26.sp else 18.sp
