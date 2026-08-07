@@ -648,30 +648,32 @@ fun MereniApp(
                         minute = minute,
                         timeChosen = timeChosen,
                         onPasportKey = { key ->
-                            if (key.label in lockedLabels) return@onPasportKey
-                            val token = SelectedToken(
-                                id = nextId(),
-                                label = key.label,
-                                kind = key.kind,
-                                fromSlot = if (dualMode) activeSlot else 0,
-                            )
-                            when (activeField) {
-                                ActiveField.POLE1 -> pole1.add(token)
-                                ActiveField.POLE2 -> pole2.add(token)
-                                ActiveField.CAS -> Unit
+                            if (key.label !in lockedLabels) {
+                                val token = SelectedToken(
+                                    id = nextId(),
+                                    label = key.label,
+                                    kind = key.kind,
+                                    fromSlot = if (dualMode) activeSlot else 0,
+                                )
+                                when (activeField) {
+                                    ActiveField.POLE1 -> pole1.add(token)
+                                    ActiveField.POLE2 -> pole2.add(token)
+                                    ActiveField.CAS -> Unit
+                                }
                             }
                         },
                         onExtraLabel = { label ->
-                            if (label in lockedLabels) return@onExtraLabel
-                            pole2.add(
-                                SelectedToken(
-                                    id = nextId(),
-                                    label = label,
-                                    kind = PasportKind.VYHYBKA,
-                                    fromSlot = if (dualMode) activeSlot else 0,
+                            if (label !in lockedLabels) {
+                                pole2.add(
+                                    SelectedToken(
+                                        id = nextId(),
+                                        label = label,
+                                        kind = PasportKind.VYHYBKA,
+                                        fromSlot = if (dualMode) activeSlot else 0,
+                                    )
                                 )
-                            )
-                            activeField = ActiveField.POLE2
+                                activeField = ActiveField.POLE2
+                            }
                         },
                         onHourChange = { hour = it; timeChosen = true },
                         onMinuteChange = { minute = it; timeChosen = true },
@@ -694,24 +696,22 @@ fun MereniApp(
             },
             onDismiss = { customDialogFor = null },
             onConfirm = { label ->
-                if (label in lockedLabels) {
-                    customDialogFor = null
-                    return@onConfirm
-                }
-                val token = SelectedToken(
-                    id = nextId(),
-                    label = label,
-                    kind = when (customDialogFor) {
-                        ActiveField.POLE2 -> PasportKind.VYHYBKA
-                        else -> PasportKind.KOLEJ
-                    },
-                    custom = true,
-                    fromSlot = if (dualMode) activeSlot else 0,
-                )
-                when (customDialogFor) {
-                    ActiveField.POLE1 -> pole1.add(token)
-                    ActiveField.POLE2 -> pole2.add(token)
-                    else -> Unit
+                if (label !in lockedLabels) {
+                    val token = SelectedToken(
+                        id = nextId(),
+                        label = label,
+                        kind = when (customDialogFor) {
+                            ActiveField.POLE2 -> PasportKind.VYHYBKA
+                            else -> PasportKind.KOLEJ
+                        },
+                        custom = true,
+                        fromSlot = if (dualMode) activeSlot else 0,
+                    )
+                    when (customDialogFor) {
+                        ActiveField.POLE1 -> pole1.add(token)
+                        ActiveField.POLE2 -> pole2.add(token)
+                        else -> Unit
+                    }
                 }
             },
         )
