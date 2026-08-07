@@ -157,7 +157,7 @@ private fun KeyboardHalf(
         )
         if (keys.isEmpty()) {
             Text(
-                text = "Žádná data — nahraj DZS_PASPORT_TPI.sqlite",
+                text = "Pro tuto stanici žádné položky",
                 color = MereniColors.TextMuted,
                 fontSize = 12.sp,
             )
@@ -470,10 +470,19 @@ fun StationSearchPicker(
 ) {
     var open by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
-    val filtered = remember(stations, query) {
+
+    // Předpočítané lowercase jména — hledání O(n) bez opakovaného lowercase
+    val indexed = remember(stations) {
+        stations.map { it to it.jmeno.lowercase() }
+    }
+    val filtered = remember(indexed, query) {
         val q = query.trim().lowercase()
-        if (q.isEmpty()) stations
-        else stations.filter { it.jmeno.lowercase().contains(q) }
+        if (q.length < 2) emptyList()
+        else indexed.asSequence()
+            .filter { (_, name) -> name.contains(q) }
+            .take(40)
+            .map { it.first }
+            .toList()
     }
 
     Column(modifier = modifier) {
@@ -490,7 +499,7 @@ fun StationSearchPicker(
                 modifier = Modifier
                     .height(KeyHeight)
                     .weight(1f, fill = false)
-                    .width(240.dp)
+                    .width(260.dp)
                     .clip(RoundedCornerShape(8.dp))
                     .background(MereniColors.Surface)
                     .border(1.dp, MereniColors.Accent.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
@@ -501,7 +510,7 @@ fun StationSearchPicker(
                     .padding(horizontal = 14.dp)
             ) {
                 Text(
-                    text = selected?.jmeno ?: "hledej stanici",
+                    text = selected?.jmeno ?: "napiš aspoň 2 písmena…",
                     color = if (selected == null) MereniColors.TextMuted else MereniColors.Text,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
@@ -546,51 +555,57 @@ fun StationSearchPicker(
                     },
                 )
                 Spacer(modifier = Modifier.height(8.dp))
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(160.dp)
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    if (stations.isEmpty()) {
-                        Text(
-                            text = "Stanice se načtou z DZS_SUPER_MT_SL",
-                            color = MereniColors.TextMuted,
-                            fontSize = 12.sp,
-                        )
-                    } else if (filtered.isEmpty()) {
-                        Text(
-                            text = "Nic nenalezeno",
-                            color = MereniColors.TextMuted,
-                            fontSize = 12.sp,
-                        )
-                    } else {
-                        filtered.forEach { station ->
-                            val isSelected = station.udu == selected?.udu
-                            Box(
-                                contentAlignment = Alignment.CenterStart,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(KeyHeight)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(
-                                        if (isSelected) MereniColors.AccentDark
-                                        else MereniColors.Surface
+                when {
+                    stations.isEmpty() -> Text(
+                        text = "Žádné stanice — zkontroluj DZS_PASPORT_TPI.sqlite",
+                        color = MereniColors.TextMuted,
+                        fontSize = 12.sp,
+                    )
+                    query.trim().length < 2 -> Text(
+                        text = "Napiš aspoň 2 písmena (${stations.size} stanic)",
+                        color = MereniColors.TextMuted,
+                        fontSize = 12.sp,
+                    )
+                    filtered.isEmpty() -> Text(
+                        text = "Nic nenalezeno",
+                        color = MereniColors.TextMuted,
+                        fontSize = 12.sp,
+                    )
+                    else -> {
+                        androidx.compose.foundation.lazy.LazyColumn(
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(180.dp)
+                        ) {
+                            items(filtered.size) { index ->
+                                val station = filtered[index]
+                                val isSelected = station.udu == selected?.udu
+                                Box(
+                                    contentAlignment = Alignment.CenterStart,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(KeyHeight)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(
+                                            if (isSelected) MereniColors.AccentDark
+                                            else MereniColors.Surface
+                                        )
+                                        .clickable {
+                                            onSelect(station)
+                                            open = false
+                                            query = ""
+                                        }
+                                        .padding(horizontal = 12.dp)
+                                ) {
+                                    Text(
+                                        text = station.jmeno,
+                                        color = MereniColors.Text,
+                                        fontWeight = FontWeight.Medium,
+                                        fontSize = 15.sp,
+                                        maxLines = 1,
                                     )
-                                    .clickable {
-                                        onSelect(station)
-                                        open = false
-                                        query = ""
-                                    }
-                                    .padding(horizontal = 12.dp)
-                            ) {
-                                Text(
-                                    text = station.jmeno,
-                                    color = MereniColors.Text,
-                                    fontWeight = FontWeight.Medium,
-                                    fontSize = 15.sp,
-                                )
+                                }
                             }
                         }
                     }
@@ -600,19 +615,4 @@ fun StationSearchPicker(
     }
 }
 
-/** @deprecated nahrazeno StationSearchPicker */
-@Composable
-fun UduPicker(
-    options: List<String>,
-    selected: String?,
-    onSelect: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    // ponecháno prázdné kvůli kompatibilitě — nepoužívat
-    StationSearchPicker(
-        stations = options.map { cz.mereni.app.data.Station(udu = it, jmeno = it) },
-        selected = selected?.let { cz.mereni.app.data.Station(udu = it, jmeno = it) },
-        onSelect = { onSelect(it.udu) },
-        modifier = modifier,
-    )
-}
+

@@ -1,31 +1,24 @@
 # Měření
 
-Tabletová aplikace pro zapisování měření. Tři horní pole + vyhledávání stanice;
-záznam se ukládá do CSV.
+**v0.5.0** — pasport ze zařízení, rychlé hledání stanic, klávesy podle UDU.
 
-**Aktuální verze: `v0.4.0`** ([`VERSION`](VERSION), [`VERSIONING.md`](VERSIONING.md)).
+## Pasport na tabletu
 
-## Pasport na zařízení
+Aplikace **sama hledá** `DZS_PASPORT_TPI.sqlite` v Download/Documents (a MediaStore).
+Najde-li ho, zkopíruje si ho a čte z něj stanice + klávesy.
 
-Aplikace čte **`DZS_PASPORT_TPI.sqlite` přímo ze tabletu** (ne z Gitu).
+1. Dej soubor do `Download/`
+2. Spusť aplikaci (případně povol přístup k úložišti)
+3. Vyhledej stanici (min. 2 písmena) → načtou se koleje/spojky/výhybky jen pro ni
 
-1. Soubor dej do `Download/` / `Documents/`, **nebo**
-2. V aplikaci klepni **Vybrat SQLite** a vyber soubor (cesta se zapamatuje).
-3. **Obnovit** znovu načte DB (po aktualizaci pasportu na zařízení).
+Tlačítka **Vybrat** / **Obnovit** jsou záloha.
 
-Tabulky:
-- `DZS_SUPER_RO_TPI` — objekty, `TUDU` (UDU = prvních 5 znaků)
-- `DZS_SUPER_MT_SL` — `REPRE_TUDU` + `JMENO` (picker bez `žst.` / `odb.` / `z.`)
+## Data
 
-JSON v assets je jen nouzové demo, když SQLite na zařízení chybí.
+- `DZS_SUPER_RO_TPI.TUDU` → UDU = prvních 5 znaků
+- `DZS_SUPER_MT_SL.REPRE_TUDU` + `JMENO` (bez `žst.` / `odb.` / `z.`)
+- Klávesy se načítají SQL filtrem podle UDU (ne celá DB najednou)
 
-## Obrazovka
+## APK
 
-- **Stanice** — vyhledávání podle JMENO
-- **Pole 1** — koleje | spojky
-- **Pole 2** — výhybky
-- **Pole 3** — čas (Teď, ±, wheel)
-
-## Aktualizace APK
-
-`applicationId` = `cz.mereni.app` → `adb install -r …mereni-v0.4.0-debug.apk`
+`adb install -r …mereni-v0.5.0-debug.apk` (`applicationId` = `cz.mereni.app`)
