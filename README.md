@@ -1,12 +1,11 @@
-# Měření v0.17.0
+# Měření v0.18.0
 
 ## Aktualizace
 ```bash
-adb install -r artifacts/mereni-v0.17.0-debug.apk
+adb install -r artifacts/mereni-v0.18.0-debug.apk
 ```
 
-## UI v0.17.0
-- Verze a mereni.csv ve ⚙ nastavení
-- Kategorie uprostřed mezi vyhledávači
-- Dual stanice: ve výsledcích **+ 2** otevře druhý vyhledávač (teplá hlína); překlikávání zdroje kláves; kombinace v polích
-- Čas barevný jen při výběru
+## UI v0.18.0
+- Dual: atributy z 2. vyhledávače mají okraj barvy 2. měření (hlína)
+- Zašednutí hned po vložení do horních polí — nelze znovu přidat
+- Po uložení zůstanou zašedlé, ale jdou znovu přidat

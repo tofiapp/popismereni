@@ -59,10 +59,10 @@ class MeasurementStore(context: Context) {
     }
 
     /**
-     * Popisky z [pole1] (koleje/spojky) už uložené pro dané UDU —
-     * tokeny oddělené mezerou, např. `12 12A 3X`.
+     * Popisky už uložené pro dané UDU (nebo dual řádek `A+B` obsahující UDU) —
+     * z [pole1] (mezery) i [pole2] (` - `). Po uložení zůstávají zašedlé, ale jdou znovu přidat.
      */
-    fun usedPole1LabelsForUdu(udu: String): Set<String> {
+    fun usedLabelsForUdu(udu: String): Set<String> {
         val want = udu.trim()
         if (want.isEmpty() || !csvFile.exists()) return emptySet()
         val out = linkedSetOf<String>()
@@ -72,13 +72,30 @@ class MeasurementStore(context: Context) {
             .forEach { line ->
                 val cols = splitCsvLine(line)
                 if (cols.size < 3) return@forEach
-                if (cols[1].trim() != want) return@forEach
+                if (!uduMatches(cols[1].trim(), want)) return@forEach
                 cols[2].trim()
                     .split(Regex("\\s+"))
                     .filter { it.isNotEmpty() }
                     .forEach { out.add(it) }
+                if (cols.size >= 4) {
+                    cols[3].trim()
+                        .split(" - ")
+                        .map { it.trim() }
+                        .filter { it.isNotEmpty() }
+                        .forEach { out.add(it) }
+                }
             }
         return out
+    }
+
+    /** @deprecated použij [usedLabelsForUdu] */
+    fun usedPole1LabelsForUdu(udu: String): Set<String> = usedLabelsForUdu(udu)
+
+    /** Přesná shoda nebo dual `A+B` / `B+A`. */
+    private fun uduMatches(rowUdu: String, want: String): Boolean {
+        if (rowUdu == want) return true
+        if ('+' !in rowUdu) return false
+        return rowUdu.split('+').any { it.trim() == want }
     }
 
     companion object {
