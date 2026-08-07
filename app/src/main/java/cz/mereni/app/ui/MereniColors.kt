@@ -14,14 +14,14 @@ object MereniColors {
     val AccentDark = Color(0xFF08553C)
     val Danger = Color(0xFFB33A3A)
 
-    /** Spojka (X/S) */
-    val Spojka = Color(0xFF2A5F8A)
+    /** Spojka (X/S) — měděná */
+    val Spojka = Color(0xFFB85A2A)
 
-    /** Kolej */
-    val Kolej = Color(0xFF2F7A5B)
+    /** Kolej — ocelová modrá */
+    val Kolej = Color(0xFF2A5F8A)
 
-    /** Výhybka */
-    val Vyhybka = Color(0xFFB85A2A)
+    /** Výhybka — lesní zelená */
+    val Vyhybka = Color(0xFF2F7A5B)
 
     val ChipBg = Color(0xFFFFFFFF)
     val ChipText = Color(0xFF152033)
