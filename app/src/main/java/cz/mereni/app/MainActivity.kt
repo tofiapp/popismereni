@@ -63,13 +63,12 @@ import cz.mereni.app.data.PasportRepository
 import cz.mereni.app.data.PasportSqliteLoader
 import cz.mereni.app.data.SelectedToken
 import cz.mereni.app.data.Station
+import cz.mereni.app.ui.ActiveFieldCaption
 import cz.mereni.app.ui.ChipRow
 import cz.mereni.app.ui.FieldKeyboard
 import cz.mereni.app.ui.FieldPanel
 import cz.mereni.app.ui.MereniColors
 import cz.mereni.app.ui.PasportSettingsButton
-import cz.mereni.app.ui.Pole1Placeholder
-import cz.mereni.app.ui.Pole2Placeholder
 import cz.mereni.app.ui.StationSearchPicker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -128,6 +127,11 @@ class MainActivity : ComponentActivity() {
                     store.append(udu, pole1, pole2, cas, poznamka)
                     store.count()
                 },
+                onUsedPole1Labels = { udu ->
+                    withContext(Dispatchers.IO) {
+                        store.usedPole1LabelsForUdu(udu)
+                    }
+                },
                 onPersistUri = { uri ->
                     try {
                         contentResolver.takePersistableUriPermission(
@@ -160,6 +164,7 @@ fun MereniApp(
     onLoadChange: (PasportLoadResult) -> Unit,
     initialCount: Int,
     onSave: (udu: String, pole1: String, pole2: String, casMereni: String, poznamka: String) -> Int,
+    onUsedPole1Labels: suspend (String) -> Set<String>,
     onPersistUri: suspend (Uri) -> PasportLoadResult,
     onReload: suspend () -> PasportLoadResult,
     onKeysForStation: suspend (Station?, List<PasportKey>) -> List<PasportKey>,
@@ -179,6 +184,17 @@ fun MereniApp(
     var recordCount by remember { mutableIntStateOf(initialCount) }
     var reorderPole1 by remember { mutableStateOf(false) }
     var reorderPole2 by remember { mutableStateOf(false) }
+    var usedPole1Labels by remember { mutableStateOf<Set<String>>(emptySet()) }
+
+    fun refreshUsedLabels(udu: String?) {
+        if (udu.isNullOrBlank()) {
+            usedPole1Labels = emptySet()
+            return
+        }
+        scope.launch {
+            usedPole1Labels = onUsedPole1Labels(udu)
+        }
+    }
 
     val now = remember { Calendar.getInstance() }
     var hour by remember { mutableIntStateOf(now.get(Calendar.HOUR_OF_DAY)) }
@@ -200,6 +216,7 @@ fun MereniApp(
         note = ""
         reorderPole1 = false
         reorderPole2 = false
+        usedPole1Labels = emptySet()
         pasportLoading = false
         pasportLoadingMsg = ""
     }
@@ -212,6 +229,7 @@ fun MereniApp(
         reorderPole2 = false
         keysLoading = true
         stationKeys = emptyList()
+        refreshUsedLabels(station.udu)
         scope.launch {
             val keys = onKeysForStation(station, pasport.keys)
             stationKeys = keys
@@ -320,6 +338,8 @@ fun MereniApp(
                     selected = selectedStation,
                     onSelect = { selectStation(it) },
                 )
+                Spacer(modifier = Modifier.width(14.dp))
+                ActiveFieldCaption(activeField = activeField)
                 Spacer(modifier = Modifier.weight(1f))
                 Text(
                     text = "mereni.csv • $recordCount",
@@ -373,11 +393,7 @@ fun MereniApp(
                     onReorderToggle = { reorderPole1 = !reorderPole1 },
                 ) {
                     if (pole1.isEmpty()) {
-                        if (activeField == ActiveField.POLE1) {
-                            Pole1Placeholder()
-                        } else {
-                            Text("Koleje", color = MereniColors.Kolej.copy(alpha = 0.55f), fontSize = 14.sp)
-                        }
+                        Text("klepni klávesu", color = MereniColors.TextMuted, fontSize = 13.sp)
                     } else {
                         ScrollableChips(
                             items = pole1,
@@ -396,11 +412,7 @@ fun MereniApp(
                     onReorderToggle = { reorderPole2 = !reorderPole2 },
                 ) {
                     if (pole2.isEmpty()) {
-                        if (activeField == ActiveField.POLE2) {
-                            Pole2Placeholder()
-                        } else {
-                            Text("od, do", color = MereniColors.Vyhybka.copy(alpha = 0.55f), fontSize = 14.sp)
-                        }
+                        Text("klepni klávesu", color = MereniColors.TextMuted, fontSize = 13.sp)
                     } else {
                         ScrollableChips(
                             items = pole2,
@@ -428,14 +440,11 @@ fun MereniApp(
                         )
                     } else {
                         Text(
-                            text = "čas (volitelně)",
-                            color = if (activeField == ActiveField.CAS) {
-                                MereniColors.Accent
-                            } else {
-                                MereniColors.Accent.copy(alpha = 0.55f)
-                            },
-                            fontSize = if (activeField == ActiveField.CAS) 16.sp else 13.sp,
+                            text = "—:—",
+                            color = MereniColors.TextMuted,
+                            fontSize = 22.sp,
                             fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
                             textAlign = TextAlign.Center,
                             modifier = Modifier.fillMaxWidth(),
                         )
@@ -476,14 +485,16 @@ fun MereniApp(
                     onClick = {
                         val cas = if (timeChosen) timeLabel() else ""
                         if (pole1.isNotEmpty() || pole2.isNotEmpty() || cas.isNotBlank() || note.isNotBlank()) {
+                            val udu = selectedStation?.udu.orEmpty()
                             recordCount = onSave(
-                                selectedStation?.udu.orEmpty(),
+                                udu,
                                 pole1.joinToString(" ") { it.label },
                                 pole2.joinToString(" ") { it.label },
                                 cas,
                                 note.trim(),
                             )
                             clearAll()
+                            refreshUsedLabels(udu)
                         }
                     },
                     colors = ButtonDefaults.buttonColors(
@@ -541,6 +552,7 @@ fun MereniApp(
                     FieldKeyboard(
                         activeField = activeField,
                         pasportKeys = stationKeys,
+                        usedPole1Labels = usedPole1Labels,
                         hour = hour,
                         minute = minute,
                         timeChosen = timeChosen,

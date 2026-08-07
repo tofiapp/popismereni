@@ -71,6 +71,7 @@ val ExtraVyhybkaOptions = listOf(
 fun FieldKeyboard(
     activeField: ActiveField,
     pasportKeys: List<PasportKey>,
+    usedPole1Labels: Set<String>,
     hour: Int,
     minute: Int,
     timeChosen: Boolean,
@@ -91,7 +92,11 @@ fun FieldKeyboard(
             .padding(10.dp)
     ) {
         when (activeField) {
-            ActiveField.POLE1 -> Pole1Keyboard(keys = pasportKeys, onKey = onPasportKey)
+            ActiveField.POLE1 -> Pole1Keyboard(
+                keys = pasportKeys,
+                usedLabels = usedPole1Labels,
+                onKey = onPasportKey,
+            )
             ActiveField.POLE2 -> Pole2Keyboard(
                 keys = pasportKeys,
                 onKey = onPasportKey,
@@ -111,21 +116,40 @@ fun FieldKeyboard(
 }
 
 @Composable
-fun Pole1Keyboard(keys: List<PasportKey>, onKey: (PasportKey) -> Unit) {
+fun Pole1Keyboard(
+    keys: List<PasportKey>,
+    usedLabels: Set<String>,
+    onKey: (PasportKey) -> Unit,
+) {
     val koleje = keys.filter { it.kind == PasportKind.KOLEJ }
     val spojky = keys.filter { it.kind == PasportKind.SPOJKA }
     Row(
         modifier = Modifier.fillMaxSize(),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        KeyboardHalf("Koleje", MereniColors.Kolej, koleje, onKey, Modifier.weight(1f), kolejMode = true)
+        KeyboardHalf(
+            "Koleje",
+            MereniColors.Kolej,
+            koleje,
+            onKey,
+            Modifier.weight(1f),
+            kolejMode = true,
+            usedLabels = usedLabels,
+        )
         Box(
             Modifier
                 .width(1.dp)
                 .fillMaxHeight()
                 .background(MereniColors.Accent.copy(alpha = 0.35f))
         )
-        KeyboardHalf("Spojky", MereniColors.Spojka, spojky, onKey, Modifier.weight(1f))
+        KeyboardHalf(
+            "Spojky",
+            MereniColors.Spojka,
+            spojky,
+            onKey,
+            Modifier.weight(1f),
+            usedLabels = usedLabels,
+        )
     }
 }
 
@@ -155,12 +179,6 @@ fun Pole2Keyboard(
                 .verticalScroll(rememberScrollState())
                 .padding(start = 4.dp),
         ) {
-            Text(
-                "stálé",
-                color = MereniColors.TextMuted,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
             ExtraVyhybkaOptions.forEach { opt ->
                 KeyRect(
                     label = opt.label,
@@ -182,6 +200,7 @@ private fun KeyboardHalf(
     onKey: (PasportKey) -> Unit,
     modifier: Modifier = Modifier,
     kolejMode: Boolean = false,
+    usedLabels: Set<String> = emptySet(),
 ) {
     Column(modifier = modifier) {
         Text(
@@ -204,11 +223,16 @@ private fun KeyboardHalf(
             ) {
                 keys.forEach { key ->
                     if (kolejMode && key.hasExpandableChildren) {
-                        KolejKeyWithPicker(key = key, onKey = onKey)
+                        KolejKeyWithPicker(
+                            key = key,
+                            usedLabels = usedLabels,
+                            onKey = onKey,
+                        )
                     } else {
                         KeyRect(
                             label = key.label,
                             color = colorFor(key.kind),
+                            used = key.label in usedLabels,
                             onClick = { onKey(key) },
                         )
                     }
@@ -221,14 +245,23 @@ private fun KeyboardHalf(
 /**
  * Kolej s podkolejemi — velká karta jen pro číslo bez písmen;
  * varianty s písmeny vedle sebe, šířka podle počtu.
+ * Už uložené v CSV jsou zašedlé, ale typ zůstává rozlišitelný (modrý okraj).
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun KolejKeyWithPicker(key: PasportKey, onKey: (PasportKey) -> Unit) {
+private fun KolejKeyWithPicker(
+    key: PasportKey,
+    usedLabels: Set<String>,
+    onKey: (PasportKey) -> Unit,
+) {
     var open by remember(key.label) { mutableStateOf(false) }
+    val mainUsed = key.cobjekt in usedLabels
+    val allChildrenUsed = key.children.isNotEmpty() && key.children.all { it.label in usedLabels }
+    val keyUsed = mainUsed && (key.children.isEmpty() || allChildrenUsed)
     KeyRect(
         label = "${key.label} ▾",
         color = colorFor(key.kind),
+        used = keyUsed,
         onClick = { open = true },
     )
     if (open) {
@@ -260,6 +293,7 @@ private fun KolejKeyWithPicker(key: PasportKey, onKey: (PasportKey) -> Unit) {
                         label = key.cobjekt,
                         color = MereniColors.Kolej,
                         large = true,
+                        used = mainUsed,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         onKey(key.copy(iob = null, children = emptyList()))
@@ -270,7 +304,6 @@ private fun KolejKeyWithPicker(key: PasportKey, onKey: (PasportKey) -> Unit) {
                             val gap = 8.dp
                             val perRow = when {
                                 children.size <= 2 -> children.size.coerceAtLeast(1)
-                                children.size == 3 -> 3
                                 else -> 3
                             }
                             val cellW = (maxWidth - gap * (perRow - 1)) / perRow
@@ -284,6 +317,7 @@ private fun KolejKeyWithPicker(key: PasportKey, onKey: (PasportKey) -> Unit) {
                                         label = child.label,
                                         color = MereniColors.Kolej.copy(alpha = 0.88f),
                                         large = false,
+                                        used = child.label in usedLabels,
                                         modifier = Modifier.width(cellW),
                                     ) {
                                         onKey(child)
@@ -309,22 +343,35 @@ private fun PickerOption(
     color: Color,
     modifier: Modifier = Modifier,
     large: Boolean = false,
+    used: Boolean = false,
     onClick: () -> Unit,
 ) {
     val height = if (large) 72.dp else 52.dp
     val fontSize = if (large) 26.sp else 18.sp
+    val bg = if (used) MereniColors.UsedKeyBg else color
+    val fg = if (used) {
+        color.copy(alpha = 0.9f)
+    } else if (color.luminance() > 0.55f) {
+        MereniColors.Text
+    } else {
+        Color.White
+    }
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier
             .height(height)
             .clip(RoundedCornerShape(if (large) 12.dp else 10.dp))
-            .background(color)
+            .background(bg)
+            .then(
+                if (used) Modifier.border(2.dp, color.copy(alpha = 0.85f), RoundedCornerShape(if (large) 12.dp else 10.dp))
+                else Modifier
+            )
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp)
     ) {
         Text(
             text = label,
-            color = if (color.luminance() > 0.55f) MereniColors.Text else Color.White,
+            color = fg,
             fontWeight = FontWeight.SemiBold,
             fontSize = fontSize,
             textAlign = TextAlign.Center,
@@ -439,20 +486,32 @@ fun KeyRect(
     color: Color,
     onClick: () -> Unit,
     minWidth: Dp = 0.dp,
+    used: Boolean = false,
 ) {
+    // Zašedlé = už v CSV, ale typ (kolej/spojka) zůstává podle barvy okraje a textu.
+    val bg = if (used) MereniColors.UsedKeyBg else color
+    val fg = if (used) {
+        color.copy(alpha = 0.9f)
+    } else if (color.luminance() > 0.55f) {
+        MereniColors.Text
+    } else {
+        Color.White
+    }
+    val shape = RoundedCornerShape(6.dp)
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier
             .height(KeyHeight)
             .then(if (minWidth > 0.dp) Modifier.widthIn(min = minWidth) else Modifier)
-            .clip(RoundedCornerShape(6.dp))
-            .background(color)
+            .clip(shape)
+            .background(bg)
+            .then(if (used) Modifier.border(2.dp, color.copy(alpha = 0.85f), shape) else Modifier)
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp)
     ) {
         Text(
             text = label,
-            color = if (color.luminance() > 0.55f) MereniColors.Text else Color.White,
+            color = fg,
             fontWeight = FontWeight.SemiBold,
             fontSize = 15.sp,
             textAlign = TextAlign.Center,
@@ -625,53 +684,30 @@ fun FieldPanel(
     }
 }
 
-/** Placeholder v 1. poli — Koleje / spojky ve svých barvách. */
+/** Nápis aktivního pole nahoře vedle pickeru stanice. */
 @Composable
-fun Pole1Placeholder() {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Text(
-            "Koleje",
-            color = MereniColors.Kolej,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold,
-        )
-        Text(
-            "a",
-            color = MereniColors.TextMuted,
+fun ActiveFieldCaption(activeField: ActiveField) {
+    when (activeField) {
+        ActiveField.POLE1 -> Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text("Koleje", color = MereniColors.Kolej, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Text("a", color = MereniColors.TextMuted, fontSize = 14.sp)
+            Text("spojky", color = MereniColors.Spojka, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        }
+        ActiveField.POLE2 -> Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text("od", color = MereniColors.Vyhybka, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Text(",", color = MereniColors.TextMuted, fontSize = 14.sp)
+            Text("do", color = MereniColors.Vyhybka, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        }
+        ActiveField.CAS -> Text(
+            "čas",
+            color = MereniColors.Accent,
             fontSize = 16.sp,
-        )
-        Text(
-            "spojky",
-            color = MereniColors.Spojka,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold,
-        )
-    }
-}
-
-/** Placeholder v 2. poli — od / do. */
-@Composable
-fun Pole2Placeholder() {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Text(
-            "od",
-            color = MereniColors.Vyhybka,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold,
-        )
-        Text(",", color = MereniColors.TextMuted, fontSize = 18.sp)
-        Text(
-            "do",
-            color = MereniColors.Vyhybka,
-            fontSize = 20.sp,
             fontWeight = FontWeight.Bold,
         )
     }
