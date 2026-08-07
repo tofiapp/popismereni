@@ -1,9 +1,13 @@
 package cz.mereni.app
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -20,6 +24,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -32,12 +37,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cz.mereni.app.data.MeasurementStore
 import cz.mereni.app.data.PasportData
 import cz.mereni.app.data.PasportKey
+import cz.mereni.app.data.PasportLoadResult
 import cz.mereni.app.data.PasportRepository
+import cz.mereni.app.data.PasportSqliteLoader
 import cz.mereni.app.data.Station
 import cz.mereni.app.ui.ChipToken
 import cz.mereni.app.ui.FieldKeyboard
@@ -53,15 +61,29 @@ class MainActivity : ComponentActivity() {
         val store = MeasurementStore(this)
         store.ensureHeader()
         val version = BuildConfig.VERSION_NAME
-        val pasport = PasportRepository.load(this, version)
+        val initial = PasportRepository.load(this, version)
         setContent {
             MereniApp(
                 appVersion = version,
-                pasport = pasport,
+                initialLoad = initial,
                 initialCount = store.count(),
                 onSave = { udu, pole1, pole2, cas ->
                     store.append(udu, pole1, pole2, cas)
                     store.count()
+                },
+                onPersistUri = { uri ->
+                    try {
+                        contentResolver.takePersistableUriPermission(
+                            uri,
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                        )
+                    } catch (_: SecurityException) {
+                        // některé providery persist nepodporují — stačí jednorázové načtení
+                    }
+                    PasportRepository.loadFromUri(this, uri)
+                },
+                onReload = {
+                    PasportRepository.reload(this, version)
                 },
             )
         }
@@ -71,12 +93,18 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MereniApp(
     appVersion: String,
-    pasport: PasportData,
+    initialLoad: PasportLoadResult,
     initialCount: Int,
     onSave: (udu: String, pole1: String, pole2: String, casMereni: String) -> Int,
+    onPersistUri: (Uri) -> PasportLoadResult,
+    onReload: () -> PasportLoadResult,
 ) {
+    var load by remember { mutableStateOf(initialLoad) }
+    var pasport by remember { mutableStateOf(initialLoad.data) }
     var activeField by remember { mutableStateOf(ActiveField.POLE1) }
-    var selectedStation by remember { mutableStateOf<Station?>(pasport.stations.firstOrNull()) }
+    var selectedStation by remember {
+        mutableStateOf<Station?>(initialLoad.data.stations.firstOrNull())
+    }
     val pole1 = remember { mutableStateListOf<String>() }
     val pole2 = remember { mutableStateListOf<String>() }
     var recordCount by remember { mutableIntStateOf(initialCount) }
@@ -85,6 +113,31 @@ fun MereniApp(
     var hour by remember { mutableIntStateOf(now.get(Calendar.HOUR_OF_DAY)) }
     var minute by remember { mutableIntStateOf(now.get(Calendar.MINUTE)) }
     var timeChosen by remember { mutableStateOf(false) }
+
+    fun applyLoad(result: PasportLoadResult) {
+        load = result
+        pasport = result.data
+        selectedStation = result.data.stations.firstOrNull()
+        pole1.clear()
+        pole2.clear()
+    }
+
+    val pickPasport = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri: Uri? ->
+        if (uri != null) {
+            runCatching { onPersistUri(uri) }
+                .onSuccess { applyLoad(it) }
+                .onFailure { e ->
+                    load = PasportLoadResult(
+                        data = pasport,
+                        fromDeviceSqlite = false,
+                        sourceLabel = uri.toString(),
+                        error = e.message ?: "Nepodařilo se načíst SQLite",
+                    )
+                }
+        }
+    }
 
     fun useNow() {
         val c = Calendar.getInstance()
@@ -139,7 +192,7 @@ fun MereniApp(
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
                 )
-                Spacer(modifier = Modifier.width(16.dp))
+                Spacer(modifier = Modifier.width(12.dp))
                 StationSearchPicker(
                     stations = pasport.stations,
                     selected = selectedStation,
@@ -157,7 +210,52 @@ fun MereniApp(
                 )
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    text = when {
+                        load.fromDeviceSqlite -> "Pasport: ${PasportSqliteLoader.DB_FILE_NAME}"
+                        else -> "Pasport: není napojený na zařízení"
+                    },
+                    color = if (load.fromDeviceSqlite) MereniColors.Kolej else MereniColors.Danger,
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = {
+                    pickPasport.launch(
+                        arrayOf(
+                            "application/octet-stream",
+                            "application/x-sqlite3",
+                            "application/vnd.sqlite3",
+                            "*/*",
+                        )
+                    )
+                }) {
+                    Text("Vybrat SQLite", color = MereniColors.Accent, fontSize = 12.sp)
+                }
+                TextButton(onClick = {
+                    applyLoad(onReload())
+                }) {
+                    Text("Obnovit", color = MereniColors.TextMuted, fontSize = 12.sp)
+                }
+            }
+            if (load.error != null && !load.fromDeviceSqlite) {
+                Text(
+                    text = load.error ?: "",
+                    color = MereniColors.TextMuted,
+                    fontSize = 11.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
 
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
