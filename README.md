@@ -1,12 +1,11 @@
-# Měření v0.12.0
+# Měření v0.13.0
 
-## Aktualizace na tabletu
+## Aktualizace
 ```bash
-adb install -r artifacts/mereni-v0.12.0-debug.apk
+adb install -r artifacts/mereni-v0.13.0-debug.apk
 ```
 
-## UI v0.12.0
-- Nápisy **Koleje a spojky** / **od, do** / **čas** nahoře vedle pickeru stanice (ne v kartičkách)
-- U výhybek bez nápisu „stálé“
-- Koleje/spojky už v `mereni.csv` pro stanici: zašedlé, typ stále rozlišitelný (modrý / měděný okraj a text)
-- Čas volitelný; `obsazeno` / `vyloučeno` červeně
+## UI v0.13.0
+- Picker koleje: max **3 podkoleje** vedle sebe, další řady stejně
+- 2. pole (od/do): pomlčky **–** mezi obdélníky (i v CSV jako ` - `)
+- Tlačítko **+** v 1. a 2. poli → vlastní obdélníček (olivově hnědá barva)

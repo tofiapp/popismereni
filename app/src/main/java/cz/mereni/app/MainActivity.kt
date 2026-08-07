@@ -65,6 +65,7 @@ import cz.mereni.app.data.SelectedToken
 import cz.mereni.app.data.Station
 import cz.mereni.app.ui.ActiveFieldCaption
 import cz.mereni.app.ui.ChipRow
+import cz.mereni.app.ui.CustomTokenDialog
 import cz.mereni.app.ui.FieldKeyboard
 import cz.mereni.app.ui.FieldPanel
 import cz.mereni.app.ui.MereniColors
@@ -185,6 +186,7 @@ fun MereniApp(
     var reorderPole1 by remember { mutableStateOf(false) }
     var reorderPole2 by remember { mutableStateOf(false) }
     var usedPole1Labels by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var customDialogFor by remember { mutableStateOf<ActiveField?>(null) }
 
     fun refreshUsedLabels(udu: String?) {
         if (udu.isNullOrBlank()) {
@@ -391,6 +393,11 @@ fun MereniApp(
                     showReorderToggle = pole1.size > 1,
                     reorderMode = reorderPole1,
                     onReorderToggle = { reorderPole1 = !reorderPole1 },
+                    showAddButton = true,
+                    onAddClick = {
+                        activeField = ActiveField.POLE1
+                        customDialogFor = ActiveField.POLE1
+                    },
                 ) {
                     if (pole1.isEmpty()) {
                         Text("klepni klávesu", color = MereniColors.TextMuted, fontSize = 13.sp)
@@ -398,6 +405,7 @@ fun MereniApp(
                         ScrollableChips(
                             items = pole1,
                             reorderMode = reorderPole1,
+                            dashBetween = false,
                             onRemove = { pole1.removeAt(it) },
                             onMove = { from, to -> moveItem(pole1, from, to) },
                         )
@@ -410,6 +418,11 @@ fun MereniApp(
                     showReorderToggle = pole2.size > 1,
                     reorderMode = reorderPole2,
                     onReorderToggle = { reorderPole2 = !reorderPole2 },
+                    showAddButton = true,
+                    onAddClick = {
+                        activeField = ActiveField.POLE2
+                        customDialogFor = ActiveField.POLE2
+                    },
                 ) {
                     if (pole2.isEmpty()) {
                         Text("klepni klávesu", color = MereniColors.TextMuted, fontSize = 13.sp)
@@ -417,6 +430,7 @@ fun MereniApp(
                         ScrollableChips(
                             items = pole2,
                             reorderMode = reorderPole2,
+                            dashBetween = true,
                             onRemove = { pole2.removeAt(it) },
                             onMove = { from, to -> moveItem(pole2, from, to) },
                         )
@@ -489,7 +503,7 @@ fun MereniApp(
                             recordCount = onSave(
                                 udu,
                                 pole1.joinToString(" ") { it.label },
-                                pole2.joinToString(" ") { it.label },
+                                pole2.joinToString(" - ") { it.label },
                                 cas,
                                 note.trim(),
                             )
@@ -579,6 +593,32 @@ fun MereniApp(
                 }
             }
         }
+
+        CustomTokenDialog(
+            open = customDialogFor != null,
+            title = when (customDialogFor) {
+                ActiveField.POLE1 -> "Vlastní kolej / spojka"
+                ActiveField.POLE2 -> "Vlastní od / do"
+                else -> "Vlastní hodnota"
+            },
+            onDismiss = { customDialogFor = null },
+            onConfirm = { label ->
+                val token = SelectedToken(
+                    id = nextId(),
+                    label = label,
+                    kind = when (customDialogFor) {
+                        ActiveField.POLE2 -> PasportKind.VYHYBKA
+                        else -> PasportKind.KOLEJ
+                    },
+                    custom = true,
+                )
+                when (customDialogFor) {
+                    ActiveField.POLE1 -> pole1.add(token)
+                    ActiveField.POLE2 -> pole2.add(token)
+                    else -> Unit
+                }
+            },
+        )
     }
 }
 
@@ -587,6 +627,7 @@ fun MereniApp(
 private fun ScrollableChips(
     items: List<SelectedToken>,
     reorderMode: Boolean,
+    dashBetween: Boolean = false,
     onRemove: (Int) -> Unit,
     onMove: (from: Int, to: Int) -> Unit,
 ) {
@@ -603,6 +644,7 @@ private fun ScrollableChips(
             ChipRow(
                 items = items,
                 reorderMode = reorderMode,
+                dashBetween = dashBetween,
                 onRemove = onRemove,
                 onMove = onMove,
             )

@@ -23,6 +23,9 @@ object MereniColors {
     /** Výhybka — lesní zelená */
     val Vyhybka = Color(0xFF2F7A5B)
 
+    /** Vlastní (+ ) — olivově hnědá, odlišená od kolej/spojka/výhybka */
+    val Custom = Color(0xFF6E5530)
+
     val ChipBg = Color(0xFFFFFFFF)
     val ChipText = Color(0xFF152033)
     val ChipBorder = Color(0xFFB0BEC8)

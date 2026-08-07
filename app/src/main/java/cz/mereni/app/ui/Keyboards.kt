@@ -302,10 +302,8 @@ private fun KolejKeyWithPicker(
                     if (children.isNotEmpty()) {
                         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                             val gap = 8.dp
-                            val perRow = when {
-                                children.size <= 2 -> children.size.coerceAtLeast(1)
-                                else -> 3
-                            }
+                            // Max 3 podkoleje vedle sebe, další řady stejně
+                            val perRow = minOf(3, children.size.coerceAtLeast(1))
                             val cellW = (maxWidth - gap * (perRow - 1)) / perRow
                             FlowRow(
                                 horizontalArrangement = Arrangement.spacedBy(gap),
@@ -527,8 +525,11 @@ fun colorFor(kind: PasportKind): Color = when (kind) {
 
 private val DangerExtraLabels = setOf("obsazeno", "vyloučeno")
 
-fun colorForToken(token: SelectedToken): Color =
-    if (token.label in DangerExtraLabels) MereniColors.Danger else colorFor(token.kind)
+fun colorForToken(token: SelectedToken): Color = when {
+    token.custom -> MereniColors.Custom
+    token.label in DangerExtraLabels -> MereniColors.Danger
+    else -> colorFor(token.kind)
+}
 
 /**
  * Barevný chip — šipky ‹ › jen v režimu přesunu.
@@ -598,7 +599,7 @@ fun ChipToken(
 }
 
 /**
- * Řádek chipů — šipky jen když [reorderMode].
+ * Řádek chipů — šipky jen když [reorderMode]; u pole 2 pomlčky mezi obdélníky.
  */
 @Composable
 fun ChipRow(
@@ -606,6 +607,7 @@ fun ChipRow(
     reorderMode: Boolean,
     onRemove: (Int) -> Unit,
     onMove: (from: Int, to: Int) -> Unit,
+    dashBetween: Boolean = false,
 ) {
     Row(
         modifier = Modifier.horizontalScroll(rememberScrollState()),
@@ -613,6 +615,15 @@ fun ChipRow(
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         items.forEachIndexed { index, token ->
+            if (dashBetween && index > 0) {
+                Text(
+                    "–",
+                    color = MereniColors.TextMuted,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 2.dp),
+                )
+            }
             ChipToken(
                 token = token,
                 onRemove = { onRemove(index) },
@@ -636,6 +647,8 @@ fun FieldPanel(
     showReorderToggle: Boolean = false,
     reorderMode: Boolean = false,
     onReorderToggle: (() -> Unit)? = null,
+    showAddButton: Boolean = false,
+    onAddClick: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     Box(
@@ -649,14 +662,34 @@ fun FieldPanel(
             )
             .clickable(onClick = onClick)
     ) {
+        val bottomPad = if (showReorderToggle || showAddButton) 18.dp else 0.dp
         Box(
             contentAlignment = contentAlignment,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 10.dp, vertical = 10.dp)
-                .padding(bottom = if (showReorderToggle) 18.dp else 0.dp),
+                .padding(bottom = bottomPad),
         ) {
             content()
+        }
+        if (showAddButton && onAddClick != null) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(6.dp)
+                    .size(28.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(MereniColors.Custom)
+                    .clickable(onClick = onAddClick)
+            ) {
+                Text(
+                    "+",
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
         }
         if (showReorderToggle && onReorderToggle != null) {
             Box(
@@ -679,6 +712,82 @@ fun FieldPanel(
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace,
                 )
+            }
+        }
+    }
+}
+
+/** Dialog pro vlastní obdélníček (+). */
+@Composable
+fun CustomTokenDialog(
+    open: Boolean,
+    title: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    if (!open) return
+    var text by remember { mutableStateOf("") }
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .widthIn(min = 280.dp, max = 420.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(MereniColors.SurfaceAlt)
+                .padding(16.dp)
+        ) {
+            Text(
+                title,
+                color = MereniColors.Text,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 18.sp,
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                "Vlastní hodnota (odlišná barva)",
+                color = MereniColors.Custom,
+                fontSize = 13.sp,
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            BasicTextField(
+                value = text,
+                onValueChange = { text = it },
+                singleLine = true,
+                textStyle = TextStyle(color = MereniColors.Text, fontSize = 16.sp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(KeyHeight)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MereniColors.Surface)
+                    .border(2.dp, MereniColors.Custom, RoundedCornerShape(8.dp))
+                    .padding(horizontal = 12.dp, vertical = 14.dp),
+                decorationBox = { inner ->
+                    Box {
+                        if (text.isEmpty()) {
+                            Text("napiš text…", color = MereniColors.TextMuted, fontSize = 16.sp)
+                        }
+                        inner()
+                    }
+                },
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.align(Alignment.End),
+            ) {
+                TextButton(onClick = onDismiss) {
+                    Text("Zrušit", color = MereniColors.TextMuted)
+                }
+                TextButton(
+                    onClick = {
+                        val v = text.trim()
+                        if (v.isNotEmpty()) {
+                            onConfirm(v)
+                            onDismiss()
+                        }
+                    },
+                ) {
+                    Text("Vložit", color = MereniColors.Custom, fontWeight = FontWeight.SemiBold)
+                }
             }
         }
     }
