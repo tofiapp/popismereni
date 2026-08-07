@@ -3,7 +3,6 @@ package cz.mereni.app.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,7 +16,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -32,38 +30,34 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.zIndex
 import cz.mereni.app.ActiveField
 import cz.mereni.app.data.PasportKey
 import cz.mereni.app.data.PasportKind
 import cz.mereni.app.data.SelectedToken
 import cz.mereni.app.data.Station
-import kotlin.math.roundToInt
 
 val KeyHeight: Dp = 56.dp
 val ChipHeight: Dp = 52.dp
 val FieldPanelHeight: Dp = 140.dp
+
+/** Speciální tokeny vždy v klávesnici výhybek. */
+val ExtraVyhybkaLabels = listOf("po vůz", "kkk")
 
 @Composable
 fun FieldKeyboard(
@@ -72,6 +66,7 @@ fun FieldKeyboard(
     hour: Int,
     minute: Int,
     onPasportKey: (PasportKey) -> Unit,
+    onExtraLabel: (String) -> Unit,
     onHourChange: (Int) -> Unit,
     onMinuteChange: (Int) -> Unit,
     onUseNow: () -> Unit,
@@ -87,7 +82,11 @@ fun FieldKeyboard(
     ) {
         when (activeField) {
             ActiveField.POLE1 -> Pole1Keyboard(keys = pasportKeys, onKey = onPasportKey)
-            ActiveField.POLE2 -> Pole2Keyboard(keys = pasportKeys, onKey = onPasportKey)
+            ActiveField.POLE2 -> Pole2Keyboard(
+                keys = pasportKeys,
+                onKey = onPasportKey,
+                onExtraLabel = onExtraLabel,
+            )
             ActiveField.CAS -> TimeKeyboard(
                 hour = hour,
                 minute = minute,
@@ -119,14 +118,46 @@ fun Pole1Keyboard(keys: List<PasportKey>, onKey: (PasportKey) -> Unit) {
 }
 
 @Composable
-fun Pole2Keyboard(keys: List<PasportKey>, onKey: (PasportKey) -> Unit) {
-    KeyboardHalf(
-        "Výhybky",
-        MereniColors.Vyhybka,
-        keys.filter { it.kind == PasportKind.VYHYBKA },
-        onKey,
-        Modifier.fillMaxSize(),
-    )
+fun Pole2Keyboard(
+    keys: List<PasportKey>,
+    onKey: (PasportKey) -> Unit,
+    onExtraLabel: (String) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxSize(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        KeyboardHalf(
+            "Výhybky",
+            MereniColors.Vyhybka,
+            keys.filter { it.kind == PasportKind.VYHYBKA },
+            onKey,
+            Modifier.weight(1f),
+        )
+        Column(
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier
+                .fillMaxHeight()
+                .widthIn(min = 96.dp)
+                .padding(start = 4.dp),
+        ) {
+            Text(
+                "stálé",
+                color = MereniColors.TextMuted,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            ExtraVyhybkaLabels.forEach { label ->
+                KeyRect(
+                    label = label,
+                    color = MereniColors.Vyhybka,
+                    onClick = { onExtraLabel(label) },
+                    minWidth = 92.dp,
+                )
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -175,7 +206,7 @@ private fun KeyboardHalf(
 }
 
 /**
- * Kolej s podkolejemi — klepnutí na celou klávesu otevře velký picker (snadný zásah).
+ * Kolej s podkolejemi — klepnutí otevře picker (bez nápisu „hlavní“).
  */
 @Composable
 private fun KolejKeyWithPicker(key: PasportKey, onKey: (PasportKey) -> Unit) {
@@ -200,12 +231,6 @@ private fun KolejKeyWithPicker(key: PasportKey, onKey: (PasportKey) -> Unit) {
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 18.sp,
                 )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    "Vyber hlavní kolej nebo podkolej",
-                    color = MereniColors.TextMuted,
-                    fontSize = 13.sp,
-                )
                 Spacer(modifier = Modifier.height(12.dp))
                 Column(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -215,7 +240,7 @@ private fun KolejKeyWithPicker(key: PasportKey, onKey: (PasportKey) -> Unit) {
                         .verticalScroll(rememberScrollState())
                 ) {
                     PickerOption(
-                        label = "${key.label} (hlavní)",
+                        label = key.label,
                         color = MereniColors.Kolej,
                     ) {
                         onKey(key)
@@ -353,11 +378,13 @@ fun KeyRect(
     label: String,
     color: Color,
     onClick: () -> Unit,
+    minWidth: Dp = 0.dp,
 ) {
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier
             .height(KeyHeight)
+            .then(if (minWidth > 0.dp) Modifier.widthIn(min = minWidth) else Modifier)
             .clip(RoundedCornerShape(6.dp))
             .background(color)
             .clickable(onClick = onClick)
@@ -380,106 +407,97 @@ fun colorFor(kind: PasportKind): Color = when (kind) {
 }
 
 /**
- * Barevný chip — dlouhý stisk a táhnutí mění pořadí.
+ * Barevný chip — šipky ‹ › jen v režimu přesunu.
  */
 @Composable
 fun ChipToken(
     token: SelectedToken,
     onRemove: () -> Unit,
     modifier: Modifier = Modifier,
-    dragModifier: Modifier = Modifier,
-    elevated: Boolean = false,
+    onMoveLeft: (() -> Unit)? = null,
+    onMoveRight: (() -> Unit)? = null,
 ) {
     val bg = colorFor(token.kind)
     val fg = if (bg.luminance() > 0.55f) MereniColors.Text else Color.White
-    Box(
-        modifier = modifier
-            .then(if (elevated) Modifier.shadow(8.dp, RoundedCornerShape(6.dp)).zIndex(2f) else Modifier)
-            .then(dragModifier)
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier.padding(end = 6.dp),
     ) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .height(ChipHeight)
-                .clip(RoundedCornerShape(6.dp))
-                .background(bg)
-                .padding(horizontal = 14.dp)
-        ) {
-            Text(token.label, color = fg, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+        if (onMoveLeft != null) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .background(MereniColors.SurfaceAlt)
+                    .clickable(onClick = onMoveLeft)
+            ) {
+                Text("‹", color = MereniColors.Text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
         }
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .size(20.dp)
-                .clip(CircleShape)
-                .background(MereniColors.Danger)
-                .clickable(onClick = onRemove)
-        ) {
-            Text("−", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Box {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .height(ChipHeight)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(bg)
+                    .padding(horizontal = 14.dp)
+            ) {
+                Text(token.label, color = fg, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+            }
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .size(20.dp)
+                    .clip(CircleShape)
+                    .background(MereniColors.Danger)
+                    .clickable(onClick = onRemove)
+            ) {
+                Text("−", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+        if (onMoveRight != null) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .background(MereniColors.SurfaceAlt)
+                    .clickable(onClick = onMoveRight)
+            ) {
+                Text("›", color = MereniColors.Text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
         }
     }
 }
 
 /**
- * Řádek chipů s přeuspořádáním dlouhým stiskem + tažením.
+ * Řádek chipů — šipky jen když [reorderMode].
  */
 @Composable
-fun ReorderableChipRow(
+fun ChipRow(
     items: List<SelectedToken>,
+    reorderMode: Boolean,
     onRemove: (Int) -> Unit,
     onMove: (from: Int, to: Int) -> Unit,
 ) {
-    val density = LocalDensity.current
-    val swapThresholdPx = with(density) { 56.dp.toPx() }
-    var draggingId by remember { mutableStateOf<Long?>(null) }
-    var dragOffsetX by remember { mutableFloatStateOf(0f) }
-
     Row(
         modifier = Modifier.horizontalScroll(rememberScrollState()),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         items.forEachIndexed { index, token ->
-            val isDragging = draggingId == token.id
             ChipToken(
                 token = token,
                 onRemove = { onRemove(index) },
-                elevated = isDragging,
-                modifier = Modifier.padding(end = 2.dp),
-                dragModifier = Modifier
-                    .offset {
-                        IntOffset(if (isDragging) dragOffsetX.roundToInt() else 0, 0)
-                    }
-                    .pointerInput(token.id, items.map { it.id }) {
-                        detectDragGesturesAfterLongPress(
-                            onDragStart = {
-                                draggingId = token.id
-                                dragOffsetX = 0f
-                            },
-                            onDragEnd = {
-                                draggingId = null
-                                dragOffsetX = 0f
-                            },
-                            onDragCancel = {
-                                draggingId = null
-                                dragOffsetX = 0f
-                            },
-                            onDrag = { change, amount ->
-                                change.consume()
-                                dragOffsetX += amount.x
-                                val currentIndex = items.indexOfFirst { it.id == token.id }
-                                if (currentIndex < 0) return@detectDragGesturesAfterLongPress
-                                if (dragOffsetX > swapThresholdPx && currentIndex < items.lastIndex) {
-                                    onMove(currentIndex, currentIndex + 1)
-                                    dragOffsetX -= swapThresholdPx
-                                } else if (dragOffsetX < -swapThresholdPx && currentIndex > 0) {
-                                    onMove(currentIndex, currentIndex - 1)
-                                    dragOffsetX += swapThresholdPx
-                                }
-                            },
-                        )
-                    },
+                onMoveLeft = if (reorderMode && index > 0) {
+                    { onMove(index, index - 1) }
+                } else null,
+                onMoveRight = if (reorderMode && index < items.lastIndex) {
+                    { onMove(index, index + 1) }
+                } else null,
             )
         }
     }
@@ -491,10 +509,12 @@ fun FieldPanel(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     contentAlignment: Alignment = Alignment.CenterStart,
+    showReorderToggle: Boolean = false,
+    reorderMode: Boolean = false,
+    onReorderToggle: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     Box(
-        contentAlignment = contentAlignment,
         modifier = modifier
             .height(FieldPanelHeight)
             .clip(RoundedCornerShape(10.dp))
@@ -504,9 +524,91 @@ fun FieldPanel(
                 else Modifier
             )
             .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 10.dp)
     ) {
-        content()
+        Box(
+            contentAlignment = contentAlignment,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 10.dp, vertical = 10.dp)
+                .padding(bottom = if (showReorderToggle) 18.dp else 0.dp),
+        ) {
+            content()
+        }
+        if (showReorderToggle && onReorderToggle != null) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(6.dp)
+                    .size(28.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(
+                        if (reorderMode) MereniColors.Accent else MereniColors.SurfaceAlt
+                    )
+                    .border(1.dp, MereniColors.ChipBorder, RoundedCornerShape(6.dp))
+                    .clickable(onClick = onReorderToggle)
+            ) {
+                Text(
+                    "<>",
+                    color = if (reorderMode) Color.White else MereniColors.Text,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                )
+            }
+        }
+    }
+}
+
+/** Placeholder v 1. poli — Koleje / spojky ve svých barvách. */
+@Composable
+fun Pole1Placeholder() {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(
+            "Koleje",
+            color = MereniColors.Kolej,
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold,
+        )
+        Text(
+            "a",
+            color = MereniColors.TextMuted,
+            fontSize = 16.sp,
+        )
+        Text(
+            "spojky",
+            color = MereniColors.Spojka,
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold,
+        )
+    }
+}
+
+/** Placeholder v 2. poli — od / do. */
+@Composable
+fun Pole2Placeholder() {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(
+            "od",
+            color = MereniColors.Vyhybka,
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold,
+        )
+        Text(",", color = MereniColors.TextMuted, fontSize = 18.sp)
+        Text(
+            "do",
+            color = MereniColors.Vyhybka,
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold,
+        )
     }
 }
 

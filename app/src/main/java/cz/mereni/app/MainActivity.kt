@@ -16,6 +16,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -23,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -61,11 +63,13 @@ import cz.mereni.app.data.PasportRepository
 import cz.mereni.app.data.PasportSqliteLoader
 import cz.mereni.app.data.SelectedToken
 import cz.mereni.app.data.Station
+import cz.mereni.app.ui.ChipRow
 import cz.mereni.app.ui.FieldKeyboard
 import cz.mereni.app.ui.FieldPanel
 import cz.mereni.app.ui.MereniColors
 import cz.mereni.app.ui.PasportSettingsButton
-import cz.mereni.app.ui.ReorderableChipRow
+import cz.mereni.app.ui.Pole1Placeholder
+import cz.mereni.app.ui.Pole2Placeholder
 import cz.mereni.app.ui.StationSearchPicker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -173,6 +177,8 @@ fun MereniApp(
     var nextTokenId by remember { mutableLongStateOf(1L) }
     var note by remember { mutableStateOf("") }
     var recordCount by remember { mutableIntStateOf(initialCount) }
+    var reorderPole1 by remember { mutableStateOf(false) }
+    var reorderPole2 by remember { mutableStateOf(false) }
 
     val now = remember { Calendar.getInstance() }
     var hour by remember { mutableIntStateOf(now.get(Calendar.HOUR_OF_DAY)) }
@@ -192,6 +198,8 @@ fun MereniApp(
         pole1.clear()
         pole2.clear()
         note = ""
+        reorderPole1 = false
+        reorderPole2 = false
         pasportLoading = false
         pasportLoadingMsg = ""
     }
@@ -200,6 +208,8 @@ fun MereniApp(
         selectedStation = station
         pole1.clear()
         pole2.clear()
+        reorderPole1 = false
+        reorderPole2 = false
         keysLoading = true
         stationKeys = emptyList()
         scope.launch {
@@ -251,6 +261,8 @@ fun MereniApp(
         pole1.clear()
         pole2.clear()
         note = ""
+        reorderPole1 = false
+        reorderPole2 = false
         timeChosen = false
         useNow()
         timeChosen = false
@@ -285,6 +297,7 @@ fun MereniApp(
                     listOf(MereniColors.BackgroundTop, MereniColors.BackgroundBottom)
                 )
             )
+            .systemBarsPadding()
             .padding(12.dp)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -355,23 +368,47 @@ fun MereniApp(
                     selected = activeField == ActiveField.POLE1,
                     onClick = { activeField = ActiveField.POLE1 },
                     modifier = Modifier.weight(1.25f),
+                    showReorderToggle = pole1.size > 1,
+                    reorderMode = reorderPole1,
+                    onReorderToggle = { reorderPole1 = !reorderPole1 },
                 ) {
-                    ScrollableChips(
-                        items = pole1,
-                        onRemove = { pole1.removeAt(it) },
-                        onMove = { from, to -> moveItem(pole1, from, to) },
-                    )
+                    if (pole1.isEmpty()) {
+                        if (activeField == ActiveField.POLE1) {
+                            Pole1Placeholder()
+                        } else {
+                            Text("Koleje", color = MereniColors.Kolej.copy(alpha = 0.55f), fontSize = 14.sp)
+                        }
+                    } else {
+                        ScrollableChips(
+                            items = pole1,
+                            reorderMode = reorderPole1,
+                            onRemove = { pole1.removeAt(it) },
+                            onMove = { from, to -> moveItem(pole1, from, to) },
+                        )
+                    }
                 }
                 FieldPanel(
                     selected = activeField == ActiveField.POLE2,
                     onClick = { activeField = ActiveField.POLE2 },
                     modifier = Modifier.weight(1f),
+                    showReorderToggle = pole2.size > 1,
+                    reorderMode = reorderPole2,
+                    onReorderToggle = { reorderPole2 = !reorderPole2 },
                 ) {
-                    ScrollableChips(
-                        items = pole2,
-                        onRemove = { pole2.removeAt(it) },
-                        onMove = { from, to -> moveItem(pole2, from, to) },
-                    )
+                    if (pole2.isEmpty()) {
+                        if (activeField == ActiveField.POLE2) {
+                            Pole2Placeholder()
+                        } else {
+                            Text("od, do", color = MereniColors.Vyhybka.copy(alpha = 0.55f), fontSize = 14.sp)
+                        }
+                    } else {
+                        ScrollableChips(
+                            items = pole2,
+                            reorderMode = reorderPole2,
+                            onRemove = { pole2.removeAt(it) },
+                            onMove = { from, to -> moveItem(pole2, from, to) },
+                        )
+                    }
                 }
                 FieldPanel(
                     selected = activeField == ActiveField.CAS,
@@ -382,15 +419,95 @@ fun MereniApp(
                     modifier = Modifier.weight(0.7f),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(
-                        text = if (timeChosen) timeLabel() else "čas",
-                        color = if (timeChosen) MereniColors.Text else MereniColors.TextMuted,
-                        fontSize = if (timeChosen) 28.sp else 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    if (timeChosen) {
+                        Text(
+                            text = timeLabel(),
+                            color = MereniColors.Text,
+                            fontSize = 28.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    } else {
+                        Text(
+                            text = "čas",
+                            color = if (activeField == ActiveField.CAS) {
+                                MereniColors.Accent
+                            } else {
+                                MereniColors.Accent.copy(alpha = 0.55f)
+                            },
+                            fontSize = if (activeField == ActiveField.CAS) 22.sp else 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Poznámka + Uložit / Vymazat uprostřed (nad klávesnicí) — mimo systémové menu tabletu
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                BasicTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    singleLine = true,
+                    textStyle = TextStyle(color = MereniColors.Text, fontSize = 14.sp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(40.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MereniColors.Surface)
+                        .border(1.dp, MereniColors.ChipBorder, RoundedCornerShape(8.dp))
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    decorationBox = { inner ->
+                        Box(contentAlignment = Alignment.CenterStart) {
+                            if (note.isEmpty()) {
+                                Text("Poznámka…", color = MereniColors.TextMuted, fontSize = 14.sp)
+                            }
+                            inner()
+                        }
+                    },
+                )
+                Button(
+                    onClick = {
+                        val cas = if (timeChosen) timeLabel() else ""
+                        if (pole1.isNotEmpty() || pole2.isNotEmpty() || cas.isNotBlank() || note.isNotBlank()) {
+                            recordCount = onSave(
+                                selectedStation?.udu.orEmpty(),
+                                pole1.joinToString(" ") { it.label },
+                                pole2.joinToString(" ") { it.label },
+                                cas,
+                                note.trim(),
+                            )
+                            clearAll()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MereniColors.Accent,
+                        contentColor = MereniColors.BackgroundTop,
+                    ),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    modifier = Modifier.height(40.dp),
+                ) {
+                    Text("Uložit", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                }
+                Button(
+                    onClick = { clearAll() },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MereniColors.SurfaceAlt,
+                        contentColor = MereniColors.Text,
+                    ),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    modifier = Modifier.height(40.dp),
+                ) {
+                    Text("Vymazat", fontSize = 13.sp)
                 }
             }
 
@@ -437,6 +554,10 @@ fun MereniApp(
                                 ActiveField.CAS -> Unit
                             }
                         },
+                        onExtraLabel = { label ->
+                            pole2.add(SelectedToken(nextId(), label, PasportKind.VYHYBKA))
+                            activeField = ActiveField.POLE2
+                        },
                         onHourChange = { hour = it; timeChosen = true },
                         onMinuteChange = { minute = it; timeChosen = true },
                         onUseNow = { useNow() },
@@ -446,92 +567,18 @@ fun MereniApp(
                     )
                 }
             }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Poznámka vlevo → Uložit / Vymazat vpravo (menší)
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                BasicTextField(
-                    value = note,
-                    onValueChange = { note = it },
-                    singleLine = true,
-                    textStyle = TextStyle(color = MereniColors.Text, fontSize = 14.sp),
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(40.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MereniColors.Surface)
-                        .border(1.dp, MereniColors.ChipBorder, RoundedCornerShape(8.dp))
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                    decorationBox = { inner ->
-                        Box(contentAlignment = Alignment.CenterStart) {
-                            if (note.isEmpty()) {
-                                Text("Poznámka…", color = MereniColors.TextMuted, fontSize = 14.sp)
-                            }
-                            inner()
-                        }
-                    },
-                )
-                Button(
-                    onClick = {
-                        val cas = if (timeChosen) timeLabel() else ""
-                        if (pole1.isNotEmpty() || pole2.isNotEmpty() || cas.isNotBlank() || note.isNotBlank()) {
-                            recordCount = onSave(
-                                selectedStation?.udu.orEmpty(),
-                                pole1.joinToString(" ") { it.label },
-                                pole2.joinToString(" ") { it.label },
-                                cas,
-                                note.trim(),
-                            )
-                            clearAll()
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MereniColors.Accent,
-                        contentColor = MereniColors.BackgroundTop,
-                    ),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                        horizontal = 12.dp,
-                        vertical = 6.dp,
-                    ),
-                    modifier = Modifier.height(40.dp),
-                ) {
-                    Text("Uložit", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                }
-                Button(
-                    onClick = { clearAll() },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MereniColors.SurfaceAlt,
-                        contentColor = MereniColors.Text,
-                    ),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                        horizontal = 12.dp,
-                        vertical = 6.dp,
-                    ),
-                    modifier = Modifier.height(40.dp),
-                ) {
-                    Text("Vymazat", fontSize = 13.sp)
-                }
-            }
         }
     }
 }
 
-/** Chipy v poli — scroll + přeuspořádání dlouhým stiskem. */
+/** Chipy v poli — scroll + volitelné šipky po klepnutí na <>. */
 @Composable
 private fun ScrollableChips(
     items: List<SelectedToken>,
+    reorderMode: Boolean,
     onRemove: (Int) -> Unit,
     onMove: (from: Int, to: Int) -> Unit,
 ) {
-    if (items.isEmpty()) {
-        Text(text = "klepni klávesu", color = MereniColors.TextMuted, fontSize = 13.sp)
-        return
-    }
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -542,8 +589,9 @@ private fun ScrollableChips(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
         ) {
-            ReorderableChipRow(
+            ChipRow(
                 items = items,
+                reorderMode = reorderMode,
                 onRemove = onRemove,
                 onMove = onMove,
             )
