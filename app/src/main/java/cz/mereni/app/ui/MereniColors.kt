@@ -2,27 +2,29 @@ package cz.mereni.app.ui
 
 import androidx.compose.ui.graphics.Color
 
+/** Světlá průmyslová paleta. */
 object MereniColors {
-    val BackgroundTop = Color(0xFF1B2A33)
-    val BackgroundBottom = Color(0xFF0F171C)
-    val Surface = Color(0xFF24343E)
-    val SurfaceAlt = Color(0xFF2C404C)
-    val Text = Color(0xFFF2EDE3)
-    val TextMuted = Color(0xFFB7C0C6)
-    val Accent = Color(0xFFC4A35A)
-    val AccentDark = Color(0xFF8A7035)
-    val Danger = Color(0xFFB85C5C)
+    val BackgroundTop = Color(0xFFE7EEF3)
+    val BackgroundBottom = Color(0xFFD2DCE5)
+    val Surface = Color(0xFFF8FBFD)
+    val SurfaceAlt = Color(0xFFE2EAF0)
+    val Text = Color(0xFF152033)
+    val TextMuted = Color(0xFF5A6A7A)
+    val Accent = Color(0xFF0B6E4F)
+    val AccentDark = Color(0xFF08553C)
+    val Danger = Color(0xFFB33A3A)
 
-    /** Spojka — obdélník 1 */
-    val Spojka = Color(0xFF3D6B8A)
+    /** Spojka (X/S) */
+    val Spojka = Color(0xFF2A5F8A)
 
-    /** Kolej — obdélník 1 (jiná barva než spojka) */
-    val Kolej = Color(0xFF4A7A58)
+    /** Kolej */
+    val Kolej = Color(0xFF2F7A5B)
 
-    /** Výhybka — obdélník 2 (jiná barva než spojky/koleje) */
-    val Vyhybka = Color(0xFF8A5A3A)
+    /** Výhybka */
+    val Vyhybka = Color(0xFFB85A2A)
 
-    val ChipBg = Color(0xFFE8DFC8)
-    val ChipText = Color(0xFF1B2A33)
-    val Dash = Color(0xFFC4A35A)
+    val ChipBg = Color(0xFFFFFFFF)
+    val ChipText = Color(0xFF152033)
+    val ChipBorder = Color(0xFFB0BEC8)
+    val Dash = Color(0xFF0B6E4F)
 }

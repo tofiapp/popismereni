@@ -160,6 +160,8 @@ fun MereniApp(
     var selectedStation by remember { mutableStateOf<Station?>(null) }
     var stationKeys by remember { mutableStateOf<List<PasportKey>>(emptyList()) }
     var keysLoading by remember { mutableStateOf(false) }
+    var pasportLoading by remember { mutableStateOf(false) }
+    var pasportLoadingMsg by remember { mutableStateOf("") }
     val pole1 = remember { mutableStateListOf<String>() }
     val pole2 = remember { mutableStateListOf<String>() }
     var recordCount by remember { mutableIntStateOf(initialCount) }
@@ -175,6 +177,8 @@ fun MereniApp(
         stationKeys = emptyList()
         pole1.clear()
         pole2.clear()
+        pasportLoading = false
+        pasportLoadingMsg = ""
     }
 
     fun selectStation(station: Station) {
@@ -190,14 +194,25 @@ fun MereniApp(
         }
     }
 
+    fun moveItem(list: MutableList<String>, index: Int, delta: Int) {
+        val target = index + delta
+        if (index !in list.indices || target !in list.indices) return
+        val item = list.removeAt(index)
+        list.add(target, item)
+    }
+
     val pickPasport = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
     ) { uri: Uri? ->
         if (uri != null) {
+            pasportLoading = true
+            pasportLoadingMsg = "Načítám ${PasportSqliteLoader.DB_FILE_NAME}…"
             scope.launch {
                 runCatching { onPersistUri(uri) }
                     .onSuccess { applyLoad(it) }
                     .onFailure { e ->
+                        pasportLoading = false
+                        pasportLoadingMsg = ""
                         onLoadChange(
                             PasportLoadResult(
                                 data = pasport,
@@ -281,6 +296,8 @@ fun MereniApp(
             ) {
                 Text(
                     text = when {
+                        pasportLoading -> pasportLoadingMsg.ifBlank { "Načítám pasport…" }
+                        keysLoading -> "Načítám koleje / spojky / výhybky…"
                         load.fromDeviceSqlite && selectedStation != null ->
                             "Pasport OK · $keyStats"
                         load.fromDeviceSqlite ->
@@ -288,7 +305,11 @@ fun MereniApp(
                         else ->
                             "Pasport chybí — ${PasportSqliteLoader.DB_FILE_NAME} v Download, nebo Vybrat"
                     },
-                    color = if (load.fromDeviceSqlite) MereniColors.Kolej else MereniColors.Danger,
+                    color = when {
+                        pasportLoading || keysLoading -> MereniColors.Accent
+                        load.fromDeviceSqlite -> MereniColors.Kolej
+                        else -> MereniColors.Danger
+                    },
                     fontSize = 11.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -307,6 +328,8 @@ fun MereniApp(
                     Text("Vybrat", color = MereniColors.Accent, fontSize = 12.sp)
                 }
                 TextButton(onClick = {
+                    pasportLoading = true
+                    pasportLoadingMsg = "Obnovuji pasport…"
                     scope.launch { applyLoad(onReload()) }
                 }) {
                     Text("Obnovit", color = MereniColors.TextMuted, fontSize = 12.sp)
@@ -325,14 +348,22 @@ fun MereniApp(
                     onClick = { activeField = ActiveField.POLE1 },
                     modifier = Modifier.weight(1.25f),
                 ) {
-                    ScrollableChips(pole1) { pole1.removeAt(it) }
+                    ScrollableChips(
+                        items = pole1,
+                        onRemove = { pole1.removeAt(it) },
+                        onMove = { i, d -> moveItem(pole1, i, d) },
+                    )
                 }
                 FieldPanel(
                     selected = activeField == ActiveField.POLE2,
                     onClick = { activeField = ActiveField.POLE2 },
                     modifier = Modifier.weight(1f),
                 ) {
-                    ScrollableChips(pole2) { pole2.removeAt(it) }
+                    ScrollableChips(
+                        items = pole2,
+                        onRemove = { pole2.removeAt(it) },
+                        onMove = { i, d -> moveItem(pole2, i, d) },
+                    )
                 }
                 FieldPanel(
                     selected = activeField == ActiveField.CAS,
@@ -342,11 +373,13 @@ fun MereniApp(
                     },
                     modifier = Modifier.weight(0.7f),
                 ) {
-                    if (timeChosen) {
-                        ChipToken(label = timeLabel(), onRemove = { timeChosen = false })
-                    } else {
-                        Text(text = "čas", color = MereniColors.TextMuted, fontSize = 13.sp)
-                    }
+                    Text(
+                        text = if (timeChosen) timeLabel() else "čas",
+                        color = if (timeChosen) MereniColors.Text else MereniColors.TextMuted,
+                        fontSize = if (timeChosen) 28.sp else 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                    )
                 }
             }
 
@@ -437,9 +470,13 @@ fun MereniApp(
     }
 }
 
-/** Chipy v poli — vodorovný i svislý scroll podle potřeby. */
+/** Chipy v poli — scroll + změna pořadí šipkami. */
 @Composable
-private fun ScrollableChips(items: List<String>, onRemove: (Int) -> Unit) {
+private fun ScrollableChips(
+    items: List<String>,
+    onRemove: (Int) -> Unit,
+    onMove: (index: Int, delta: Int) -> Unit,
+) {
     if (items.isEmpty()) {
         Text(text = "klepni klávesu", color = MereniColors.TextMuted, fontSize = 13.sp)
         return
@@ -459,7 +496,12 @@ private fun ScrollableChips(items: List<String>, onRemove: (Int) -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 items.forEachIndexed { index, label ->
-                    ChipToken(label = label, onRemove = { onRemove(index) })
+                    ChipToken(
+                        label = label,
+                        onRemove = { onRemove(index) },
+                        onMoveLeft = if (index > 0) ({ onMove(index, -1) }) else null,
+                        onMoveRight = if (index < items.lastIndex) ({ onMove(index, 1) }) else null,
+                    )
                 }
             }
         }
