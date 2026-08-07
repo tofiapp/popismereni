@@ -71,7 +71,8 @@ val ExtraVyhybkaOptions = listOf(
 fun FieldKeyboard(
     activeField: ActiveField,
     pasportKeys: List<PasportKey>,
-    usedPole1Labels: Set<String>,
+    usedLabels: Set<String>,
+    lockedLabels: Set<String>,
     hour: Int,
     minute: Int,
     timeChosen: Boolean,
@@ -94,11 +95,14 @@ fun FieldKeyboard(
         when (activeField) {
             ActiveField.POLE1 -> Pole1Keyboard(
                 keys = pasportKeys,
-                usedLabels = usedPole1Labels,
+                usedLabels = usedLabels,
+                lockedLabels = lockedLabels,
                 onKey = onPasportKey,
             )
             ActiveField.POLE2 -> Pole2Keyboard(
                 keys = pasportKeys,
+                usedLabels = usedLabels,
+                lockedLabels = lockedLabels,
                 onKey = onPasportKey,
                 onExtraLabel = onExtraLabel,
             )
@@ -119,6 +123,7 @@ fun FieldKeyboard(
 fun Pole1Keyboard(
     keys: List<PasportKey>,
     usedLabels: Set<String>,
+    lockedLabels: Set<String>,
     onKey: (PasportKey) -> Unit,
 ) {
     val koleje = keys.filter { it.kind == PasportKind.KOLEJ }
@@ -135,6 +140,7 @@ fun Pole1Keyboard(
             Modifier.weight(1f),
             kolejMode = true,
             usedLabels = usedLabels,
+            lockedLabels = lockedLabels,
         )
         Box(
             Modifier
@@ -149,6 +155,7 @@ fun Pole1Keyboard(
             onKey,
             Modifier.weight(1f),
             usedLabels = usedLabels,
+            lockedLabels = lockedLabels,
         )
     }
 }
@@ -156,6 +163,8 @@ fun Pole1Keyboard(
 @Composable
 fun Pole2Keyboard(
     keys: List<PasportKey>,
+    usedLabels: Set<String>,
+    lockedLabels: Set<String>,
     onKey: (PasportKey) -> Unit,
     onExtraLabel: (String) -> Unit,
 ) {
@@ -169,6 +178,8 @@ fun Pole2Keyboard(
             keys.filter { it.kind == PasportKind.VYHYBKA },
             onKey,
             Modifier.weight(1f),
+            usedLabels = usedLabels,
+            lockedLabels = lockedLabels,
         )
         Column(
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -180,9 +191,13 @@ fun Pole2Keyboard(
                 .padding(start = 4.dp),
         ) {
             ExtraVyhybkaOptions.forEach { opt ->
+                val locked = opt.label in lockedLabels
+                val used = locked || opt.label in usedLabels
                 KeyRect(
                     label = opt.label,
                     color = opt.color,
+                    used = used,
+                    locked = locked,
                     onClick = { onExtraLabel(opt.label) },
                     minWidth = 100.dp,
                 )
@@ -201,6 +216,7 @@ private fun KeyboardHalf(
     modifier: Modifier = Modifier,
     kolejMode: Boolean = false,
     usedLabels: Set<String> = emptySet(),
+    lockedLabels: Set<String> = emptySet(),
 ) {
     Column(modifier = modifier) {
         Text(
@@ -226,13 +242,16 @@ private fun KeyboardHalf(
                         KolejKeyWithPicker(
                             key = key,
                             usedLabels = usedLabels,
+                            lockedLabels = lockedLabels,
                             onKey = onKey,
                         )
                     } else {
+                        val locked = key.label in lockedLabels
                         KeyRect(
                             label = key.label,
                             color = colorFor(key.kind),
-                            used = key.label in usedLabels,
+                            used = locked || key.label in usedLabels,
+                            locked = locked,
                             onClick = { onKey(key) },
                         )
                     }
@@ -245,23 +264,28 @@ private fun KeyboardHalf(
 /**
  * Kolej s podkolejemi — velká karta jen pro číslo bez písmen;
  * varianty s písmeny vedle sebe, šířka podle počtu.
- * Už uložené v CSV jsou zašedlé, ale typ zůstává rozlišitelný (modrý okraj).
+ * V horním poli = zašedlé a nepřidatelné; po uložení v CSV jen zašedlé (jdou znovu).
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun KolejKeyWithPicker(
     key: PasportKey,
     usedLabels: Set<String>,
+    lockedLabels: Set<String>,
     onKey: (PasportKey) -> Unit,
 ) {
     var open by remember(key.label) { mutableStateOf(false) }
-    val mainUsed = key.cobjekt in usedLabels
-    val allChildrenUsed = key.children.isNotEmpty() && key.children.all { it.label in usedLabels }
-    val keyUsed = mainUsed && (key.children.isEmpty() || allChildrenUsed)
+    fun isGray(label: String) = label in lockedLabels || label in usedLabels
+    fun isLocked(label: String) = label in lockedLabels
+    val mainGray = isGray(key.cobjekt)
+    val mainLocked = isLocked(key.cobjekt)
+    val allChildrenGray = key.children.isNotEmpty() && key.children.all { isGray(it.label) }
+    val keyUsed = mainGray && (key.children.isEmpty() || allChildrenGray)
     KeyRect(
         label = "${key.label} ▾",
         color = colorFor(key.kind),
         used = keyUsed,
+        // Dialog zůstává oteviratelný — jednotlivé volby se zamykají uvnitř.
         onClick = { open = true },
     )
     if (open) {
@@ -293,7 +317,8 @@ private fun KolejKeyWithPicker(
                         label = key.cobjekt,
                         color = MereniColors.Kolej,
                         large = true,
-                        used = mainUsed,
+                        used = mainGray,
+                        locked = mainLocked,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         onKey(key.copy(iob = null, children = emptyList()))
@@ -313,7 +338,8 @@ private fun KolejKeyWithPicker(
                                             label = child.label,
                                             color = MereniColors.Kolej.copy(alpha = 0.88f),
                                             large = false,
-                                            used = child.label in usedLabels,
+                                            used = isGray(child.label),
+                                            locked = isLocked(child.label),
                                             modifier = Modifier.weight(1f),
                                         ) {
                                             onKey(child)
@@ -344,6 +370,7 @@ private fun PickerOption(
     modifier: Modifier = Modifier,
     large: Boolean = false,
     used: Boolean = false,
+    locked: Boolean = false,
     onClick: () -> Unit,
 ) {
     val height = if (large) 72.dp else 52.dp
@@ -356,17 +383,15 @@ private fun PickerOption(
     } else {
         Color.White
     }
+    val shape = RoundedCornerShape(if (large) 12.dp else 10.dp)
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier
             .height(height)
-            .clip(RoundedCornerShape(if (large) 12.dp else 10.dp))
+            .clip(shape)
             .background(bg)
-            .then(
-                if (used) Modifier.border(2.dp, color.copy(alpha = 0.85f), RoundedCornerShape(if (large) 12.dp else 10.dp))
-                else Modifier
-            )
-            .clickable(onClick = onClick)
+            .then(if (used) Modifier.border(2.dp, color.copy(alpha = 0.85f), shape) else Modifier)
+            .clickable(enabled = !locked, onClick = onClick)
             .padding(horizontal = 12.dp)
     ) {
         Text(
@@ -482,8 +507,10 @@ fun KeyRect(
     onClick: () -> Unit,
     minWidth: Dp = 0.dp,
     used: Boolean = false,
+    /** V horním poli — zašedlé a nelze znovu přidat (na rozdíl od jen CSV). */
+    locked: Boolean = false,
 ) {
-    // Zašedlé = už v CSV, ale typ (kolej/spojka) zůstává podle barvy okraje a textu.
+    // Zašedlé = v poli / v CSV; typ zůstává podle barvy okraje a textu.
     val bg = if (used) MereniColors.UsedKeyBg else color
     val fg = if (used) {
         color.copy(alpha = 0.9f)
@@ -501,7 +528,7 @@ fun KeyRect(
             .clip(shape)
             .background(bg)
             .then(if (used) Modifier.border(2.dp, color.copy(alpha = 0.85f), shape) else Modifier)
-            .clickable(onClick = onClick)
+            .clickable(enabled = !locked, onClick = onClick)
             .padding(horizontal = 14.dp)
     ) {
         Text(
@@ -541,6 +568,8 @@ fun ChipToken(
 ) {
     val bg = colorForToken(token)
     val fg = if (bg.luminance() > 0.55f) MereniColors.Text else Color.White
+    val shape = RoundedCornerShape(6.dp)
+    val fromSecond = token.fromSlot == 1
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier.padding(end = 6.dp),
@@ -562,8 +591,12 @@ fun ChipToken(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .height(ChipHeight)
-                    .clip(RoundedCornerShape(6.dp))
+                    .clip(shape)
                     .background(bg)
+                    .then(
+                        if (fromSecond) Modifier.border(2.5.dp, MereniColors.Dual, shape)
+                        else Modifier
+                    )
                     .padding(horizontal = 14.dp)
             ) {
                 Text(token.label, color = fg, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)

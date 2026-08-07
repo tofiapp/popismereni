@@ -129,9 +129,9 @@ class MainActivity : ComponentActivity() {
                     store.append(udu, pole1, pole2, cas, poznamka)
                     store.count()
                 },
-                onUsedPole1Labels = { udu ->
+                onUsedLabels = { udu ->
                     withContext(Dispatchers.IO) {
-                        store.usedPole1LabelsForUdu(udu)
+                        store.usedLabelsForUdu(udu)
                     }
                 },
                 onPersistUri = { uri ->
@@ -166,7 +166,7 @@ fun MereniApp(
     onLoadChange: (PasportLoadResult) -> Unit,
     initialCount: Int,
     onSave: (udu: String, pole1: String, pole2: String, casMereni: String, poznamka: String) -> Int,
-    onUsedPole1Labels: suspend (String) -> Set<String>,
+    onUsedLabels: suspend (String) -> Set<String>,
     onPersistUri: suspend (Uri) -> PasportLoadResult,
     onReload: suspend () -> PasportLoadResult,
     onKeysForStation: suspend (Station?, List<PasportKey>) -> List<PasportKey>,
@@ -190,23 +190,25 @@ fun MereniApp(
     var recordCount by remember { mutableIntStateOf(initialCount) }
     var reorderPole1 by remember { mutableStateOf(false) }
     var reorderPole2 by remember { mutableStateOf(false) }
-    var usedPole1Labels by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var usedLabels by remember { mutableStateOf<Set<String>>(emptySet()) }
     var customDialogFor by remember { mutableStateOf<ActiveField?>(null) }
     var noteFocused by remember { mutableStateOf(false) }
 
     val dualMode = stationB != null
     val activeStation = if (activeSlot == 1 && stationB != null) stationB else stationA
     val stationKeys = if (activeSlot == 1 && dualMode) keysB else keysA
+    /** Právě v horních obdélnících — zašedlé a nelze znovu přidat, dokud se neuloží / neodstraní. */
+    val lockedLabels = (pole1.map { it.label } + pole2.map { it.label }).toSet()
 
     fun refreshUsedLabels() {
         val udus = listOfNotNull(stationA?.udu, stationB?.udu).filter { it.isNotBlank() }
         if (udus.isEmpty()) {
-            usedPole1Labels = emptySet()
+            usedLabels = emptySet()
             return
         }
         scope.launch {
-            val sets = udus.map { onUsedPole1Labels(it) }
-            usedPole1Labels = sets.fold(emptySet()) { acc, s -> acc + s }
+            val sets = udus.map { onUsedLabels(it) }
+            usedLabels = sets.fold(emptySet()) { acc, s -> acc + s }
         }
     }
 
@@ -233,7 +235,7 @@ fun MereniApp(
         note = ""
         reorderPole1 = false
         reorderPole2 = false
-        usedPole1Labels = emptySet()
+        usedLabels = emptySet()
         pasportLoading = false
         pasportLoadingMsg = ""
     }
@@ -640,12 +642,19 @@ fun MereniApp(
                     FieldKeyboard(
                         activeField = activeField,
                         pasportKeys = stationKeys,
-                        usedPole1Labels = usedPole1Labels,
+                        usedLabels = usedLabels,
+                        lockedLabels = lockedLabels,
                         hour = hour,
                         minute = minute,
                         timeChosen = timeChosen,
                         onPasportKey = { key ->
-                            val token = SelectedToken(nextId(), key.label, key.kind)
+                            if (key.label in lockedLabels) return@onPasportKey
+                            val token = SelectedToken(
+                                id = nextId(),
+                                label = key.label,
+                                kind = key.kind,
+                                fromSlot = if (dualMode) activeSlot else 0,
+                            )
                             when (activeField) {
                                 ActiveField.POLE1 -> pole1.add(token)
                                 ActiveField.POLE2 -> pole2.add(token)
@@ -653,7 +662,15 @@ fun MereniApp(
                             }
                         },
                         onExtraLabel = { label ->
-                            pole2.add(SelectedToken(nextId(), label, PasportKind.VYHYBKA))
+                            if (label in lockedLabels) return@onExtraLabel
+                            pole2.add(
+                                SelectedToken(
+                                    id = nextId(),
+                                    label = label,
+                                    kind = PasportKind.VYHYBKA,
+                                    fromSlot = if (dualMode) activeSlot else 0,
+                                )
+                            )
                             activeField = ActiveField.POLE2
                         },
                         onHourChange = { hour = it; timeChosen = true },
@@ -677,6 +694,10 @@ fun MereniApp(
             },
             onDismiss = { customDialogFor = null },
             onConfirm = { label ->
+                if (label in lockedLabels) {
+                    customDialogFor = null
+                    return@onConfirm
+                }
                 val token = SelectedToken(
                     id = nextId(),
                     label = label,
@@ -685,6 +706,7 @@ fun MereniApp(
                         else -> PasportKind.KOLEJ
                     },
                     custom = true,
+                    fromSlot = if (dualMode) activeSlot else 0,
                 )
                 when (customDialogFor) {
                     ActiveField.POLE1 -> pole1.add(token)
