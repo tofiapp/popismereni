@@ -27,4 +27,7 @@ object MereniColors {
     val ChipText = Color(0xFF152033)
     val ChipBorder = Color(0xFFB0BEC8)
     val Dash = Color(0xFF0B6E4F)
+
+    /** Pozadí klávesy už uložené v CSV — šedé, typ rozlišuje okraj/text. */
+    val UsedKeyBg = Color(0xFFD5DBE0)
 }

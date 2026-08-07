@@ -58,7 +58,58 @@ class MeasurementStore(context: Context) {
         csvFile.appendText(line + "\n", UTF8)
     }
 
+    /**
+     * Popisky z [pole1] (koleje/spojky) už uložené pro dané UDU —
+     * tokeny oddělené mezerou, např. `12 12A 3X`.
+     */
+    fun usedPole1LabelsForUdu(udu: String): Set<String> {
+        val want = udu.trim()
+        if (want.isEmpty() || !csvFile.exists()) return emptySet()
+        val out = linkedSetOf<String>()
+        csvFile.readLines(UTF8).asSequence()
+            .drop(1)
+            .filter { it.isNotBlank() }
+            .forEach { line ->
+                val cols = splitCsvLine(line)
+                if (cols.size < 3) return@forEach
+                if (cols[1].trim() != want) return@forEach
+                cols[2].trim()
+                    .split(Regex("\\s+"))
+                    .filter { it.isNotEmpty() }
+                    .forEach { out.add(it) }
+            }
+        return out
+    }
+
     companion object {
+        /** Jednoduchý CSV split — respektuje uvozovky. */
+        private fun splitCsvLine(line: String): List<String> {
+            val result = mutableListOf<String>()
+            val sb = StringBuilder()
+            var inQuotes = false
+            var i = 0
+            while (i < line.length) {
+                val c = line[i]
+                when {
+                    c == '"' -> {
+                        if (inQuotes && i + 1 < line.length && line[i + 1] == '"') {
+                            sb.append('"')
+                            i++
+                        } else {
+                            inQuotes = !inQuotes
+                        }
+                    }
+                    c == ';' && !inQuotes -> {
+                        result.add(sb.toString())
+                        sb.clear()
+                    }
+                    else -> sb.append(c)
+                }
+                i++
+            }
+            result.add(sb.toString())
+            return result
+        }
         const val CSV_NAME = "mereni.csv"
         private const val HEADER_V1 = "zapsano;udu;pole1;pole2;cas_mereni"
         private const val HEADER = "zapsano;udu;pole1;pole2;cas_mereni;poznamka"
