@@ -826,7 +826,8 @@ fun ActiveFieldCaption(activeField: ActiveField) {
 }
 
 /**
- * Vyhledávač stanice — větší pole; hledá i v podnázvech a bez diakritiky.
+ * Vyhledávač stanice. V dual režimu klepnutí aktivuje zdroj kláves;
+ * 🔍 otevře dialog. U výsledků lze volitelně otevřít 2. vyhledávač.
  */
 @Composable
 fun StationSearchPicker(
@@ -834,6 +835,12 @@ fun StationSearchPicker(
     selected: Station?,
     onSelect: (Station) -> Unit,
     modifier: Modifier = Modifier,
+    accentColor: Color = MereniColors.Accent,
+    isKeySource: Boolean = false,
+    slotLabel: String? = null,
+    onActivate: (() -> Unit)? = null,
+    onClear: (() -> Unit)? = null,
+    onOpenInSecond: ((Station) -> Unit)? = null,
 ) {
     var open by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
@@ -855,27 +862,74 @@ fun StationSearchPicker(
             .toList()
     }
 
-    Box(
-        contentAlignment = Alignment.CenterStart,
+    val shape = RoundedCornerShape(10.dp)
+    val borderW = if (isKeySource) 2.5.dp else 1.5.dp
+    val bg = if (isKeySource) accentColor.copy(alpha = 0.14f) else MereniColors.Surface
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
             .height(52.dp)
-            .widthIn(min = 220.dp, max = 380.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(MereniColors.Surface)
-            .border(1.5.dp, MereniColors.Accent.copy(alpha = 0.55f), RoundedCornerShape(10.dp))
-            .clickable {
-                open = true
-                query = ""
-            }
-            .padding(horizontal = 14.dp)
+            .widthIn(min = 160.dp, max = 300.dp)
+            .clip(shape)
+            .background(bg)
+            .border(borderW, accentColor.copy(alpha = if (isKeySource) 1f else 0.55f), shape)
+            .padding(start = 10.dp, end = 6.dp),
     ) {
-        Text(
-            text = selected?.jmeno ?: "Stanice…",
-            color = if (selected == null) MereniColors.TextMuted else MereniColors.Text,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 17.sp,
-            maxLines = 1,
-        )
+        if (slotLabel != null) {
+            Text(
+                slotLabel,
+                color = accentColor,
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(end = 6.dp),
+            )
+        }
+        Box(
+            contentAlignment = Alignment.CenterStart,
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .clickable {
+                    if (selected == null) {
+                        open = true
+                        query = ""
+                    } else {
+                        onActivate?.invoke()
+                    }
+                },
+        ) {
+            Text(
+                text = selected?.jmeno ?: "Stanice…",
+                color = if (selected == null) MereniColors.TextMuted else MereniColors.Text,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 15.sp,
+                maxLines = 1,
+            )
+        }
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(34.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .clickable {
+                    open = true
+                    query = ""
+                },
+        ) {
+            Text("🔍", fontSize = 14.sp)
+        }
+        if (onClear != null && selected != null) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .clickable(onClick = onClear),
+            ) {
+                Text("×", color = MereniColors.TextMuted, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
+        }
     }
 
     if (open) {
@@ -935,28 +989,58 @@ fun StationSearchPicker(
                     ) {
                         items(filtered.size) { i ->
                             val station = filtered[i]
-                            Box(
-                                contentAlignment = Alignment.CenterStart,
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(56.dp)
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(
-                                        if (station.udu == selected?.udu) MereniColors.AccentDark
+                                        if (station.udu == selected?.udu) accentColor.copy(alpha = 0.35f)
                                         else MereniColors.Surface
                                     )
-                                    .clickable {
-                                        onSelect(station)
-                                        open = false
-                                    }
-                                    .padding(horizontal = 14.dp)
+                                    .padding(horizontal = 8.dp),
                             ) {
-                                Text(
-                                    station.jmeno,
-                                    color = MereniColors.Text,
-                                    fontWeight = FontWeight.Medium,
-                                    fontSize = 17.sp,
-                                )
+                                Box(
+                                    contentAlignment = Alignment.CenterStart,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight()
+                                        .clickable {
+                                            onSelect(station)
+                                            onActivate?.invoke()
+                                            open = false
+                                        }
+                                        .padding(horizontal = 6.dp),
+                                ) {
+                                    Text(
+                                        station.jmeno,
+                                        color = MereniColors.Text,
+                                        fontWeight = FontWeight.Medium,
+                                        fontSize = 17.sp,
+                                    )
+                                }
+                                if (onOpenInSecond != null) {
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier
+                                            .height(40.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(MereniColors.Dual)
+                                            .clickable {
+                                                onOpenInSecond(station)
+                                                open = false
+                                            }
+                                            .padding(horizontal = 12.dp),
+                                    ) {
+                                        Text(
+                                            "+ 2",
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp,
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -971,13 +1055,15 @@ fun StationSearchPicker(
 }
 
 /**
- * Ozubené kolečko — nastavení pasportu (Vybrat / Obnovit / stav).
+ * Ozubené kolečko — nastavení pasportu + verze + mereni.csv.
  */
 @Composable
 fun PasportSettingsButton(
     statusText: String,
     statusOk: Boolean,
     loading: Boolean,
+    appVersion: String,
+    recordCount: Int,
     onPick: () -> Unit,
     onReload: () -> Unit,
     modifier: Modifier = Modifier,
@@ -1004,12 +1090,32 @@ fun PasportSettingsButton(
                     .padding(16.dp)
             ) {
                 Text(
-                    "Pasport",
+                    "Nastavení",
                     color = MereniColors.Text,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 18.sp,
                 )
                 Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    "Verze aplikace  v$appVersion",
+                    color = MereniColors.Accent,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "mereni.csv  •  $recordCount záznamů",
+                    color = MereniColors.TextMuted,
+                    fontSize = 13.sp,
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    "Pasport",
+                    color = MereniColors.Text,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp,
+                )
+                Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = statusText,
                     color = when {

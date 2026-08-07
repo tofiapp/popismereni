@@ -174,8 +174,12 @@ fun MereniApp(
     val scope = rememberCoroutineScope()
     val pasport = load.data
     var activeField by remember { mutableStateOf(ActiveField.POLE1) }
-    var selectedStation by remember { mutableStateOf<Station?>(null) }
-    var stationKeys by remember { mutableStateOf<List<PasportKey>>(emptyList()) }
+    var stationA by remember { mutableStateOf<Station?>(null) }
+    var stationB by remember { mutableStateOf<Station?>(null) }
+    var keysA by remember { mutableStateOf<List<PasportKey>>(emptyList()) }
+    var keysB by remember { mutableStateOf<List<PasportKey>>(emptyList()) }
+    /** 0 = stanice A, 1 = stanice B (jen v dual režimu). */
+    var activeSlot by remember { mutableIntStateOf(0) }
     var keysLoading by remember { mutableStateOf(false) }
     var pasportLoading by remember { mutableStateOf(false) }
     var pasportLoadingMsg by remember { mutableStateOf("") }
@@ -190,13 +194,19 @@ fun MereniApp(
     var customDialogFor by remember { mutableStateOf<ActiveField?>(null) }
     var noteFocused by remember { mutableStateOf(false) }
 
-    fun refreshUsedLabels(udu: String?) {
-        if (udu.isNullOrBlank()) {
+    val dualMode = stationB != null
+    val activeStation = if (activeSlot == 1 && stationB != null) stationB else stationA
+    val stationKeys = if (activeSlot == 1 && dualMode) keysB else keysA
+
+    fun refreshUsedLabels() {
+        val udus = listOfNotNull(stationA?.udu, stationB?.udu).filter { it.isNotBlank() }
+        if (udus.isEmpty()) {
             usedPole1Labels = emptySet()
             return
         }
         scope.launch {
-            usedPole1Labels = onUsedPole1Labels(udu)
+            val sets = udus.map { onUsedPole1Labels(it) }
+            usedPole1Labels = sets.fold(emptySet()) { acc, s -> acc + s }
         }
     }
 
@@ -213,8 +223,11 @@ fun MereniApp(
 
     fun applyLoad(result: PasportLoadResult) {
         onLoadChange(result)
-        selectedStation = null
-        stationKeys = emptyList()
+        stationA = null
+        stationB = null
+        keysA = emptyList()
+        keysB = emptyList()
+        activeSlot = 0
         pole1.clear()
         pole2.clear()
         note = ""
@@ -225,20 +238,41 @@ fun MereniApp(
         pasportLoadingMsg = ""
     }
 
-    fun selectStation(station: Station) {
-        selectedStation = station
-        pole1.clear()
-        pole2.clear()
-        reorderPole1 = false
-        reorderPole2 = false
-        keysLoading = true
-        stationKeys = emptyList()
-        refreshUsedLabels(station.udu)
-        scope.launch {
-            val keys = onKeysForStation(station, pasport.keys)
-            stationKeys = keys
-            keysLoading = false
+    fun selectStationA(station: Station, clearFields: Boolean = true) {
+        stationA = station
+        activeSlot = 0
+        if (clearFields) {
+            pole1.clear()
+            pole2.clear()
+            reorderPole1 = false
+            reorderPole2 = false
         }
+        keysLoading = true
+        keysA = emptyList()
+        scope.launch {
+            keysA = onKeysForStation(station, pasport.keys)
+            keysLoading = false
+            refreshUsedLabels()
+        }
+    }
+
+    fun selectStationB(station: Station) {
+        stationB = station
+        activeSlot = 1
+        keysLoading = true
+        keysB = emptyList()
+        scope.launch {
+            keysB = onKeysForStation(station, pasport.keys)
+            keysLoading = false
+            refreshUsedLabels()
+        }
+    }
+
+    fun clearStationB() {
+        stationB = null
+        keysB = emptyList()
+        activeSlot = 0
+        refreshUsedLabels()
     }
 
     fun moveItem(list: MutableList<SelectedToken>, from: Int, to: Int) {
@@ -303,12 +337,21 @@ fun MereniApp(
     val pasportStatusText = when {
         pasportLoading -> pasportLoadingMsg.ifBlank { "Načítám pasport…" }
         keysLoading -> "Načítám koleje / spojky / výhybky…"
-        load.fromDeviceSqlite && selectedStation != null ->
-            "Pasport OK · $keyStats"
+        load.fromDeviceSqlite && activeStation != null ->
+            "Pasport OK · $keyStats" + if (dualMode) " · dual" else ""
         load.fromDeviceSqlite ->
             "Pasport OK · ${load.stats.ifBlank { load.sourceLabel }}"
         else ->
             "Pasport chybí — ${PasportSqliteLoader.DB_FILE_NAME} v Download, nebo Vybrat"
+    }
+
+    fun saveUdu(): String {
+        val a = stationA?.udu.orEmpty()
+        val b = stationB?.udu.orEmpty()
+        return when {
+            a.isNotEmpty() && b.isNotEmpty() -> "$a+$b"
+            else -> a
+        }
     }
 
     Box(
@@ -333,31 +376,42 @@ fun MereniApp(
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Bold,
                 )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(text = "v$appVersion", color = MereniColors.Accent, fontSize = 13.sp)
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(10.dp))
                 StationSearchPicker(
                     stations = pasport.stations,
-                    selected = selectedStation,
-                    onSelect = { selectStation(it) },
+                    selected = stationA,
+                    onSelect = { selectStationA(it, clearFields = stationA == null) },
+                    accentColor = MereniColors.Accent,
+                    isKeySource = activeSlot == 0 && stationA != null,
+                    slotLabel = if (dualMode) "1" else null,
+                    onActivate = { activeSlot = 0 },
+                    onOpenInSecond = { selectStationB(it) },
                 )
-                // Kategorie vycentrovaná mezi vyhledávačem a mereni.csv
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier.weight(1f),
                 ) {
                     ActiveFieldCaption(activeField = activeField)
                 }
-                Text(
-                    text = "mereni.csv • $recordCount",
-                    color = MereniColors.TextMuted,
-                    fontSize = 12.sp,
-                )
-                Spacer(modifier = Modifier.width(6.dp))
+                if (dualMode) {
+                    StationSearchPicker(
+                        stations = pasport.stations,
+                        selected = stationB,
+                        onSelect = { selectStationB(it) },
+                        accentColor = MereniColors.Dual,
+                        isKeySource = activeSlot == 1,
+                        slotLabel = "2",
+                        onActivate = { activeSlot = 1 },
+                        onClear = { clearStationB() },
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
                 PasportSettingsButton(
                     statusText = pasportStatusText,
                     statusOk = load.fromDeviceSqlite && !pasportLoading,
                     loading = pasportLoading || keysLoading,
+                    appVersion = appVersion,
+                    recordCount = recordCount,
                     onPick = {
                         pickPasport.launch(
                             arrayOf(
@@ -452,7 +506,6 @@ fun MereniApp(
                     modifier = Modifier.weight(0.7f),
                     contentAlignment = Alignment.Center,
                     accentColor = MereniColors.Cas,
-                    tintAlways = true,
                 ) {
                     if (timeChosen) {
                         Text(
@@ -520,7 +573,7 @@ fun MereniApp(
                     onClick = {
                         val cas = if (timeChosen) timeLabel() else ""
                         if (pole1.isNotEmpty() || pole2.isNotEmpty() || cas.isNotBlank() || note.isNotBlank()) {
-                            val udu = selectedStation?.udu.orEmpty()
+                            val udu = saveUdu()
                             recordCount = onSave(
                                 udu,
                                 pole1.joinToString(" ") { it.label },
@@ -529,7 +582,7 @@ fun MereniApp(
                                 note.trim(),
                             )
                             clearAll()
-                            refreshUsedLabels(udu)
+                            refreshUsedLabels()
                         }
                     },
                     colors = ButtonDefaults.buttonColors(
@@ -557,7 +610,7 @@ fun MereniApp(
             Spacer(modifier = Modifier.height(8.dp))
 
             when {
-                selectedStation == null && activeField != ActiveField.CAS -> {
+                stationA == null && activeField != ActiveField.CAS -> {
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
