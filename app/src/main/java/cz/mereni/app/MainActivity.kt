@@ -65,6 +65,7 @@ import cz.mereni.app.data.SelectedToken
 import cz.mereni.app.data.Station
 import cz.mereni.app.ui.ActiveFieldCaption
 import cz.mereni.app.ui.ChipRow
+import cz.mereni.app.ui.CustomTokenDialog
 import cz.mereni.app.ui.FieldKeyboard
 import cz.mereni.app.ui.FieldPanel
 import cz.mereni.app.ui.MereniColors
@@ -185,6 +186,7 @@ fun MereniApp(
     var reorderPole1 by remember { mutableStateOf(false) }
     var reorderPole2 by remember { mutableStateOf(false) }
     var usedPole1Labels by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var customDialogFor by remember { mutableStateOf<ActiveField?>(null) }
 
     fun refreshUsedLabels(udu: String?) {
         if (udu.isNullOrBlank()) {
@@ -323,50 +325,62 @@ fun MereniApp(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text(
-                    text = "Měření",
-                    color = MereniColors.Text,
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Serif,
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(text = "v$appVersion", color = MereniColors.Accent, fontSize = 13.sp)
-                Spacer(modifier = Modifier.width(12.dp))
-                StationSearchPicker(
-                    stations = pasport.stations,
-                    selected = selectedStation,
-                    onSelect = { selectStation(it) },
-                )
-                Spacer(modifier = Modifier.width(14.dp))
+                // Levý blok — brand + stanice
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(
+                        text = "Měření",
+                        color = MereniColors.Text,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Serif,
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(text = "v$appVersion", color = MereniColors.Accent, fontSize = 13.sp)
+                    Spacer(modifier = Modifier.width(12.dp))
+                    StationSearchPicker(
+                        stations = pasport.stations,
+                        selected = selectedStation,
+                        onSelect = { selectStation(it) },
+                    )
+                }
+                // Nápis aktivního pole — uprostřed
                 ActiveFieldCaption(activeField = activeField)
-                Spacer(modifier = Modifier.weight(1f))
-                Text(
-                    text = "mereni.csv • $recordCount",
-                    color = MereniColors.TextMuted,
-                    fontSize = 12.sp,
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                PasportSettingsButton(
-                    statusText = pasportStatusText,
-                    statusOk = load.fromDeviceSqlite && !pasportLoading,
-                    loading = pasportLoading || keysLoading,
-                    onPick = {
-                        pickPasport.launch(
-                            arrayOf(
-                                "application/octet-stream",
-                                "application/x-sqlite3",
-                                "application/vnd.sqlite3",
-                                "*/*",
+                // Pravý blok — csv + nastavení
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.End,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(
+                        text = "mereni.csv • $recordCount",
+                        color = MereniColors.TextMuted,
+                        fontSize = 12.sp,
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    PasportSettingsButton(
+                        statusText = pasportStatusText,
+                        statusOk = load.fromDeviceSqlite && !pasportLoading,
+                        loading = pasportLoading || keysLoading,
+                        onPick = {
+                            pickPasport.launch(
+                                arrayOf(
+                                    "application/octet-stream",
+                                    "application/x-sqlite3",
+                                    "application/vnd.sqlite3",
+                                    "*/*",
+                                )
                             )
-                        )
-                    },
-                    onReload = {
-                        pasportLoading = true
-                        pasportLoadingMsg = "Obnovuji pasport…"
-                        scope.launch { applyLoad(onReload()) }
-                    },
-                )
+                        },
+                        onReload = {
+                            pasportLoading = true
+                            pasportLoadingMsg = "Obnovuji pasport…"
+                            scope.launch { applyLoad(onReload()) }
+                        },
+                    )
+                }
             }
 
             if (pasportLoading || keysLoading) {
@@ -388,9 +402,15 @@ fun MereniApp(
                     selected = activeField == ActiveField.POLE1,
                     onClick = { activeField = ActiveField.POLE1 },
                     modifier = Modifier.weight(1.25f),
+                    accentColor = MereniColors.Kolej,
                     showReorderToggle = pole1.size > 1,
                     reorderMode = reorderPole1,
                     onReorderToggle = { reorderPole1 = !reorderPole1 },
+                    showAddButton = true,
+                    onAddClick = {
+                        activeField = ActiveField.POLE1
+                        customDialogFor = ActiveField.POLE1
+                    },
                 ) {
                     if (pole1.isEmpty()) {
                         Text("klepni klávesu", color = MereniColors.TextMuted, fontSize = 13.sp)
@@ -398,6 +418,7 @@ fun MereniApp(
                         ScrollableChips(
                             items = pole1,
                             reorderMode = reorderPole1,
+                            dashBetween = false,
                             onRemove = { pole1.removeAt(it) },
                             onMove = { from, to -> moveItem(pole1, from, to) },
                         )
@@ -407,9 +428,15 @@ fun MereniApp(
                     selected = activeField == ActiveField.POLE2,
                     onClick = { activeField = ActiveField.POLE2 },
                     modifier = Modifier.weight(1f),
+                    accentColor = MereniColors.Vyhybka,
                     showReorderToggle = pole2.size > 1,
                     reorderMode = reorderPole2,
                     onReorderToggle = { reorderPole2 = !reorderPole2 },
+                    showAddButton = true,
+                    onAddClick = {
+                        activeField = ActiveField.POLE2
+                        customDialogFor = ActiveField.POLE2
+                    },
                 ) {
                     if (pole2.isEmpty()) {
                         Text("klepni klávesu", color = MereniColors.TextMuted, fontSize = 13.sp)
@@ -417,6 +444,7 @@ fun MereniApp(
                         ScrollableChips(
                             items = pole2,
                             reorderMode = reorderPole2,
+                            dashBetween = true,
                             onRemove = { pole2.removeAt(it) },
                             onMove = { from, to -> moveItem(pole2, from, to) },
                         )
@@ -427,11 +455,13 @@ fun MereniApp(
                     onClick = { activeField = ActiveField.CAS },
                     modifier = Modifier.weight(0.7f),
                     contentAlignment = Alignment.Center,
+                    accentColor = MereniColors.Cas,
+                    tintAlways = true,
                 ) {
                     if (timeChosen) {
                         Text(
                             text = timeLabel(),
-                            color = MereniColors.Text,
+                            color = MereniColors.Cas,
                             fontSize = 28.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace,
@@ -441,7 +471,7 @@ fun MereniApp(
                     } else {
                         Text(
                             text = "—:—",
-                            color = MereniColors.TextMuted,
+                            color = MereniColors.Cas.copy(alpha = 0.55f),
                             fontSize = 22.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace,
@@ -489,7 +519,7 @@ fun MereniApp(
                             recordCount = onSave(
                                 udu,
                                 pole1.joinToString(" ") { it.label },
-                                pole2.joinToString(" ") { it.label },
+                                pole2.joinToString(" - ") { it.label },
                                 cas,
                                 note.trim(),
                             )
@@ -579,6 +609,32 @@ fun MereniApp(
                 }
             }
         }
+
+        CustomTokenDialog(
+            open = customDialogFor != null,
+            title = when (customDialogFor) {
+                ActiveField.POLE1 -> "Vlastní kolej / spojka"
+                ActiveField.POLE2 -> "Vlastní od / do"
+                else -> "Vlastní hodnota"
+            },
+            onDismiss = { customDialogFor = null },
+            onConfirm = { label ->
+                val token = SelectedToken(
+                    id = nextId(),
+                    label = label,
+                    kind = when (customDialogFor) {
+                        ActiveField.POLE2 -> PasportKind.VYHYBKA
+                        else -> PasportKind.KOLEJ
+                    },
+                    custom = true,
+                )
+                when (customDialogFor) {
+                    ActiveField.POLE1 -> pole1.add(token)
+                    ActiveField.POLE2 -> pole2.add(token)
+                    else -> Unit
+                }
+            },
+        )
     }
 }
 
@@ -587,6 +643,7 @@ fun MereniApp(
 private fun ScrollableChips(
     items: List<SelectedToken>,
     reorderMode: Boolean,
+    dashBetween: Boolean = false,
     onRemove: (Int) -> Unit,
     onMove: (from: Int, to: Int) -> Unit,
 ) {
@@ -603,6 +660,7 @@ private fun ScrollableChips(
             ChipRow(
                 items = items,
                 reorderMode = reorderMode,
+                dashBetween = dashBetween,
                 onRemove = onRemove,
                 onMove = onMove,
             )
