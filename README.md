@@ -1,9 +1,9 @@
-# Měření v0.7.0
+# Měření v0.8.0
 
 ## Aktualizace na tabletu
 Instaluj **stejný typ** APK jako dřív (debug přes debug):
 ```bash
-adb install -r app/build/outputs/apk/debug/mereni-v0.7.0-debug.apk
+adb install -r app/build/outputs/apk/debug/mereni-v0.8.0-debug.apk
 ```
 `applicationId` = `cz.mereni.app`, `versionCode` roste s každou verzí.
 
