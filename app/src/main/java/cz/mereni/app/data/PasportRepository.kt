@@ -3,38 +3,67 @@ package cz.mereni.app.data
 import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.File
 
 /**
- * Načtený pasport TPI: klávesy + stanice (UDU ↔ JMENO).
+ * Pasport TPI: klávesy + stanice.
+ * Primární zdroj je SQLite na zařízení ([PasportSqliteLoader]).
+ * JSON v assets je jen nouzový fallback (bez zařízení / bez DB).
  */
 data class PasportData(
     val version: String,
     val keys: List<PasportKey>,
     val stations: List<Station>,
-) {
-    @Deprecated("Použij stations")
-    val uduList: List<String> get() = stations.map { it.udu }
-}
+)
 
-/**
- * Načte klávesy z assets.
- *
- * Očekávaný soubor (s verzí v názvu): `pasport_tpi_v{VERSION}.json`
- */
 object PasportRepository {
 
-    fun load(context: Context, appVersion: String): PasportData {
+    /**
+     * 1) DZS_PASPORT_TPI.sqlite na zařízení
+     * 2) fallback assets JSON (demo)
+     */
+    fun load(context: Context, appVersion: String): PasportLoadResult {
+        val device = PasportSqliteLoader.load(context)
+        if (device.fromDeviceSqlite && device.data.stations.isNotEmpty()) {
+            return device
+        }
+        if (device.fromDeviceSqlite && device.error == null) {
+            return device
+        }
+
+        val assets = loadAssetsFallback(context, appVersion)
+        if (assets != null) {
+            return PasportLoadResult(
+                data = assets,
+                fromDeviceSqlite = false,
+                sourceLabel = "assets (demo) — na zařízení chybí ${PasportSqliteLoader.DB_FILE_NAME}",
+                error = device.error,
+            )
+        }
+
+        return device
+    }
+
+    fun loadFromUri(context: Context, uri: android.net.Uri): PasportLoadResult =
+        PasportSqliteLoader.loadFromUri(context, uri)
+
+    fun reload(context: Context, appVersion: String): PasportLoadResult {
+        val device = PasportSqliteLoader.reload(context)
+        if (device.fromDeviceSqlite) return device
+        return load(context, appVersion)
+    }
+
+    private fun loadAssetsFallback(context: Context, appVersion: String): PasportData? {
         val candidates = listOf(
             "pasport_tpi_v$appVersion.json",
+            "pasport_tpi_v0.4.0.json",
+            "pasport_tpi_v0.3.0.json",
             "pasport_tpi.json",
         )
         val jsonText = candidates.firstNotNullOfOrNull { name ->
             runCatching {
                 context.assets.open(name).bufferedReader().use { reader -> reader.readText() }
             }.getOrNull()
-        } ?: return PasportData(appVersion, emptyList(), emptyList())
-
+        } ?: return null
         return parse(jsonText, appVersion)
     }
 
@@ -79,7 +108,6 @@ object PasportRepository {
             }
         }
 
-        // Fallback: pokud stations chybí, sestav z unique UDU v řádcích
         val finalStations = stations.ifEmpty {
             rows.mapNotNull { it.udu?.trim()?.takeIf { u -> u.isNotEmpty() } }
                 .distinct()
@@ -92,12 +120,5 @@ object PasportRepository {
             keys = PasportClassifier.buildKeys(rows),
             stations = finalStations,
         )
-    }
-
-    fun exportToDocuments(context: Context, appVersion: String, json: String): File {
-        val dir = File(context.getExternalFilesDir(null), "Documents").apply { mkdirs() }
-        val file = File(dir, "pasport_tpi_v$appVersion.json")
-        file.writeText(json)
-        return file
     }
 }
