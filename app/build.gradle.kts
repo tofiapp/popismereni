@@ -44,10 +44,7 @@ android {
                 "proguard-rules.pro"
             )
         }
-        debug {
-            applicationIdSuffix = ".debug"
-            versionNameSuffix = ""
-        }
+        // debug i release sdílí applicationId cz.mereni.app → aktualizace na zařízení bez přeinstalace
     }
 
     compileOptions {

@@ -28,6 +28,7 @@ data class PasportKey(
     val iob: String? = null,
     val poloha: String? = null,
     val cobjektTpi: String? = null,
+    val udu: String? = null,
     val children: List<PasportKey> = emptyList(),
 ) {
     val label: String

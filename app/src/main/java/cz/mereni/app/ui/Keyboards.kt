@@ -12,12 +12,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -35,120 +35,279 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cz.mereni.app.ActiveField
-import cz.mereni.app.OdkudKamSide
 import cz.mereni.app.data.PasportKey
 import cz.mereni.app.data.PasportKind
 
-/** Výchozí výplň kláves pro CO SE MĚŘÍ (dokud není vlastní katalog). */
-val CoSeMeriKeys: List<String> = listOf(
-    "Teplota", "Tlak", "Rozchod", "Převýšení", "Směr", "Sklon",
-)
+/** Jednotná výška kláves / chipů. */
+val KeyHeight: Dp = 44.dp
+val ChipHeight: Dp = 44.dp
+val FieldPanelHeight: Dp = 88.dp
 
-/** Klávesnice času měření. */
-val CasMereniKeys: List<String> = listOf(
-    "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", ":",
-)
-
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun FieldKeyboard(
     activeField: ActiveField,
-    odkudKamSide: OdkudKamSide,
     pasportKeys: List<PasportKey>,
+    hour: Int,
+    minute: Int,
     onPasportKey: (PasportKey) -> Unit,
-    onTextKey: (String) -> Unit,
+    onHourChange: (Int) -> Unit,
+    onMinuteChange: (Int) -> Unit,
+    onUseNow: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 140.dp, max = 220.dp)
+            .height(220.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(MereniColors.Surface)
             .padding(10.dp)
     ) {
         when (activeField) {
-            ActiveField.CO_SE_MERI -> TextKeyGrid(CoSeMeriKeys, onTextKey)
-            ActiveField.CAS_MERENI -> TextKeyGrid(CasMereniKeys, onTextKey)
-            ActiveField.ODKUD_KAM -> PasportKeyboard(
-                side = odkudKamSide,
-                keys = pasportKeys,
-                onKey = onPasportKey,
+            ActiveField.POLE1 -> Pole1Keyboard(keys = pasportKeys, onKey = onPasportKey)
+            ActiveField.POLE2 -> Pole2Keyboard(keys = pasportKeys, onKey = onPasportKey)
+            ActiveField.CAS -> TimeKeyboard(
+                hour = hour,
+                minute = minute,
+                onHourChange = onHourChange,
+                onMinuteChange = onMinuteChange,
+                onUseNow = onUseNow,
             )
         }
     }
 }
 
+/** Obdélník 1: levá polovina koleje, pravá spojky — obě scrollovatelné. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun TextKeyGrid(labels: List<String>, onKey: (String) -> Unit) {
-    FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
-    ) {
-        labels.forEach { label ->
-            KeyRect(
-                label = label,
-                color = MereniColors.AccentDark,
-                onClick = { onKey(label) },
-            )
-        }
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-fun PasportKeyboard(
-    side: OdkudKamSide,
+fun Pole1Keyboard(
     keys: List<PasportKey>,
     onKey: (PasportKey) -> Unit,
 ) {
-    val filtered = when (side) {
-        OdkudKamSide.ODKUD -> keys.filter {
-            it.kind == PasportKind.SPOJKA || it.kind == PasportKind.KOLEJ
-        }
-        OdkudKamSide.KAM -> keys.filter { it.kind == PasportKind.VYHYBKA }
-    }
+    val koleje = keys.filter { it.kind == PasportKind.KOLEJ }
+    val spojky = keys.filter { it.kind == PasportKind.SPOJKA }
 
-    Column(modifier = Modifier.fillMaxWidth()) {
+    Row(
+        modifier = Modifier.fillMaxSize(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        KeyboardHalf(
+            title = "Koleje",
+            accent = MereniColors.Kolej,
+            keys = koleje,
+            onKey = onKey,
+            modifier = Modifier.weight(1f),
+        )
+        Box(
+            modifier = Modifier
+                .width(1.dp)
+                .fillMaxHeight()
+                .background(MereniColors.Accent.copy(alpha = 0.35f))
+        )
+        KeyboardHalf(
+            title = "Spojky",
+            accent = MereniColors.Spojka,
+            keys = spojky,
+            onKey = onKey,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+/** Obdélník 2: výhybky. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun Pole2Keyboard(
+    keys: List<PasportKey>,
+    onKey: (PasportKey) -> Unit,
+) {
+    val vyhybky = keys.filter { it.kind == PasportKind.VYHYBKA }
+    KeyboardHalf(
+        title = "Výhybky",
+        accent = MereniColors.Vyhybka,
+        keys = vyhybky,
+        onKey = onKey,
+        modifier = Modifier.fillMaxSize(),
+    )
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun KeyboardHalf(
+    title: String,
+    accent: Color,
+    keys: List<PasportKey>,
+    onKey: (PasportKey) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier) {
         Text(
-            text = when (side) {
-                OdkudKamSide.ODKUD -> "Obdélník 1 — spojky a koleje"
-                OdkudKamSide.KAM -> "Obdélník 2 — výhybky"
-            },
-            color = MereniColors.TextMuted,
+            text = title,
+            color = accent,
             fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(bottom = 6.dp),
         )
-
-        if (filtered.isEmpty()) {
+        if (keys.isEmpty()) {
             Text(
-                text = "Pasport TPI zatím není načtený. Nahraj DZS_PASPORT_TPI.sqlite a vygeneruj pasport_tpi_v….json.",
+                text = "Žádná data — nahraj DZS_PASPORT_TPI.sqlite",
                 color = MereniColors.TextMuted,
-                fontSize = 13.sp,
+                fontSize = 12.sp,
             )
-            return
-        }
-
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-        ) {
-            filtered.forEach { key ->
-                ExpandablePasportKey(key = key, onKey = onKey)
+        } else {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f, fill = false)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                keys.forEach { key ->
+                    ExpandablePasportKey(key = key, onKey = onKey)
+                }
             }
         }
+    }
+}
+
+@Composable
+fun TimeKeyboard(
+    hour: Int,
+    minute: Int,
+    onHourChange: (Int) -> Unit,
+    onMinuteChange: (Int) -> Unit,
+    onUseNow: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxSize(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceEvenly,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = "Aktuální výběr",
+                color = MereniColors.TextMuted,
+                fontSize = 12.sp,
+            )
+            Text(
+                text = "%02d:%02d".format(hour, minute),
+                color = MereniColors.Accent,
+                fontSize = 42.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Serif,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TimeStepButton("−1 min") {
+                    val total = hour * 60 + minute - 1
+                    val norm = ((total % (24 * 60)) + (24 * 60)) % (24 * 60)
+                    onHourChange(norm / 60)
+                    onMinuteChange(norm % 60)
+                }
+                TimeStepButton("Teď", accent = true, onClick = onUseNow)
+                TimeStepButton("+1 min") {
+                    val total = hour * 60 + minute + 1
+                    val norm = total % (24 * 60)
+                    onHourChange(norm / 60)
+                    onMinuteChange(norm % 60)
+                }
+            }
+        }
+
+        // Wheel-style picker
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            WheelColumn(
+                label = "Hod",
+                value = hour,
+                range = 0..23,
+                onChange = onHourChange,
+            )
+            Text(
+                text = ":",
+                color = MereniColors.Accent,
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            WheelColumn(
+                label = "Min",
+                value = minute,
+                range = 0..59,
+                onChange = onMinuteChange,
+            )
+        }
+    }
+}
+
+@Composable
+private fun TimeStepButton(
+    label: String,
+    accent: Boolean = false,
+    onClick: () -> Unit,
+) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .height(KeyHeight)
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (accent) MereniColors.Accent else MereniColors.SurfaceAlt)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp)
+    ) {
+        Text(
+            text = label,
+            color = if (accent) MereniColors.BackgroundTop else MereniColors.Text,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 13.sp,
+        )
+    }
+}
+
+@Composable
+private fun WheelColumn(
+    label: String,
+    value: Int,
+    range: IntRange,
+    onChange: (Int) -> Unit,
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(text = label, color = MereniColors.TextMuted, fontSize = 11.sp)
+        Spacer(modifier = Modifier.height(4.dp))
+        KeyRect(label = "▲", color = MereniColors.SurfaceAlt, onClick = {
+            val next = if (value >= range.last) range.first else value + 1
+            onChange(next)
+        })
+        Spacer(modifier = Modifier.height(6.dp))
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .width(64.dp)
+                .height(KeyHeight)
+                .clip(RoundedCornerShape(8.dp))
+                .border(2.dp, MereniColors.Accent, RoundedCornerShape(8.dp))
+                .background(MereniColors.SurfaceAlt)
+        ) {
+            Text(
+                text = "%02d".format(value),
+                color = MereniColors.Text,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+        Spacer(modifier = Modifier.height(6.dp))
+        KeyRect(label = "▼", color = MereniColors.SurfaceAlt, onClick = {
+            val next = if (value <= range.first) range.last else value - 1
+            onChange(next)
+        })
     }
 }
 
@@ -201,11 +360,11 @@ fun KeyRect(
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
+                .height(KeyHeight)
                 .clip(RoundedCornerShape(6.dp))
                 .background(color)
                 .clickable(onClick = onClick)
-                .padding(horizontal = 14.dp, vertical = 10.dp)
-                .heightIn(min = 28.dp)
+                .padding(horizontal = 14.dp)
         ) {
             Text(
                 text = label,
@@ -243,13 +402,14 @@ fun ChipToken(
     onRemove: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Box(modifier = modifier.padding(end = 6.dp, bottom = 4.dp)) {
+    Box(modifier = modifier.padding(end = 6.dp)) {
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
+                .height(ChipHeight)
                 .clip(RoundedCornerShape(4.dp))
                 .background(MereniColors.ChipBg)
-                .padding(horizontal = 12.dp, vertical = 8.dp)
+                .padding(horizontal = 12.dp)
         ) {
             Text(
                 text = label,
@@ -278,26 +438,16 @@ fun ChipToken(
 }
 
 @Composable
-fun DashSeparator() {
-    Text(
-        text = "–",
-        color = MereniColors.Dash,
-        fontSize = 20.sp,
-        fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
-    )
-}
-
-@Composable
 fun FieldPanel(
-    title: String,
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
-    Column(
+    Box(
+        contentAlignment = Alignment.CenterStart,
         modifier = modifier
+            .height(FieldPanelHeight)
             .clip(RoundedCornerShape(10.dp))
             .background(if (selected) MereniColors.SurfaceAlt else MereniColors.Surface)
             .then(
@@ -305,16 +455,73 @@ fun FieldPanel(
                 else Modifier
             )
             .clickable(onClick = onClick)
-            .padding(10.dp)
+            .padding(horizontal = 10.dp, vertical = 8.dp)
     ) {
-        Text(
-            text = title,
-            color = MereniColors.TextMuted,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.SemiBold,
-            letterSpacing = 0.8.sp,
-        )
-        Spacer(modifier = Modifier.height(6.dp))
         content()
+    }
+}
+
+@Composable
+fun UduPicker(
+    options: List<String>,
+    selected: String?,
+    onSelect: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var open by remember { mutableStateOf(false) }
+    Column(modifier = modifier) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "UDU",
+                color = MereniColors.TextMuted,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(end = 8.dp),
+            )
+            Box(
+                contentAlignment = Alignment.CenterStart,
+                modifier = Modifier
+                    .height(KeyHeight)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MereniColors.Surface)
+                    .border(1.dp, MereniColors.Accent.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                    .clickable { open = !open }
+                    .padding(horizontal = 14.dp)
+                    .width(180.dp)
+            ) {
+                Text(
+                    text = selected ?: "vyber UDU",
+                    color = if (selected == null) MereniColors.TextMuted else MereniColors.Text,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+        }
+        AnimatedVisibility(visible = open) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .padding(top = 8.dp)
+                    .horizontalScroll(rememberScrollState())
+            ) {
+                if (options.isEmpty()) {
+                    Text(
+                        text = "UDU se načte z pasportu",
+                        color = MereniColors.TextMuted,
+                        fontSize = 12.sp,
+                    )
+                } else {
+                    options.forEach { udu ->
+                        KeyRect(
+                            label = udu,
+                            color = if (udu == selected) MereniColors.AccentDark else MereniColors.SurfaceAlt,
+                            onClick = {
+                                onSelect(udu)
+                                open = false
+                            },
+                        )
+                    }
+                }
+            }
+        }
     }
 }

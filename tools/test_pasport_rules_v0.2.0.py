@@ -64,7 +64,7 @@ def main() -> None:
     )
     assert ("10", "", ["A", "B"]) in koleje
     assert ("11", "C", []) in koleje
-    print("ok — klasifikace v0.1.0")
+    print("ok — klasifikace v0.2.0")
 
 
 if __name__ == "__main__":

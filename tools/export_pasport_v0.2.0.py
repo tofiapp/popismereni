@@ -2,7 +2,7 @@
 """Export DZS_SUPER_RO_TPI → pasport_tpi_v{VERSION}.json
 
 Použití:
-  python3 tools/export_pasport_v0.1.0.py path/to/DZS_PASPORT_TPI.sqlite
+  python3 tools/export_pasport_v0.2.0.py path/to/DZS_PASPORT_TPI.sqlite
 
 Výstup vždy obsahuje verzi v názvu souboru (čti z VERSION v kořeni).
 """
@@ -17,11 +17,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
 OUT_NAME = f"pasport_tpi_v{VERSION}.json"
-
-VYHYBKA_POLOHY = {
-    "JAP", "JBP", "JAL", "JBL", "JCP", "JDP", "JCL", "JDL",
-    "CA", "CB", "CC", "CD", "CE", "CF", "CG", "CH",
-}
 
 
 def main() -> int:
@@ -38,9 +33,9 @@ def main() -> int:
     con.row_factory = sqlite3.Row
     cur = con.cursor()
 
-    # Zjisti názvy sloupců (různé casing)
     cols = [r[1] for r in cur.execute("PRAGMA table_info(DZS_SUPER_RO_TPI)")]
     colmap = {c.upper(): c for c in cols}
+    print("Sloupce:", ", ".join(cols))
 
     def col(*names: str) -> str | None:
         for n in names:
@@ -52,15 +47,15 @@ def main() -> int:
     c_iob = col("IOB")
     c_poloha = col("POLOHA")
     c_tpi = col("COBJEKT_TPI")
+    c_udu = col("UDU", "CUDU", "KOD_UDU", "UDU_KOD", "NAZEV_UDU")
     if not c_cobjekt:
         print("Tabulka DZS_SUPER_RO_TPI nemá sloupec COBJEKT", file=sys.stderr)
-        print(f"Sloupce: {cols}", file=sys.stderr)
         return 1
 
-    select = ", ".join(
-        f'"{c}"' for c in [c_cobjekt, c_iob, c_poloha, c_tpi] if c
-    )
+    wanted = [c for c in [c_cobjekt, c_iob, c_poloha, c_tpi, c_udu] if c]
+    select = ", ".join(f'"{c}"' for c in wanted)
     rows_out = []
+    udu_set: set[str] = set()
     for row in cur.execute(f'SELECT {select} FROM "DZS_SUPER_RO_TPI"'):
         def get(name: str | None) -> str:
             if not name:
@@ -68,12 +63,16 @@ def main() -> int:
             v = row[name]
             return "" if v is None else str(v).strip()
 
+        udu = get(c_udu)
+        if udu:
+            udu_set.add(udu)
         rows_out.append(
             {
                 "cobjekt": get(c_cobjekt),
                 "iob": get(c_iob),
                 "poloha": get(c_poloha),
                 "cobjekt_tpi": get(c_tpi),
+                "udu": udu,
             }
         )
     con.close()
@@ -81,6 +80,7 @@ def main() -> int:
     payload = {
         "version": VERSION,
         "source": f"{db_path.name} / DZS_SUPER_RO_TPI",
+        "udu": sorted(udu_set),
         "rows": rows_out,
     }
 
@@ -91,8 +91,7 @@ def main() -> int:
     text = json.dumps(payload, ensure_ascii=False, indent=2)
     out_assets.write_text(text + "\n", encoding="utf-8")
     out_data.write_text(text + "\n", encoding="utf-8")
-    print(f"Zapsáno {len(rows_out)} řádků → {out_assets.relative_to(ROOT)}")
-    print(f"Kopie → {out_data.relative_to(ROOT)}")
+    print(f"Zapsáno {len(rows_out)} řádků, {len(udu_set)} UDU → {out_assets.relative_to(ROOT)}")
     print(f"Verze souboru: v{VERSION}")
     return 0
 
