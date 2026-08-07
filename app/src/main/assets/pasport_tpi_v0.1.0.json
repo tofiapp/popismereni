@@ -1,0 +1,15 @@
+{
+  "version": "0.1.0",
+  "source": "DZS_PASPORT_TPI.sqlite / DZS_SUPER_RO_TPI",
+  "note": "Ukázková data — nahraď exportem z reálné SQLite (tools/export_pasport_v0.1.0.py).",
+  "rows": [
+    {"cobjekt": "1", "iob": "", "poloha": "JAP", "cobjekt_tpi": ""},
+    {"cobjekt": "1", "iob": "A", "poloha": "JAP", "cobjekt_tpi": ""},
+    {"cobjekt": "2", "iob": "X", "poloha": "", "cobjekt_tpi": "zhl"},
+    {"cobjekt": "2", "iob": "S", "poloha": "", "cobjekt_tpi": "zhl"},
+    {"cobjekt": "10", "iob": "", "poloha": "", "cobjekt_tpi": ""},
+    {"cobjekt": "10", "iob": "A", "poloha": "", "cobjekt_tpi": ""},
+    {"cobjekt": "10", "iob": "B", "poloha": "", "cobjekt_tpi": ""},
+    {"cobjekt": "11", "iob": "C", "poloha": "", "cobjekt_tpi": ""}
+  ]
+}

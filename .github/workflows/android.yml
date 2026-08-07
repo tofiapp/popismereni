@@ -3,42 +3,76 @@ name: Android CI
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
+    name: Build APK
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Nastavení JDK 17
+      - name: Read VERSION
+        id: ver
+        run: |
+          VERSION=$(tr -d '[:space:]' < VERSION)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "App version: v$VERSION"
+
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
 
-      - name: Nastavení Gradle
+      - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.7'
+          gradle-version: "8.7"
 
-      - name: Vytvoření wrapperu, pokud chybí
+      # Wrapper v repu zatím není, takže si ho build vyrobí sám.
+      # Až gradle/ commitneš, tenhle krok se přeskočí.
+      - name: Generate Gradle wrapper
         run: |
           if [ ! -f gradlew ]; then
             gradle wrapper --gradle-version 8.7
           fi
-          chmod +x ./gradlew
 
-      - name: Sestavení debug APK
-        run: ./gradlew assembleDebug --stacktrace
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: Nahrání APK jako artefakt
+      - name: Build release APK (unsigned)
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Rename APKs (verze vždy v názvu)
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          mkdir -p artifacts
+          # Gradle archivesBaseName = mereni-v{VERSION}
+          DEBUG_SRC=$(find app/build/outputs/apk/debug -name "*.apk" | head -n1)
+          RELEASE_SRC=$(find app/build/outputs/apk/release -name "*.apk" | head -n1)
+          cp "$DEBUG_SRC" "artifacts/mereni-v${VERSION}-debug.apk"
+          cp "$RELEASE_SRC" "artifacts/mereni-v${VERSION}-release-unsigned.apk"
+          ls -la artifacts/
+
+      - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
-          name: mereni-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
+          name: apk-v${{ steps.ver.outputs.version }}
+          path: artifacts/*.apk
+          retention-days: 30
+
+      - name: Attach APK to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*.apk
