@@ -14,7 +14,8 @@ fun readAppVersion(): Pair<String, Int> {
         "VERSION musí být ve formátu MAJOR.MINOR.PATCH, je: '$name'"
     }
     val parts = name.split(".").map { it.toInt() }
-    val code = parts[0] * 10_000 + parts[1] * 100 + parts[2]
+    // Monotónní versionCode: 0.7.0 → 70007 (vždy roste s VERSION)
+    val code = parts[0] * 100_000 + parts[1] * 1_000 + parts[2] + 70_000
     return name to code
 }
 

@@ -1,12 +1,19 @@
-# Měření v0.6.0
+# Měření v0.7.0
 
-## Pasport
-Aplikace hledá `DZS_PASPORT_TPI.sqlite` přes MediaStore (Download) a zkopíruje si ho.
-Když ho nevidí: **Vybrat** (jednou) — URI si zapamatuje.
+## Aktualizace na tabletu
+Instaluj **stejný typ** APK jako dřív (debug přes debug):
+```bash
+adb install -r app/build/outputs/apk/debug/mereni-v0.7.0-debug.apk
+```
+`applicationId` = `cz.mereni.app`, `versionCode` roste s každou verzí.
 
-Klávesy se načítají na pozadí 3 SQL dotazy (výhybky / spojky / koleje) podle `TUDU LIKE 'UDU%'`.
+## Klasifikace
+- **Spojka:** prázdná POLOHA + `COBJEKT_TPI=zhl` + IOB `X`/`S`
+- **Kolej:** prázdná POLOHA, není zhl, IOB ≠ X/S (včetně A/B)
+- **Výhybka:** neprázdná POLOHA
 
 ## UI
-- Vyhledávání stanic v **dialogu** (nerozbíjí layout)
-- 3 vyšší pole, chipy scrollovatelné
-- Podkoleje: dialog po klepnutí na ▾
+- Světlá paleta
+- Pořadí chipů: ‹ ›
+- Čas bez − chipu, velký monospace picker bez ±1 min
+- Po výběru SQLite hláška „Načítám…“ v horním řádku

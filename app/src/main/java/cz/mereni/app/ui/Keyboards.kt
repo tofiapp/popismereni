@@ -41,6 +41,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -234,80 +235,72 @@ fun TimeKeyboard(
         horizontalArrangement = Arrangement.SpaceEvenly,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Aktuální výběr", color = MereniColors.TextMuted, fontSize = 12.sp)
             Text(
                 text = "%02d:%02d".format(hour, minute),
                 color = MereniColors.Accent,
-                fontSize = 42.sp,
+                fontSize = 64.sp,
                 fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Serif,
+                fontFamily = FontFamily.Monospace,
+                letterSpacing = 2.sp,
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TimeStepButton("−1 min") {
-                    val total = ((hour * 60 + minute - 1) % (24 * 60) + 24 * 60) % (24 * 60)
-                    onHourChange(total / 60)
-                    onMinuteChange(total % 60)
-                }
-                TimeStepButton("Teď", accent = true, onClick = onUseNow)
-                TimeStepButton("+1 min") {
-                    val total = (hour * 60 + minute + 1) % (24 * 60)
-                    onHourChange(total / 60)
-                    onMinuteChange(total % 60)
-                }
+            Spacer(modifier = Modifier.height(8.dp))
+            TextButton(onClick = onUseNow) {
+                Text("Nastavit teď", color = MereniColors.Accent, fontWeight = FontWeight.SemiBold)
             }
         }
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            WheelColumn("Hod", hour, 0..23, onHourChange)
-            Text(":", color = MereniColors.Accent, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-            WheelColumn("Min", minute, 0..59, onMinuteChange)
+            WheelColumn("Hodiny", hour, 0..23, onHourChange, big = true)
+            Text(
+                ":",
+                color = MereniColors.Accent,
+                fontSize = 40.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+            )
+            WheelColumn("Minuty", minute, 0..59, onMinuteChange, big = true)
         }
     }
 }
 
 @Composable
-private fun TimeStepButton(label: String, accent: Boolean = false, onClick: () -> Unit) {
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = Modifier
-            .height(KeyHeight)
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (accent) MereniColors.Accent else MereniColors.SurfaceAlt)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp)
-    ) {
-        Text(
-            text = label,
-            color = if (accent) MereniColors.BackgroundTop else MereniColors.Text,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 13.sp,
-        )
-    }
-}
-
-@Composable
-private fun WheelColumn(label: String, value: Int, range: IntRange, onChange: (Int) -> Unit) {
+private fun WheelColumn(
+    label: String,
+    value: Int,
+    range: IntRange,
+    onChange: (Int) -> Unit,
+    big: Boolean = false,
+) {
+    val boxW = if (big) 88.dp else 64.dp
+    val boxH = if (big) 72.dp else KeyHeight
+    val fontSize = if (big) 32.sp else 22.sp
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(text = label, color = MereniColors.TextMuted, fontSize = 11.sp)
-        Spacer(modifier = Modifier.height(4.dp))
+        Text(text = label, color = MereniColors.TextMuted, fontSize = 12.sp)
+        Spacer(modifier = Modifier.height(6.dp))
         KeyRect(label = "▲", color = MereniColors.SurfaceAlt, onClick = {
             onChange(if (value >= range.last) range.first else value + 1)
         })
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(8.dp))
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
-                .width(64.dp)
-                .height(KeyHeight)
-                .clip(RoundedCornerShape(8.dp))
-                .border(2.dp, MereniColors.Accent, RoundedCornerShape(8.dp))
-                .background(MereniColors.SurfaceAlt)
+                .width(boxW)
+                .height(boxH)
+                .clip(RoundedCornerShape(10.dp))
+                .border(2.dp, MereniColors.Accent, RoundedCornerShape(10.dp))
+                .background(MereniColors.Surface)
         ) {
-            Text("%02d".format(value), color = MereniColors.Text, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Text(
+                "%02d".format(value),
+                color = MereniColors.Text,
+                fontSize = fontSize,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+            )
         }
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(8.dp))
         KeyRect(label = "▼", color = MereniColors.SurfaceAlt, onClick = {
             onChange(if (value <= range.first) range.last else value - 1)
         })
@@ -334,7 +327,7 @@ fun KeyRect(
         ) {
             Text(
                 text = label,
-                color = MereniColors.Text,
+                color = if (color.luminance() > 0.55f) MereniColors.Text else Color.White,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 15.sp,
                 textAlign = TextAlign.Center,
@@ -352,7 +345,7 @@ fun KeyRect(
                     .clickable { onBadgeClick?.invoke() ?: onClick() }
                     .padding(horizontal = 6.dp)
             ) {
-                Text(text = badge, fontSize = 10.sp, color = MereniColors.BackgroundTop)
+                Text(text = badge, fontSize = 10.sp, color = MereniColors.Text)
             }
         }
     }
@@ -365,28 +358,64 @@ fun colorFor(kind: PasportKind): Color = when (kind) {
 }
 
 @Composable
-fun ChipToken(label: String, onRemove: () -> Unit, modifier: Modifier = Modifier) {
-    Box(modifier = modifier.padding(end = 8.dp)) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .height(ChipHeight)
-                .clip(RoundedCornerShape(6.dp))
-                .background(MereniColors.ChipBg)
-                .padding(horizontal = 14.dp)
-        ) {
-            Text(label, color = MereniColors.ChipText, fontWeight = FontWeight.Medium, fontSize = 15.sp)
+fun ChipToken(
+    label: String,
+    onRemove: () -> Unit,
+    modifier: Modifier = Modifier,
+    onMoveLeft: (() -> Unit)? = null,
+    onMoveRight: (() -> Unit)? = null,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier.padding(end = 8.dp),
+    ) {
+        if (onMoveLeft != null) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .background(MereniColors.SurfaceAlt)
+                    .clickable(onClick = onMoveLeft)
+            ) {
+                Text("‹", color = MereniColors.Text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
         }
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .size(18.dp)
-                .clip(CircleShape)
-                .background(MereniColors.Danger)
-                .clickable(onClick = onRemove)
-        ) {
-            Text("−", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Box {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .height(ChipHeight)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(MereniColors.ChipBg)
+                    .border(1.dp, MereniColors.ChipBorder, RoundedCornerShape(6.dp))
+                    .padding(horizontal = 14.dp)
+            ) {
+                Text(label, color = MereniColors.ChipText, fontWeight = FontWeight.Medium, fontSize = 15.sp)
+            }
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .size(18.dp)
+                    .clip(CircleShape)
+                    .background(MereniColors.Danger)
+                    .clickable(onClick = onRemove)
+            ) {
+                Text("−", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+        if (onMoveRight != null) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .background(MereniColors.SurfaceAlt)
+                    .clickable(onClick = onMoveRight)
+            ) {
+                Text("›", color = MereniColors.Text, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
         }
     }
 }

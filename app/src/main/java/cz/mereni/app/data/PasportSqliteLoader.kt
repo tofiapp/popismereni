@@ -306,10 +306,15 @@ object PasportSqliteLoader {
 
         val kindWhere = when (kind) {
             KindFilter.VYHYBKA -> nonEmptyExpr(poloha)
+            // Spojka: prázdná POLOHA + zhl + IOB X/S (ne 2A/2B)
             KindFilter.SPOJKA ->
-                "${emptyExpr(poloha)} AND lower(trim(coalesce(CAST(${tpi ?: "''"} AS TEXT),''))) LIKE '%zhl%'"
+                "${emptyExpr(poloha)} AND " +
+                    "lower(trim(coalesce(CAST(${tpi ?: "''"} AS TEXT),''))) = 'zhl' AND " +
+                    "upper(trim(coalesce(CAST(${iob ?: "''"} AS TEXT),''))) IN ('X','S')"
+            // Kolej: prázdná POLOHA, není zhl, IOB není X/S
             KindFilter.KOLEJ ->
-                "${emptyExpr(poloha)} AND ${emptyExpr(tpi)} AND " +
+                "${emptyExpr(poloha)} AND " +
+                    "lower(trim(coalesce(CAST(${tpi ?: "''"} AS TEXT),''))) != 'zhl' AND " +
                     "upper(trim(coalesce(CAST(${iob ?: "''"} AS TEXT),''))) NOT IN ('X','S')"
         }
 
