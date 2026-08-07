@@ -12,7 +12,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,16 +25,18 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,10 +44,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -55,11 +59,13 @@ import cz.mereni.app.data.PasportKind
 import cz.mereni.app.data.PasportLoadResult
 import cz.mereni.app.data.PasportRepository
 import cz.mereni.app.data.PasportSqliteLoader
+import cz.mereni.app.data.SelectedToken
 import cz.mereni.app.data.Station
-import cz.mereni.app.ui.ChipToken
 import cz.mereni.app.ui.FieldKeyboard
 import cz.mereni.app.ui.FieldPanel
 import cz.mereni.app.ui.MereniColors
+import cz.mereni.app.ui.PasportSettingsButton
+import cz.mereni.app.ui.ReorderableChipRow
 import cz.mereni.app.ui.StationSearchPicker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -114,8 +120,8 @@ class MainActivity : ComponentActivity() {
                 load = load,
                 onLoadChange = { load = it },
                 initialCount = store.count(),
-                onSave = { udu, pole1, pole2, cas ->
-                    store.append(udu, pole1, pole2, cas)
+                onSave = { udu, pole1, pole2, cas, poznamka ->
+                    store.append(udu, pole1, pole2, cas, poznamka)
                     store.count()
                 },
                 onPersistUri = { uri ->
@@ -149,7 +155,7 @@ fun MereniApp(
     load: PasportLoadResult,
     onLoadChange: (PasportLoadResult) -> Unit,
     initialCount: Int,
-    onSave: (udu: String, pole1: String, pole2: String, casMereni: String) -> Int,
+    onSave: (udu: String, pole1: String, pole2: String, casMereni: String, poznamka: String) -> Int,
     onPersistUri: suspend (Uri) -> PasportLoadResult,
     onReload: suspend () -> PasportLoadResult,
     onKeysForStation: suspend (Station?, List<PasportKey>) -> List<PasportKey>,
@@ -162,8 +168,10 @@ fun MereniApp(
     var keysLoading by remember { mutableStateOf(false) }
     var pasportLoading by remember { mutableStateOf(false) }
     var pasportLoadingMsg by remember { mutableStateOf("") }
-    val pole1 = remember { mutableStateListOf<String>() }
-    val pole2 = remember { mutableStateListOf<String>() }
+    val pole1 = remember { mutableStateListOf<SelectedToken>() }
+    val pole2 = remember { mutableStateListOf<SelectedToken>() }
+    var nextTokenId by remember { mutableLongStateOf(1L) }
+    var note by remember { mutableStateOf("") }
     var recordCount by remember { mutableIntStateOf(initialCount) }
 
     val now = remember { Calendar.getInstance() }
@@ -171,12 +179,19 @@ fun MereniApp(
     var minute by remember { mutableIntStateOf(now.get(Calendar.MINUTE)) }
     var timeChosen by remember { mutableStateOf(false) }
 
+    fun nextId(): Long {
+        val id = nextTokenId
+        nextTokenId = id + 1
+        return id
+    }
+
     fun applyLoad(result: PasportLoadResult) {
         onLoadChange(result)
         selectedStation = null
         stationKeys = emptyList()
         pole1.clear()
         pole2.clear()
+        note = ""
         pasportLoading = false
         pasportLoadingMsg = ""
     }
@@ -194,11 +209,10 @@ fun MereniApp(
         }
     }
 
-    fun moveItem(list: MutableList<String>, index: Int, delta: Int) {
-        val target = index + delta
-        if (index !in list.indices || target !in list.indices) return
-        val item = list.removeAt(index)
-        list.add(target, item)
+    fun moveItem(list: MutableList<SelectedToken>, from: Int, to: Int) {
+        if (from !in list.indices || to !in list.indices || from == to) return
+        val item = list.removeAt(from)
+        list.add(to, item)
     }
 
     val pickPasport = rememberLauncherForActivityResult(
@@ -236,6 +250,7 @@ fun MereniApp(
     fun clearAll() {
         pole1.clear()
         pole2.clear()
+        note = ""
         timeChosen = false
         useNow()
         timeChosen = false
@@ -251,6 +266,17 @@ fun MereniApp(
         "koleje $k · spojky $s · výhybky $v"
     }
 
+    val pasportStatusText = when {
+        pasportLoading -> pasportLoadingMsg.ifBlank { "Načítám pasport…" }
+        keysLoading -> "Načítám koleje / spojky / výhybky…"
+        load.fromDeviceSqlite && selectedStation != null ->
+            "Pasport OK · $keyStats"
+        load.fromDeviceSqlite ->
+            "Pasport OK · ${load.stats.ifBlank { load.sourceLabel }}"
+        else ->
+            "Pasport chybí — ${PasportSqliteLoader.DB_FILE_NAME} v Download, nebo Vybrat"
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -262,7 +288,6 @@ fun MereniApp(
             .padding(12.dp)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // Horní lišta — kompaktní, vyhledávač v dialogu
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
@@ -288,57 +313,40 @@ fun MereniApp(
                     color = MereniColors.TextMuted,
                     fontSize = 12.sp,
                 )
+                Spacer(modifier = Modifier.width(6.dp))
+                PasportSettingsButton(
+                    statusText = pasportStatusText,
+                    statusOk = load.fromDeviceSqlite && !pasportLoading,
+                    loading = pasportLoading || keysLoading,
+                    onPick = {
+                        pickPasport.launch(
+                            arrayOf(
+                                "application/octet-stream",
+                                "application/x-sqlite3",
+                                "application/vnd.sqlite3",
+                                "*/*",
+                            )
+                        )
+                    },
+                    onReload = {
+                        pasportLoading = true
+                        pasportLoadingMsg = "Obnovuji pasport…"
+                        scope.launch { applyLoad(onReload()) }
+                    },
+                )
             }
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
+            if (pasportLoading || keysLoading) {
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = when {
-                        pasportLoading -> pasportLoadingMsg.ifBlank { "Načítám pasport…" }
-                        keysLoading -> "Načítám koleje / spojky / výhybky…"
-                        load.fromDeviceSqlite && selectedStation != null ->
-                            "Pasport OK · $keyStats"
-                        load.fromDeviceSqlite ->
-                            "Pasport OK · ${load.stats.ifBlank { load.sourceLabel }}"
-                        else ->
-                            "Pasport chybí — ${PasportSqliteLoader.DB_FILE_NAME} v Download, nebo Vybrat"
-                    },
-                    color = when {
-                        pasportLoading || keysLoading -> MereniColors.Accent
-                        load.fromDeviceSqlite -> MereniColors.Kolej
-                        else -> MereniColors.Danger
-                    },
+                    text = pasportStatusText,
+                    color = MereniColors.Accent,
                     fontSize = 11.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
                 )
-                TextButton(onClick = {
-                    pickPasport.launch(
-                        arrayOf(
-                            "application/octet-stream",
-                            "application/x-sqlite3",
-                            "application/vnd.sqlite3",
-                            "*/*",
-                        )
-                    )
-                }) {
-                    Text("Vybrat", color = MereniColors.Accent, fontSize = 12.sp)
-                }
-                TextButton(onClick = {
-                    pasportLoading = true
-                    pasportLoadingMsg = "Obnovuji pasport…"
-                    scope.launch { applyLoad(onReload()) }
-                }) {
-                    Text("Obnovit", color = MereniColors.TextMuted, fontSize = 12.sp)
-                }
             }
 
             Spacer(modifier = Modifier.height(6.dp))
 
-            // 3 vyšší pole — chipy scrollovatelné
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth()
@@ -351,7 +359,7 @@ fun MereniApp(
                     ScrollableChips(
                         items = pole1,
                         onRemove = { pole1.removeAt(it) },
-                        onMove = { i, d -> moveItem(pole1, i, d) },
+                        onMove = { from, to -> moveItem(pole1, from, to) },
                     )
                 }
                 FieldPanel(
@@ -362,7 +370,7 @@ fun MereniApp(
                     ScrollableChips(
                         items = pole2,
                         onRemove = { pole2.removeAt(it) },
-                        onMove = { i, d -> moveItem(pole2, i, d) },
+                        onMove = { from, to -> moveItem(pole2, from, to) },
                     )
                 }
                 FieldPanel(
@@ -372,6 +380,7 @@ fun MereniApp(
                         if (!timeChosen) useNow()
                     },
                     modifier = Modifier.weight(0.7f),
+                    contentAlignment = Alignment.Center,
                 ) {
                     Text(
                         text = if (timeChosen) timeLabel() else "čas",
@@ -379,41 +388,9 @@ fun MereniApp(
                         fontSize = if (timeChosen) 28.sp else 13.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Monospace,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
                     )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = {
-                        val cas = if (timeChosen) timeLabel() else ""
-                        if (pole1.isNotEmpty() || pole2.isNotEmpty() || cas.isNotBlank()) {
-                            recordCount = onSave(
-                                selectedStation?.udu.orEmpty(),
-                                pole1.joinToString(" "),
-                                pole2.joinToString(" "),
-                                cas,
-                            )
-                            clearAll()
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MereniColors.Accent,
-                        contentColor = MereniColors.BackgroundTop,
-                    ),
-                ) {
-                    Text("Uložit záznam", fontWeight = FontWeight.SemiBold)
-                }
-                Button(
-                    onClick = { clearAll() },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MereniColors.SurfaceAlt,
-                        contentColor = MereniColors.Text,
-                    ),
-                ) {
-                    Text("Vymazat")
                 }
             }
 
@@ -425,8 +402,8 @@ fun MereniApp(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(240.dp)
-                            .background(MereniColors.Surface)
+                            .weight(1f)
+                            .background(MereniColors.Surface, RoundedCornerShape(12.dp))
                     ) {
                         Text("Vyber stanici (tlačítko nahoře)", color = MereniColors.TextMuted)
                     }
@@ -436,8 +413,8 @@ fun MereniApp(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(240.dp)
-                            .background(MereniColors.Surface)
+                            .weight(1f)
+                            .background(MereniColors.Surface, RoundedCornerShape(12.dp))
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             CircularProgressIndicator(color = MereniColors.Accent)
@@ -453,29 +430,103 @@ fun MereniApp(
                         hour = hour,
                         minute = minute,
                         onPasportKey = { key ->
+                            val token = SelectedToken(nextId(), key.label, key.kind)
                             when (activeField) {
-                                ActiveField.POLE1 -> pole1.add(key.label)
-                                ActiveField.POLE2 -> pole2.add(key.label)
+                                ActiveField.POLE1 -> pole1.add(token)
+                                ActiveField.POLE2 -> pole2.add(token)
                                 ActiveField.CAS -> Unit
                             }
                         },
                         onHourChange = { hour = it; timeChosen = true },
                         onMinuteChange = { minute = it; timeChosen = true },
                         onUseNow = { useNow() },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
                     )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Poznámka vlevo → Uložit / Vymazat vpravo (menší)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                BasicTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    singleLine = true,
+                    textStyle = TextStyle(color = MereniColors.Text, fontSize = 14.sp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(40.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MereniColors.Surface)
+                        .border(1.dp, MereniColors.ChipBorder, RoundedCornerShape(8.dp))
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    decorationBox = { inner ->
+                        Box(contentAlignment = Alignment.CenterStart) {
+                            if (note.isEmpty()) {
+                                Text("Poznámka…", color = MereniColors.TextMuted, fontSize = 14.sp)
+                            }
+                            inner()
+                        }
+                    },
+                )
+                Button(
+                    onClick = {
+                        val cas = if (timeChosen) timeLabel() else ""
+                        if (pole1.isNotEmpty() || pole2.isNotEmpty() || cas.isNotBlank() || note.isNotBlank()) {
+                            recordCount = onSave(
+                                selectedStation?.udu.orEmpty(),
+                                pole1.joinToString(" ") { it.label },
+                                pole2.joinToString(" ") { it.label },
+                                cas,
+                                note.trim(),
+                            )
+                            clearAll()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MereniColors.Accent,
+                        contentColor = MereniColors.BackgroundTop,
+                    ),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                        horizontal = 12.dp,
+                        vertical = 6.dp,
+                    ),
+                    modifier = Modifier.height(40.dp),
+                ) {
+                    Text("Uložit", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                }
+                Button(
+                    onClick = { clearAll() },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MereniColors.SurfaceAlt,
+                        contentColor = MereniColors.Text,
+                    ),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                        horizontal = 12.dp,
+                        vertical = 6.dp,
+                    ),
+                    modifier = Modifier.height(40.dp),
+                ) {
+                    Text("Vymazat", fontSize = 13.sp)
                 }
             }
         }
     }
 }
 
-/** Chipy v poli — scroll + změna pořadí šipkami. */
+/** Chipy v poli — scroll + přeuspořádání dlouhým stiskem. */
 @Composable
 private fun ScrollableChips(
-    items: List<String>,
+    items: List<SelectedToken>,
     onRemove: (Int) -> Unit,
-    onMove: (index: Int, delta: Int) -> Unit,
+    onMove: (from: Int, to: Int) -> Unit,
 ) {
     if (items.isEmpty()) {
         Text(text = "klepni klávesu", color = MereniColors.TextMuted, fontSize = 13.sp)
@@ -491,19 +542,11 @@ private fun ScrollableChips(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
         ) {
-            Row(
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                items.forEachIndexed { index, label ->
-                    ChipToken(
-                        label = label,
-                        onRemove = { onRemove(index) },
-                        onMoveLeft = if (index > 0) ({ onMove(index, -1) }) else null,
-                        onMoveRight = if (index < items.lastIndex) ({ onMove(index, 1) }) else null,
-                    )
-                }
-            }
+            ReorderableChipRow(
+                items = items,
+                onRemove = onRemove,
+                onMove = onMove,
+            )
         }
     }
 }
