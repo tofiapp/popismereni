@@ -889,37 +889,15 @@ fun StationSearchPicker(
         val q = StationNameCleaner.foldForSearch(query)
         if (q.length < 2) emptyList()
         else indexed.asSequence()
-            .mapNotNull { (st, keys) ->
-                val best = keys.minOfOrNull { key ->
-                    when {
-                        key == q -> 0
-                        key.startsWith(q) -> 1
-                        key.contains(q) -> 2 + key.indexOf(q).coerceAtMost(20)
-                        else -> Int.MAX_VALUE
-                    }
-                } ?: Int.MAX_VALUE
-                if (best == Int.MAX_VALUE) null
-                else Triple(best, st.jmeno.lowercase(), st)
-            }
-            .sortedWith(compareBy({ it.first }, { it.second }))
-            .take(80)
-            .map { it.third }
+            .filter { (_, keys) -> keys.any { it.contains(q) } }
+            .take(50)
+            .map { it.first }
             .toList()
     }
 
     val shape = RoundedCornerShape(10.dp)
-    val isDualAccent = accentColor == MereniColors.Dual
-    val borderW = when {
-        isKeySource -> 3.dp
-        isDualAccent -> 2.5.dp
-        else -> 1.5.dp
-    }
-    val borderAlpha = when {
-        isKeySource -> 1f
-        isDualAccent -> 0.95f
-        else -> 0.55f
-    }
-    val bg = if (isKeySource) accentColor.copy(alpha = 0.16f) else MereniColors.Surface
+    val borderW = if (isKeySource) 2.5.dp else 1.5.dp
+    val bg = if (isKeySource) accentColor.copy(alpha = 0.14f) else MereniColors.Surface
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -928,7 +906,7 @@ fun StationSearchPicker(
             .widthIn(min = 160.dp, max = 300.dp)
             .clip(shape)
             .background(bg)
-            .border(borderW, accentColor.copy(alpha = borderAlpha), shape)
+            .border(borderW, accentColor.copy(alpha = if (isKeySource) 1f else 0.55f), shape)
             .padding(start = 10.dp, end = 6.dp),
     ) {
         if (slotLabel != null) {
@@ -1044,12 +1022,6 @@ fun StationSearchPicker(
                     ) {
                         items(filtered.size) { i ->
                             val station = filtered[i]
-                            val qFold = StationNameCleaner.foldForSearch(query)
-                            val aliasHit = station.aliases.firstOrNull { alias ->
-                                val f = StationNameCleaner.foldForSearch(alias)
-                                f.contains(qFold) &&
-                                    !StationNameCleaner.foldForSearch(station.jmeno).contains(qFold)
-                            }
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier
@@ -1062,7 +1034,8 @@ fun StationSearchPicker(
                                     )
                                     .padding(horizontal = 8.dp),
                             ) {
-                                Column(
+                                Box(
+                                    contentAlignment = Alignment.CenterStart,
                                     modifier = Modifier
                                         .weight(1f)
                                         .fillMaxHeight()
@@ -1072,23 +1045,13 @@ fun StationSearchPicker(
                                             open = false
                                         }
                                         .padding(horizontal = 6.dp),
-                                    verticalArrangement = Arrangement.Center,
                                 ) {
                                     Text(
                                         station.jmeno,
                                         color = MereniColors.Text,
                                         fontWeight = FontWeight.Medium,
                                         fontSize = 17.sp,
-                                        maxLines = 1,
                                     )
-                                    if (aliasHit != null) {
-                                        Text(
-                                            aliasHit,
-                                            color = MereniColors.TextMuted,
-                                            fontSize = 12.sp,
-                                            maxLines = 1,
-                                        )
-                                    }
                                 }
                                 if (onOpenInSecond != null) {
                                     Box(

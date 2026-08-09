@@ -1,12 +1,11 @@
-# Měření v0.19.0
+# Měření v0.20.0
 
 ## Aktualizace
 ```bash
-adb install -r artifacts/mereni-v0.19.0-debug.apk
+adb install -r artifacts/mereni-v0.20.0-debug.apk
 ```
 
-## UI v0.19.0
-- Zašednutí kolejí/výhybek **nepropadá mezi 2 vyhledávači** (session lock i CSV per slot/UDU)
-- Dual save: zvlášť řádek pro každou stanici (ne `A+B`)
-- 2. vyhledávač: výrazná korálová barva rámečku
-- Hlavní názvy stanic (Nymburk, Český Těšín…): lepší preferName + řazení hledání + alias podtitul
+## UI v0.20.0
+- 2. vyhledávač: malinová barva (ne korálová — moc podobná spojkám)
+- Vyhledávání názvů stanic vráceno na stav před v0.19
+- Zachováno: zašednutí kolejí/výhybek per vyhledávač
