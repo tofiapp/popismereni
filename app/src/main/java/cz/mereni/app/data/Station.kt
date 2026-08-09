@@ -113,7 +113,7 @@ object StationNameCleaner {
             Regex("""\s+predm.*""", RegexOption.IGNORE_CASE),
         )
         for (r in cutters) {
-            val t = s.replace(r, "").trim(' ', '.', ',', '-')
+            val t = name.replace(r, "").trim(' ', '.', ',', '-')
             if (t.length >= 2 && !t.equals(name, ignoreCase = true)) out.add(t)
         }
         return out.toList()
