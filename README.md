@@ -1,11 +1,12 @@
-# Měření v0.18.0
+# Měření v0.19.0
 
 ## Aktualizace
 ```bash
-adb install -r artifacts/mereni-v0.18.0-debug.apk
+adb install -r artifacts/mereni-v0.19.0-debug.apk
 ```
 
-## UI v0.18.0
-- Dual: atributy z 2. vyhledávače mají okraj barvy 2. měření (hlína)
-- Zašednutí hned po vložení do horních polí — nelze znovu přidat
-- Po uložení zůstanou zašedlé, ale jdou znovu přidat
+## UI v0.19.0
+- Zašednutí kolejí/výhybek **nepropadá mezi 2 vyhledávači** (session lock i CSV per slot/UDU)
+- Dual save: zvlášť řádek pro každou stanici (ne `A+B`)
+- 2. vyhledávač: výrazná korálová barva rámečku
+- Hlavní názvy stanic (Nymburk, Český Těšín…): lepší preferName + řazení hledání + alias podtitul

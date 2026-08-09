@@ -33,8 +33,8 @@ object MereniColors {
     /** Poznámka — prašná ocelově modrá */
     val Poznamka = Color(0xFF5C6E8A)
 
-    /** Druhá stanice (dual) — teplá hlína */
-    val Dual = Color(0xFF8A6848)
+    /** Druhá stanice (dual) — výrazná korálová, kontrast k ocelově modré */
+    val Dual = Color(0xFFE06B3C)
 
     val ChipBg = Color(0xFFFFFFFF)
     val ChipText = Color(0xFF152033)

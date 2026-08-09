@@ -59,8 +59,9 @@ class MeasurementStore(context: Context) {
     }
 
     /**
-     * Popisky už uložené pro dané UDU (nebo dual řádek `A+B` obsahující UDU) —
-     * z [pole1] (mezery) i [pole2] (` - `). Po uložení zůstávají zašedlé, ale jdou znovu přidat.
+     * Popisky už uložené **jen** pro přesné UDU (ne dual `A+B`) —
+     * z [pole1] (mezery) i [pole2] (` - `).
+     * Zašednutí tak nepropadá mezi dvěma vyhledávači.
      */
     fun usedLabelsForUdu(udu: String): Set<String> {
         val want = udu.trim()
@@ -72,7 +73,7 @@ class MeasurementStore(context: Context) {
             .forEach { line ->
                 val cols = splitCsvLine(line)
                 if (cols.size < 3) return@forEach
-                if (!uduMatches(cols[1].trim(), want)) return@forEach
+                if (cols[1].trim() != want) return@forEach
                 cols[2].trim()
                     .split(Regex("\\s+"))
                     .filter { it.isNotEmpty() }
@@ -90,13 +91,6 @@ class MeasurementStore(context: Context) {
 
     /** @deprecated použij [usedLabelsForUdu] */
     fun usedPole1LabelsForUdu(udu: String): Set<String> = usedLabelsForUdu(udu)
-
-    /** Přesná shoda nebo dual `A+B` / `B+A`. */
-    private fun uduMatches(rowUdu: String, want: String): Boolean {
-        if (rowUdu == want) return true
-        if ('+' !in rowUdu) return false
-        return rowUdu.split('+').any { it.trim() == want }
-    }
 
     companion object {
         /** Jednoduchý CSV split — respektuje uvozovky. */
