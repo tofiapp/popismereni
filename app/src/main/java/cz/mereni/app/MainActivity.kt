@@ -84,8 +84,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        val store = MeasurementStore(this)
-        store.ensureHeader()
+            val store = MeasurementStore(this)
+        store.ensureReady()
         val version = BuildConfig.VERSION_NAME
         val initial = PasportRepository.load(this, version)
 
@@ -129,13 +129,13 @@ class MainActivity : ComponentActivity() {
                 load = load,
                 onLoadChange = { load = it },
                 initialCount = bootRecordCount,
-                onSave = { udu, pole1, pole2, cas, poznamka ->
-                    store.append(udu, pole1, pole2, cas, poznamka)
+                onSave = { stationName, udu, pole1, pole2, cas, poznamka ->
+                    store.append(stationName, udu, pole1, pole2, cas, poznamka)
                     store.count()
                 },
-                onUsedLabels = { udu ->
+                onUsedLabels = { stationName ->
                     withContext(Dispatchers.IO) {
-                        store.usedLabelsForUdu(udu)
+                        store.usedLabelsForStation(stationName)
                     }
                 },
                 onPersistBytes = { bytes, uri ->
@@ -144,21 +144,21 @@ class MainActivity : ComponentActivity() {
                     }
                 },
                 onSaveToOneDrive = {
-                    store.ensureHeader()
+                    val file = store.prepareExportFile()
                     val uri = FileProvider.getUriForFile(
                         this@MainActivity,
                         "${packageName}.fileprovider",
-                        store.csvFile,
+                        file,
                     )
                     val send = Intent(Intent.ACTION_SEND).apply {
-                        type = "text/*"
+                        type = MeasurementStore.MIME_XLSX
                         putExtra(Intent.EXTRA_STREAM, uri)
-                        putExtra(Intent.EXTRA_SUBJECT, MeasurementStore.CSV_NAME)
-                        putExtra(Intent.EXTRA_TITLE, MeasurementStore.CSV_NAME)
+                        putExtra(Intent.EXTRA_SUBJECT, file.name)
+                        putExtra(Intent.EXTRA_TITLE, file.name)
                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         clipData = android.content.ClipData.newUri(
                             contentResolver,
-                            MeasurementStore.CSV_NAME,
+                            file.name,
                             uri,
                         )
                     }
@@ -166,6 +166,7 @@ class MainActivity : ComponentActivity() {
                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     }
                     startActivity(chooser)
+                    file.nameWithoutExtension
                 },
                 onReload = {
                     withContext(Dispatchers.IO) {
@@ -189,10 +190,10 @@ fun MereniApp(
     load: PasportLoadResult,
     onLoadChange: (PasportLoadResult) -> Unit,
     initialCount: Int,
-    onSave: (udu: String, pole1: String, pole2: String, casMereni: String, poznamka: String) -> Int,
+    onSave: (stationName: String, udu: String, pole1: String, pole2: String, casMereni: String, poznamka: String) -> Int,
     onUsedLabels: suspend (String) -> Set<String>,
     onPersistBytes: suspend (ByteArray, Uri?) -> PasportLoadResult,
-    onSaveToOneDrive: () -> Unit,
+    onSaveToOneDrive: () -> String,
     onReload: suspend () -> PasportLoadResult,
     onKeysForStation: suspend (Station?, List<PasportKey>) -> List<PasportKey>,
 ) {
@@ -242,8 +243,8 @@ fun MereniApp(
 
     fun refreshUsedLabels() {
         scope.launch {
-            usedLabelsA = stationA?.udu?.takeIf { it.isNotBlank() }?.let { onUsedLabels(it) } ?: emptySet()
-            usedLabelsB = stationB?.udu?.takeIf { it.isNotBlank() }?.let { onUsedLabels(it) } ?: emptySet()
+            usedLabelsA = stationA?.jmeno?.takeIf { it.isNotBlank() }?.let { onUsedLabels(it) } ?: emptySet()
+            usedLabelsB = stationB?.jmeno?.takeIf { it.isNotBlank() }?.let { onUsedLabels(it) } ?: emptySet()
         }
     }
 
@@ -430,8 +431,8 @@ fun MereniApp(
                     Button(
                         onClick = {
                             exportMessage = null
-                            onSaveToOneDrive()
-                            exportMessage = "Vyber OneDrive ve sdílení"
+                            val name = onSaveToOneDrive()
+                            exportMessage = "Soubor $name — vyber OneDrive"
                         },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MereniColors.Accent,
@@ -588,7 +589,7 @@ fun MereniApp(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Poznámka + Uložit / Vymazat uprostřed (nad klávesnicí) — mimo systémové menu tabletu
+            // Poznámka + Další / Vymazat uprostřed (nad klávesnicí) — mimo systémové menu tabletu
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -633,17 +634,21 @@ fun MereniApp(
                         if (!hasContent) return@Button
 
                         fun saveFor(
-                            udu: String,
+                            station: Station?,
                             p1: List<SelectedToken>,
                             p2: List<SelectedToken>,
                             withMeta: Boolean,
                         ) {
                             if (p1.isEmpty() && p2.isEmpty() && !withMeta) return
-                            if (udu.isBlank() && p1.isEmpty() && p2.isEmpty() && !withMeta) return
+                            val st = station
+                            val udu = st?.udu.orEmpty()
+                            val name = st?.jmeno.orEmpty()
+                            if (udu.isBlank() && name.isBlank() && p1.isEmpty() && p2.isEmpty() && !withMeta) return
                             recordCount = onSave(
+                                name,
                                 udu,
-                                p1.joinToString(" ") { it.label },
-                                p2.joinToString(" - ") { it.label },
+                                p1.joinToString(",") { it.label },
+                                p2.joinToString("-") { it.label },
                                 if (withMeta) cas else "",
                                 if (withMeta) noteText else "",
                             )
@@ -663,15 +668,15 @@ fun MereniApp(
                                     (p1.isNotEmpty() || p2.isNotEmpty() ||
                                         cas.isNotBlank() || noteText.isNotBlank())
                                 if (p1.isEmpty() && p2.isEmpty() && !withMeta) continue
-                                saveFor(st.udu, p1, p2, withMeta)
+                                saveFor(st, p1, p2, withMeta)
                                 if (withMeta) metaDone = true
                             }
                             if (!metaDone && (cas.isNotBlank() || noteText.isNotBlank())) {
-                                saveFor(stationA?.udu.orEmpty(), emptyList(), emptyList(), true)
+                                saveFor(stationA, emptyList(), emptyList(), true)
                             }
                         } else {
                             saveFor(
-                                stationA?.udu.orEmpty(),
+                                stationA,
                                 pole1.toList(),
                                 pole2.toList(),
                                 true,

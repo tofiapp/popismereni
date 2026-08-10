@@ -2,186 +2,142 @@ package cz.mereni.app.data
 
 import android.content.Context
 import java.io.File
-import java.nio.charset.Charset
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 /**
- * CSV úložiště měření.
- * Soubor: Documents/mereni.csv — oddělovač `;`, UTF-8 s BOM.
+ * Excel úložiště měření (.xlsx), 4 sloupce:
+ * 1) spojky/koleje (čárkou)
+ * 2) od–do (pomlčkou)
+ * 3) čas
+ * 4) poznámka
+ *
+ * Při změně stanice se před prvním záznamem zapíše řádek jen s názvem stanice.
+ * Export na OneDrive: `YYMMDD_N_MD1.xlsx`.
  */
 class MeasurementStore(context: Context) {
 
+    private val appContext = context.applicationContext
     private val docsDir: File =
-        File(context.getExternalFilesDir(null), "Documents").apply { mkdirs() }
+        File(appContext.getExternalFilesDir(null), "Documents").apply { mkdirs() }
+    private val prefs =
+        appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    val csvFile: File = File(docsDir, CSV_NAME)
+    /** Pracovní sešit (bez denního číslování). */
+    val workingFile: File = File(docsDir, WORKING_NAME)
 
-    fun ensureHeader() {
-        if (!csvFile.exists() || csvFile.length() == 0L) {
-            csvFile.writeText(BOM + HEADER + "\n", UTF8)
-            return
-        }
-        val raw = csvFile.readText(UTF8)
-        val lines = raw.removePrefix(BOM).lines().toMutableList()
-        if (lines.isEmpty() || lines[0].isBlank()) {
-            csvFile.writeText(BOM + HEADER + "\n", UTF8)
-            return
-        }
-        val header = lines[0].trim()
-        if (header == HEADER) return
-        // Migrace ze staršího formátu bez poznámky
-        if (header == HEADER_V1 || !header.contains("poznamka")) {
-            lines[0] = HEADER
-            for (i in 1 until lines.size) {
-                val line = lines[i]
-                if (line.isBlank()) continue
-                val semis = line.count { it == ';' }
-                if (semis == 4) lines[i] = "$line;"
-            }
-            csvFile.writeText(BOM + lines.joinToString("\n") + "\n", UTF8)
+    /** Naposledy připravený soubor pro sdílení (pojmenovaný YYMMDD_N_MD1.xlsx). */
+    var lastExportFile: File? = null
+        private set
+
+    fun ensureReady() {
+        // Smaž starý CSV z dřívějších verzí
+        File(docsDir, "mereni.csv").takeIf { it.exists() }?.delete()
+        if (!workingFile.exists()) {
+            SimpleXlsx.write(workingFile, emptyList())
         }
     }
 
-    fun count(): Int {
-        if (!csvFile.exists()) return 0
-        val lines = csvFile.readLines(UTF8)
-        return (lines.size - 1).coerceAtLeast(0)
-    }
+    fun count(): Int =
+        SimpleXlsx.read(workingFile).count { !it.isStationHeader() && hasMeasurement(it) }
 
-    fun append(udu: String, pole1: String, pole2: String, casMereni: String, poznamka: String) {
-        ensureHeader()
-        val stamp = STAMP.format(Date())
-        val line = listOf(stamp, udu, pole1, pole2, casMereni, poznamka)
-            .joinToString(";") { escape(it) }
-        csvFile.appendText(line + "\n", UTF8)
+    /**
+     * Přidá řádek měření. [stationName] se zapíše jako samostatný řádek,
+     * pokud je to první záznam dané stanice od poslední změny.
+     */
+    fun append(
+        stationName: String,
+        stationUdu: String,
+        pole1: String,
+        pole2: String,
+        casMereni: String,
+        poznamka: String,
+    ) {
+        ensureReady()
+        val rows = SimpleXlsx.read(workingFile).toMutableList()
+        val name = stationName.trim().ifBlank { stationUdu.trim() }
+        val lastHeader = rows.lastOrNull { it.isStationHeader() }?.a?.trim()
+        if (name.isNotEmpty() && lastHeader != name) {
+            rows += SimpleXlsx.Row(a = name)
+            prefs.edit().putString(KEY_LAST_STATION_UDU, stationUdu.trim()).apply()
+        }
+        rows += SimpleXlsx.Row(
+            a = pole1.trim(),
+            b = pole2.trim(),
+            c = casMereni.trim(),
+            d = poznamka.trim(),
+        )
+        SimpleXlsx.write(workingFile, rows)
     }
 
     /**
-     * Zkopíruje aktuální [csvFile] do výstupu (např. SAF CreateDocument / share).
-     * Vrací počet zapsaných bajtů.
+     * Popisky už uložené pro stanici ([stationName] musí sedět na řádek názvu ve sheetu).
      */
-    fun exportTo(output: java.io.OutputStream): Long {
-        ensureHeader()
-        return csvFile.inputStream().use { input ->
-            input.copyTo(output).also { output.flush() }
-        }
-    }
-
-    /**
-     * Nahraje CSV ze vstupu (SAF / OneDrive OpenDocument nebo GetContent)
-     * a nahradí lokální [csvFile]. Vrací počet datových řádků.
-     */
-    fun importFrom(input: java.io.InputStream): Int {
-        val bytes = input.readBytes()
-        return importFromBytes(bytes)
-    }
-
-    /** Stejné jako [importFrom], ale z už načtených bajtů (jednorázový grant SAF). */
-    fun importFromBytes(bytes: ByteArray): Int {
-        require(bytes.isNotEmpty()) { "Soubor je prázdný" }
-        val raw = bytes.toString(UTF8)
-        val text = raw.removePrefix(BOM)
-        val lines = text.lines().filter { it.isNotBlank() }.toMutableList()
-        require(lines.isNotEmpty()) { "CSV nemá žádné řádky" }
-        val header = lines[0].trim()
-        val looksCsv = header.contains(';') && (
-            header.contains("udu", ignoreCase = true) ||
-                header.contains("pole1", ignoreCase = true) ||
-                header == HEADER ||
-                header == HEADER_V1
-            )
-        require(looksCsv) {
-            "Neplatný mereni.csv (očekáván header se středníky, např. zapsano;udu;…)"
-        }
-        if (header != HEADER && (header == HEADER_V1 || !header.contains("poznamka"))) {
-            lines[0] = HEADER
-            for (i in 1 until lines.size) {
-                val semis = lines[i].count { it == ';' }
-                if (semis == 4) lines[i] = "${lines[i]};"
-            }
-        }
-        csvFile.writeText(BOM + lines.joinToString("\n") + "\n", UTF8)
-        ensureHeader()
-        return count()
-    }
-
-    /**
-     * Popisky už uložené **jen** pro přesné UDU (ne dual `A+B`) —
-     * z [pole1] (mezery) i [pole2] (` - `).
-     * Zašednutí tak nepropadá mezi dvěma vyhledávači.
-     */
-    fun usedLabelsForUdu(udu: String): Set<String> {
-        val want = udu.trim()
-        if (want.isEmpty() || !csvFile.exists()) return emptySet()
+    fun usedLabelsForStation(stationName: String): Set<String> {
+        val want = stationName.trim()
+        if (want.isEmpty()) return emptySet()
+        val rows = SimpleXlsx.read(workingFile)
         val out = linkedSetOf<String>()
-        csvFile.readLines(UTF8).asSequence()
-            .drop(1)
-            .filter { it.isNotBlank() }
-            .forEach { line ->
-                val cols = splitCsvLine(line)
-                if (cols.size < 3) return@forEach
-                if (cols[1].trim() != want) return@forEach
-                cols[2].trim()
-                    .split(Regex("\\s+"))
-                    .filter { it.isNotEmpty() }
-                    .forEach { out.add(it) }
-                if (cols.size >= 4) {
-                    cols[3].trim()
-                        .split(" - ")
-                        .map { it.trim() }
-                        .filter { it.isNotEmpty() }
-                        .forEach { out.add(it) }
-                }
+        var active = false
+        for (row in rows) {
+            if (row.isStationHeader()) {
+                active = row.a.trim() == want
+                continue
             }
+            if (!active) continue
+            row.a.split(',').map { it.trim() }.filter { it.isNotEmpty() }.forEach { out.add(it) }
+            row.b.split('-').map { it.trim() }.filter { it.isNotEmpty() }.forEach { out.add(it) }
+        }
         return out
     }
 
-    /** @deprecated použij [usedLabelsForUdu] */
-    fun usedPole1LabelsForUdu(udu: String): Set<String> = usedLabelsForUdu(udu)
+    /** @deprecated použij [usedLabelsForStation] */
+    fun usedLabelsForUdu(udu: String): Set<String> {
+        // Zpětná kompatibilita volání — bez mapování jména vrací prázdno.
+        // Volající by měl používat usedLabelsForStation.
+        if (udu.isBlank()) return emptySet()
+        return emptySet()
+    }
+
+    /**
+     * Vytvoří pojmenovanou kopii `YYMMDD_N_MD1.xlsx` a vrátí ji (pro FileProvider / sdílení).
+     * Číslo N = kolikátý export daný den.
+     */
+    fun prepareExportFile(): File {
+        ensureReady()
+        val day = DAY_FMT.format(Date())
+        val n = prefs.getInt(KEY_DAY_COUNT_PREFIX + day, 0) + 1
+        prefs.edit().putInt(KEY_DAY_COUNT_PREFIX + day, n).apply()
+        val name = "${day}_${n}_MD1.xlsx"
+        val dest = File(docsDir, name)
+        workingFile.copyTo(dest, overwrite = true)
+        lastExportFile = dest
+        // Úklid starších exportů stejného dne necháme — uživatel může chtít lokální kopie
+        return dest
+    }
+
+    fun currentFileLabel(): String =
+        lastExportFile?.nameWithoutExtension
+            ?: run {
+                val day = DAY_FMT.format(Date())
+                val n = prefs.getInt(KEY_DAY_COUNT_PREFIX + day, 0)
+                if (n <= 0) "$day (zatím neuloženo)"
+                else "${day}_${n}_MD1 (poslední export)"
+            }
+
+    private fun hasMeasurement(row: SimpleXlsx.Row): Boolean =
+        row.a.isNotBlank() || row.b.isNotBlank() || row.c.isNotBlank() || row.d.isNotBlank()
 
     companion object {
-        /** Jednoduchý CSV split — respektuje uvozovky. */
-        private fun splitCsvLine(line: String): List<String> {
-            val result = mutableListOf<String>()
-            val sb = StringBuilder()
-            var inQuotes = false
-            var i = 0
-            while (i < line.length) {
-                val c = line[i]
-                when {
-                    c == '"' -> {
-                        if (inQuotes && i + 1 < line.length && line[i + 1] == '"') {
-                            sb.append('"')
-                            i++
-                        } else {
-                            inQuotes = !inQuotes
-                        }
-                    }
-                    c == ';' && !inQuotes -> {
-                        result.add(sb.toString())
-                        sb.clear()
-                    }
-                    else -> sb.append(c)
-                }
-                i++
-            }
-            result.add(sb.toString())
-            return result
-        }
-        const val CSV_NAME = "mereni.csv"
-        private const val HEADER_V1 = "zapsano;udu;pole1;pole2;cas_mereni"
-        private const val HEADER = "zapsano;udu;pole1;pole2;cas_mereni;poznamka"
-        private const val BOM = "\uFEFF"
-        private val UTF8: Charset = Charsets.UTF_8
-        private val STAMP = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
+        private const val PREFS = "measurement_xlsx"
+        private const val WORKING_NAME = "mereni_working.xlsx"
+        private const val KEY_DAY_COUNT_PREFIX = "export_count_"
+        private const val KEY_LAST_STATION_UDU = "last_station_udu"
+        private val DAY_FMT = SimpleDateFormat("yyMMdd", Locale.US)
 
-        private fun escape(value: String): String =
-            if (value.contains(';') || value.contains('"') || value.contains('\n')) {
-                "\"" + value.replace("\"", "\"\"") + "\""
-            } else {
-                value
-            }
+        /** MIME pro sdílení Excelu. */
+        const val MIME_XLSX =
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     }
 }
