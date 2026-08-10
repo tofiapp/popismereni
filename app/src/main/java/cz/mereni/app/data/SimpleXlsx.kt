@@ -1,6 +1,5 @@
 package cz.mereni.app.data
 
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.util.zip.ZipEntry
@@ -8,12 +7,21 @@ import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
 
 /**
- * Minimální XLSX (4 sloupce) bez Apache POI — zip + sheet XML.
+ * Minimální XLSX (4 sloupce) se styly: datum, stanice, data.
+ * Širší sloupce + větší písmo.
  */
 object SimpleXlsx {
-    data class Row(val a: String, val b: String = "", val c: String = "", val d: String = "") {
-        fun isStationHeader(): Boolean =
-            a.isNotBlank() && b.isBlank() && c.isBlank() && d.isBlank()
+    enum class Role { DATE, BLANK, STATION, DATA }
+
+    data class Row(
+        val a: String = "",
+        val b: String = "",
+        val c: String = "",
+        val d: String = "",
+        val role: Role = Role.DATA,
+    ) {
+        fun isEmpty(): Boolean =
+            a.isBlank() && b.isBlank() && c.isBlank() && d.isBlank()
     }
 
     fun write(file: File, rows: List<Row>) {
@@ -46,49 +54,47 @@ object SimpleXlsx {
         }.getOrDefault(emptyList())
     }
 
-    fun toBytes(rows: List<Row>): ByteArray {
-        val bos = ByteArrayOutputStream()
-        ZipOutputStream(bos).use { zip ->
-            fun put(name: String, body: String) {
-                zip.putNextEntry(ZipEntry(name))
-                zip.write(body.toByteArray(Charsets.UTF_8))
-                zip.closeEntry()
-            }
-            put("[Content_Types].xml", CONTENT_TYPES)
-            put("_rels/.rels", RELS_ROOT)
-            put("xl/workbook.xml", WORKBOOK)
-            put("xl/_rels/workbook.xml.rels", RELS_WB)
-            put("xl/styles.xml", STYLES)
-            put("xl/worksheets/sheet1.xml", sheetXml(rows))
-        }
-        return bos.toByteArray()
-    }
-
     private fun sheetXml(rows: List<Row>): String {
         val sb = StringBuilder()
         sb.append("""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>""")
         sb.append(
-            """<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">"""
+            """<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">""",
         )
+        // Širší sloupce (Excel width units)
+        sb.append("<cols>")
+        sb.append("""<col min="1" max="1" width="32" customWidth="1"/>""")
+        sb.append("""<col min="2" max="2" width="28" customWidth="1"/>""")
+        sb.append("""<col min="3" max="3" width="14" customWidth="1"/>""")
+        sb.append("""<col min="4" max="4" width="36" customWidth="1"/>""")
+        sb.append("</cols>")
         sb.append("<sheetData>")
         rows.forEachIndexed { idx, row ->
             val r = idx + 1
-            sb.append("""<row r="$r">""")
-            sb.append(cellXml("A$r", row.a))
-            sb.append(cellXml("B$r", row.b))
-            sb.append(cellXml("C$r", row.c))
-            sb.append(cellXml("D$r", row.d))
+            val style = styleIndex(row.role)
+            val ht = if (row.role == Role.BLANK) "12" else "24"
+            sb.append("""<row r="$r" ht="$ht" customHeight="1">""")
+            sb.append(cellXml("A$r", row.a, style))
+            sb.append(cellXml("B$r", row.b, style))
+            sb.append(cellXml("C$r", row.c, style))
+            sb.append(cellXml("D$r", row.d, style))
             sb.append("</row>")
         }
         sb.append("</sheetData></worksheet>")
         return sb.toString()
     }
 
-    private fun cellXml(ref: String, value: String): String {
+    private fun styleIndex(role: Role): Int = when (role) {
+        Role.DATE -> 1
+        Role.STATION -> 2
+        Role.BLANK, Role.DATA -> 0
+    }
+
+    private fun cellXml(ref: String, value: String, style: Int): String {
+        val s = """ s="$style""""
         if (value.isEmpty()) {
-            return """<c r="$ref"/>"""
+            return """<c r="$ref"$s/>"""
         }
-        return """<c r="$ref" t="inlineStr"><is><t>${xmlEscape(value)}</t></is></c>"""
+        return """<c r="$ref"$s t="inlineStr"><is><t>${xmlEscape(value)}</t></is></c>"""
     }
 
     private fun xmlEscape(s: String): String = buildString(s.length + 8) {
@@ -109,24 +115,33 @@ object SimpleXlsx {
         val rows = mutableListOf<Row>()
         val rowRegex = Regex("""<row\b[^>]*>(.*?)</row>""", RegexOption.DOT_MATCHES_ALL)
         val cellRegex = Regex(
-            """<c\b([^>]*)>(?:.*?<t[^>]*>(.*?)</t>.*?)?</c>""",
+            """<c\b([^>]*)>(?:.*?<t[^>]*>(.*?)</t>.*?)?</c>|<c\b([^>]*)/>""",
             RegexOption.DOT_MATCHES_ALL,
         )
-        val refRegex = Regex("""\br="([A-Z]+)(\d+)"""")
+        val refRegex = Regex("""\br="([A-Z]+)\d+"""")
         for (rowMatch in rowRegex.findAll(xml)) {
             val cells = mutableMapOf<String, String>()
             for (cellMatch in cellRegex.findAll(rowMatch.groupValues[1])) {
-                val attrs = cellMatch.groupValues[1]
+                val attrs = cellMatch.groupValues[1].ifBlank { cellMatch.groupValues[3] }
                 val text = xmlUnescape(cellMatch.groupValues[2])
                 val ref = refRegex.find(attrs)?.groupValues?.get(1) ?: continue
                 cells[ref] = text
             }
-            rows += Row(
-                a = cells["A"].orEmpty(),
-                b = cells["B"].orEmpty(),
-                c = cells["C"].orEmpty(),
-                d = cells["D"].orEmpty(),
-            )
+            val a = cells["A"].orEmpty()
+            val b = cells["B"].orEmpty()
+            val c = cells["C"].orEmpty()
+            val d = cells["D"].orEmpty()
+            val role = when {
+                a.isBlank() && b.isBlank() && c.isBlank() && d.isBlank() -> Role.BLANK
+                a.isNotBlank() && b.isBlank() && c.isBlank() && d.isBlank() ->
+                    if (rows.isEmpty()) Role.DATE else Role.STATION
+                else -> Role.DATA
+            }
+            rows += Row(a, b, c, d, role)
+        }
+        // První neprázdný „jen A“ po datu = stanice; nuceně DATE na index 0 pokud sedí
+        if (rows.isNotEmpty() && rows[0].role == Role.STATION) {
+            rows[0] = rows[0].copy(role = Role.DATE)
         }
         return rows
     }
@@ -166,12 +181,26 @@ object SimpleXlsx {
   </sheets>
 </workbook>"""
 
+    /** 0 = data (velké písmo), 1 = datum (modré), 2 = stanice (oranžové). */
     private const val STYLES = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts>
-  <fills count="1"><fill><patternFill patternType="none"/></fill></fills>
+  <fonts count="3">
+    <font><sz val="14"/><name val="Calibri"/></font>
+    <font><sz val="16"/><b/><name val="Calibri"/></font>
+    <font><sz val="16"/><b/><name val="Calibri"/></font>
+  </fonts>
+  <fills count="4">
+    <fill><patternFill patternType="none"/></fill>
+    <fill><patternFill patternType="gray125"/></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFBBDEFB"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFFFE0B2"/></patternFill></fill>
+  </fills>
   <borders count="1"><border/></borders>
   <cellStyleXfs count="1"><xf/></cellStyleXfs>
-  <cellXfs count="1"><xf/></cellXfs>
+  <cellXfs count="3">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+    <xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/>
+    <xf numFmtId="0" fontId="2" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1"/>
+  </cellXfs>
 </styleSheet>"""
 }

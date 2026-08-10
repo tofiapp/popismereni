@@ -49,6 +49,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -129,9 +130,11 @@ class MainActivity : ComponentActivity() {
                 load = load,
                 onLoadChange = { load = it },
                 initialCount = bootRecordCount,
+                initialDayRecord = store.dayRecordNumber(),
+                initialOneDriveSynced = store.isSyncedToOneDrive(),
                 onSave = { stationName, udu, pole1, pole2, cas, poznamka ->
                     store.append(stationName, udu, pole1, pole2, cas, poznamka)
-                    store.count()
+                    store.count() to store.dayRecordNumber()
                 },
                 onUsedLabels = { stationName ->
                     withContext(Dispatchers.IO) {
@@ -190,7 +193,9 @@ fun MereniApp(
     load: PasportLoadResult,
     onLoadChange: (PasportLoadResult) -> Unit,
     initialCount: Int,
-    onSave: (stationName: String, udu: String, pole1: String, pole2: String, casMereni: String, poznamka: String) -> Int,
+    initialDayRecord: Int,
+    initialOneDriveSynced: Boolean,
+    onSave: (stationName: String, udu: String, pole1: String, pole2: String, casMereni: String, poznamka: String) -> Pair<Int, Int>,
     onUsedLabels: suspend (String) -> Set<String>,
     onPersistBytes: suspend (ByteArray, Uri?) -> PasportLoadResult,
     onSaveToOneDrive: () -> String,
@@ -215,6 +220,8 @@ fun MereniApp(
     var nextTokenId by remember { mutableLongStateOf(1L) }
     var note by remember { mutableStateOf("") }
     var recordCount by remember { mutableIntStateOf(initialCount) }
+    var dayRecordNum by remember { mutableIntStateOf(initialDayRecord.coerceAtLeast(1)) }
+    var oneDriveSynced by remember { mutableStateOf(initialOneDriveSynced) }
     var reorderPole1 by remember { mutableStateOf(false) }
     var reorderPole2 by remember { mutableStateOf(false) }
     var usedLabelsA by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -428,23 +435,41 @@ fun MereniApp(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier.weight(1f),
                 ) {
-                    Button(
-                        onClick = {
-                            exportMessage = null
-                            val name = onSaveToOneDrive()
-                            exportMessage = "Soubor $name — vyber OneDrive"
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MereniColors.Accent,
-                            contentColor = MereniColors.BackgroundTop,
-                        ),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-                        modifier = Modifier.height(40.dp),
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
+                        Button(
+                            onClick = {
+                                exportMessage = null
+                                val name = onSaveToOneDrive()
+                                oneDriveSynced = true
+                                dayRecordNum = 1
+                                recordCount = 0
+                                exportMessage = "Soubor $name — vyber OneDrive"
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (oneDriveSynced) {
+                                    MereniColors.Vyhybka
+                                } else {
+                                    MereniColors.Danger
+                                },
+                                contentColor = Color.White,
+                            ),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                            modifier = Modifier.height(40.dp),
+                        ) {
+                            Text(
+                                "Uložit na OneDrive",
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 13.sp,
+                            )
+                        }
                         Text(
-                            "Uložit na OneDrive",
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 13.sp,
+                            text = "$dayRecordNum",
+                            color = MereniColors.Text,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
                         )
                     }
                 }
@@ -644,7 +669,7 @@ fun MereniApp(
                             val udu = st?.udu.orEmpty()
                             val name = st?.jmeno.orEmpty()
                             if (udu.isBlank() && name.isBlank() && p1.isEmpty() && p2.isEmpty() && !withMeta) return
-                            recordCount = onSave(
+                            val result = onSave(
                                 name,
                                 udu,
                                 p1.joinToString(",") { it.label },
@@ -652,6 +677,9 @@ fun MereniApp(
                                 if (withMeta) cas else "",
                                 if (withMeta) noteText else "",
                             )
+                            recordCount = result.first
+                            dayRecordNum = result.second
+                            oneDriveSynced = false
                         }
 
                         if (dualMode) {
