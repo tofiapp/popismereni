@@ -1,6 +1,8 @@
 package cz.mereni.app
 
 import android.Manifest
+import android.content.ClipDescription
+import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -49,6 +51,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -57,11 +60,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
-import cz.mereni.app.data.GetContentChooser
 import cz.mereni.app.data.MeasurementStore
-import cz.mereni.app.data.OpenOneDriveDocument
-import cz.mereni.app.data.isOneDriveInstalled
-import cz.mereni.app.data.launchOneDriveApp
 import cz.mereni.app.data.PasportKey
 import cz.mereni.app.data.PasportKind
 import cz.mereni.app.data.PasportLoadResult
@@ -78,7 +77,7 @@ import cz.mereni.app.ui.FieldPanel
 import cz.mereni.app.ui.MereniColors
 import cz.mereni.app.ui.PasportSettingsButton
 import cz.mereni.app.ui.StationSearchPicker
-import androidx.compose.ui.platform.LocalContext
+import java.nio.charset.Charset
 import java.util.Calendar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -267,7 +266,16 @@ class MainActivity : ComponentActivity() {
                 } else {
                     @Suppress("DEPRECATION")
                     intent.getParcelableExtra(Intent.EXTRA_STREAM) as? Uri
+                } ?: intent.data
+            }
+            Intent.ACTION_SEND_MULTIPLE -> {
+                val list = if (Build.VERSION.SDK_INT >= 33) {
+                    intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM)
                 }
+                list?.firstOrNull()
             }
             else -> null
         }
@@ -291,8 +299,6 @@ fun MereniApp(
     onKeysForStation: suspend (Station?, List<PasportKey>) -> List<PasportKey>,
 ) {
     val context = LocalContext.current
-    val oneDriveInstalled = remember(context) { isOneDriveInstalled(context) }
-    val oneDrivePickOk = remember(context) { OpenOneDriveDocument.canResolve(context) }
     val scope = rememberCoroutineScope()
     val pasport = load.data
     var activeField by remember { mutableStateOf(ActiveField.POLE1) }
@@ -448,19 +454,6 @@ fun MereniApp(
         if (uri != null) loadPasportFromUri(uri)
     }
 
-    val pickPasportChooser = rememberLauncherForActivityResult(
-        contract = GetContentChooser("Vyber aplikaci pro pasport"),
-    ) { uri: Uri? ->
-        if (uri != null) loadPasportFromUri(uri)
-    }
-
-    val pickPasportOneDrive = rememberLauncherForActivityResult(
-        contract = OpenOneDriveDocument(),
-    ) { uri: Uri? ->
-        if (uri != null) loadPasportFromUri(uri)
-        else exportMessage = "OneDrive výběr zrušen nebo OneDrive neotevřel soubor"
-    }
-
     val saveCsvAs = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("text/*"),
     ) { uri: Uri? ->
@@ -474,18 +467,53 @@ fun MereniApp(
         }
     }
 
-    fun importCsvFromUri(uri: Uri) {
-        val bytes = runCatching { SafUris.readAllBytes(context.contentResolver, uri) }
+    fun importCsvFromBytes(bytes: ByteArray, sourceLabel: String) {
         scope.launch {
             runCatching {
-                onImportBytes(bytes.getOrThrow())
+                onImportBytes(bytes)
             }.onSuccess { n ->
                 recordCount = n
-                exportMessage = "CSV načteno · $n záznamů (lokální soubor přepsán)"
+                exportMessage = "CSV načteno ($sourceLabel) · $n záznamů"
                 refreshUsedLabels()
             }.onFailure { e ->
-                exportMessage = e.message ?: SafUris.denyMessage(uri)
+                exportMessage = e.message ?: "Import CSV selhal"
             }
+        }
+    }
+
+    fun importCsvFromUri(uri: Uri) {
+        val bytes = runCatching { SafUris.readAllBytes(context.contentResolver, uri) }
+        if (bytes.isFailure) {
+            exportMessage = bytes.exceptionOrNull()?.message ?: SafUris.denyMessage(uri)
+            return
+        }
+        importCsvFromBytes(bytes.getOrThrow(), "Files")
+    }
+
+    fun importCsvFromClipboard() {
+        val cm = context.getSystemService(ClipboardManager::class.java)
+        val clip = cm?.primaryClip
+        if (clip == null || clip.itemCount == 0) {
+            exportMessage = "Schránka je prázdná"
+            return
+        }
+        val item = clip.getItemAt(0)
+        val text = item.coerceToText(context)?.toString()?.trim().orEmpty()
+        if (text.isNotEmpty()) {
+            importCsvFromBytes(text.toByteArray(Charset.forName("UTF-8")), "schránka")
+            return
+        }
+        // Některé appky dají do schránky URI souboru místo textu
+        val uri = item.uri
+        if (uri != null) {
+            importCsvFromUri(uri)
+            return
+        }
+        val desc = clip.description
+        exportMessage = if (desc?.hasMimeType(ClipDescription.MIMETYPE_TEXT_PLAIN) == true) {
+            "Schránka neobsahuje text CSV"
+        } else {
+            "Ve schránce není text — v OneDrive/Excelu označ CSV a Kopírovat"
         }
     }
 
@@ -493,19 +521,6 @@ fun MereniApp(
         contract = ActivityResultContracts.OpenDocument(),
     ) { uri: Uri? ->
         if (uri != null) importCsvFromUri(uri)
-    }
-
-    val importCsvChooser = rememberLauncherForActivityResult(
-        contract = GetContentChooser("Vyber aplikaci pro CSV"),
-    ) { uri: Uri? ->
-        if (uri != null) importCsvFromUri(uri)
-    }
-
-    val importCsvOneDrive = rememberLauncherForActivityResult(
-        contract = OpenOneDriveDocument(),
-    ) { uri: Uri? ->
-        if (uri != null) importCsvFromUri(uri)
-        else exportMessage = "OneDrive výběr zrušen nebo OneDrive neotevřel soubor"
     }
 
     fun useNow() {
@@ -615,19 +630,6 @@ fun MereniApp(
                             )
                         )
                     },
-                    onPickChooser = { pickPasportChooser.launch("*/*") },
-                    onPickOneDrive = if (oneDriveInstalled) {
-                        {
-                            when {
-                                oneDrivePickOk -> pickPasportOneDrive.launch("*/*")
-                                launchOneDriveApp(context) ->
-                                    exportMessage =
-                                        "V OneDrive: soubor → ⋮ → Sdílet / Otevřít v → Měření"
-                                else ->
-                                    exportMessage = "OneDrive nejde spustit"
-                            }
-                        }
-                    } else null,
                     onReload = {
                         pasportLoading = true
                         pasportLoadingMsg = "Obnovuji pasport…"
@@ -645,23 +647,19 @@ fun MereniApp(
                             )
                         )
                     },
-                    onImportCsvChooser = {
+                    onImportCsvClipboard = {
                         exportMessage = null
-                        importCsvChooser.launch("*/*")
+                        importCsvFromClipboard()
                     },
-                    onImportCsvOneDrive = if (oneDriveInstalled) {
-                        {
-                            exportMessage = null
-                            when {
-                                oneDrivePickOk -> importCsvOneDrive.launch("*/*")
-                                launchOneDriveApp(context) ->
-                                    exportMessage =
-                                        "V OneDrive: mereni.csv → ⋮ → Sdílet / Otevřít v → Měření"
-                                else ->
-                                    exportMessage = "OneDrive nejde spustit"
-                            }
+                    onImportCsvText = { text ->
+                        exportMessage = null
+                        val t = text.trim()
+                        if (t.isEmpty()) {
+                            exportMessage = "Vložený text je prázdný"
+                        } else {
+                            importCsvFromBytes(t.toByteArray(Charset.forName("UTF-8")), "vložený text")
                         }
-                    } else null,
+                    },
                     onShareCsv = {
                         exportMessage = null
                         onShareCsv()
