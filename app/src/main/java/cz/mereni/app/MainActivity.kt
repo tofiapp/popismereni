@@ -63,6 +63,7 @@ import cz.mereni.app.data.PasportKind
 import cz.mereni.app.data.PasportLoadResult
 import cz.mereni.app.data.PasportRepository
 import cz.mereni.app.data.PasportSqliteLoader
+import cz.mereni.app.data.SafUris
 import cz.mereni.app.data.SelectedToken
 import cz.mereni.app.data.Station
 import cz.mereni.app.ui.ActiveFieldCaption
@@ -73,12 +74,18 @@ import cz.mereni.app.ui.FieldPanel
 import cz.mereni.app.ui.MereniColors
 import cz.mereni.app.ui.PasportSettingsButton
 import cz.mereni.app.ui.StationSearchPicker
+import java.util.Calendar
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.util.Calendar
 
 class MainActivity : ComponentActivity() {
+
+    /** URI ze Sdílet / Otevřít v (OneDrive často grantuje jen touto cestou). */
+    private val externalUris = MutableSharedFlow<Uri>(extraBufferCapacity = 4)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -86,10 +93,13 @@ class MainActivity : ComponentActivity() {
         store.ensureHeader()
         val version = BuildConfig.VERSION_NAME
         val initial = PasportRepository.load(this, version)
+        extractIncomingUri(intent)?.let { externalUris.tryEmit(it) }
 
         setContent {
             val scope = rememberCoroutineScope()
             var load by remember { mutableStateOf(initial) }
+            var bootCsvMessage by remember { mutableStateOf<String?>(null) }
+            var bootRecordCount by remember { mutableIntStateOf(store.count()) }
 
             val permissionLauncher = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestPermission(),
@@ -121,11 +131,50 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            LaunchedEffect(Unit) {
+                externalUris.collectLatest { uri ->
+                    val name = contentResolver.query(uri, null, null, null, null)?.use { c ->
+                        val i = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                        if (i >= 0 && c.moveToFirst()) c.getString(i) else null
+                    }.orEmpty().lowercase()
+                    val mime = contentResolver.getType(uri).orEmpty().lowercase()
+                    val asCsv = name.endsWith(".csv") || "csv" in mime || "text/" in mime
+                    val asSqlite = name.endsWith(".sqlite") || name.endsWith(".db") ||
+                        "sqlite" in mime || name.contains("pasport")
+                    when {
+                        asCsv || (!asSqlite && "text" in mime) -> {
+                            runCatching {
+                                withContext(Dispatchers.IO) {
+                                    val bytes = SafUris.readAllBytes(contentResolver, uri)
+                                    store.importFromBytes(bytes)
+                                }
+                            }.onSuccess { n ->
+                                bootRecordCount = n
+                                bootCsvMessage = "CSV ze sdílení načteno · $n záznamů"
+                            }.onFailure { e ->
+                                bootCsvMessage = e.message ?: SafUris.denyMessage(uri)
+                            }
+                        }
+                        else -> {
+                            runCatching {
+                                withContext(Dispatchers.IO) {
+                                    PasportRepository.loadFromUri(this@MainActivity, uri)
+                                }
+                            }.onSuccess { load = it }
+                                .onFailure { e ->
+                                    bootCsvMessage = e.message ?: SafUris.denyMessage(uri)
+                                }
+                        }
+                    }
+                }
+            }
+
             MereniApp(
                 appVersion = version,
                 load = load,
                 onLoadChange = { load = it },
-                initialCount = store.count(),
+                initialCount = bootRecordCount,
+                externalStatusMessage = bootCsvMessage,
                 onSave = { udu, pole1, pole2, cas, poznamka ->
                     store.append(udu, pole1, pole2, cas, poznamka)
                     store.count()
@@ -136,11 +185,8 @@ class MainActivity : ComponentActivity() {
                     }
                 },
                 onPersistUri = { uri ->
-                    try {
-                        contentResolver.takePersistableUriPermission(
-                            uri, Intent.FLAG_GRANT_READ_URI_PERMISSION,
-                        )
-                    } catch (_: SecurityException) { }
+                    // Bez takePersistable u OneDrive — hned zkopírovat
+                    SafUris.takePersistableReadIfUseful(contentResolver, uri)
                     withContext(Dispatchers.IO) {
                         PasportRepository.loadFromUri(this@MainActivity, uri)
                     }
@@ -153,15 +199,10 @@ class MainActivity : ComponentActivity() {
                     }
                 },
                 onImportCsv = { uri ->
-                    try {
-                        contentResolver.takePersistableUriPermission(
-                            uri, Intent.FLAG_GRANT_READ_URI_PERMISSION,
-                        )
-                    } catch (_: SecurityException) { }
+                    // Nikdy takePersistable před čtením OneDrive — deny
                     withContext(Dispatchers.IO) {
-                        contentResolver.openInputStream(uri)?.use { input ->
-                            store.importFrom(input)
-                        } ?: error("Nelze otevřít CSV")
+                        val bytes = SafUris.readAllBytes(contentResolver, uri)
+                        store.importFromBytes(bytes)
                     }
                 },
                 onShareCsv = {
@@ -201,6 +242,28 @@ class MainActivity : ComponentActivity() {
             )
         }
     }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        extractIncomingUri(intent)?.let { externalUris.tryEmit(it) }
+    }
+
+    private fun extractIncomingUri(intent: Intent?): Uri? {
+        if (intent == null) return null
+        return when (intent.action) {
+            Intent.ACTION_VIEW -> intent.data
+            Intent.ACTION_SEND -> {
+                if (Build.VERSION.SDK_INT >= 33) {
+                    intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableExtra(Intent.EXTRA_STREAM) as? Uri
+                }
+            }
+            else -> null
+        }
+    }
 }
 
 @Composable
@@ -209,6 +272,7 @@ fun MereniApp(
     load: PasportLoadResult,
     onLoadChange: (PasportLoadResult) -> Unit,
     initialCount: Int,
+    externalStatusMessage: String? = null,
     onSave: (udu: String, pole1: String, pole2: String, casMereni: String, poznamka: String) -> Int,
     onUsedLabels: suspend (String) -> Set<String>,
     onPersistUri: suspend (Uri) -> PasportLoadResult,
@@ -242,6 +306,11 @@ fun MereniApp(
     var customDialogFor by remember { mutableStateOf<ActiveField?>(null) }
     var noteFocused by remember { mutableStateOf(false) }
     var exportMessage by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(externalStatusMessage, initialCount) {
+        if (externalStatusMessage != null) exportMessage = externalStatusMessage
+        recordCount = initialCount
+    }
 
     val dualMode = stationB != null
     val activeStation = if (activeSlot == 1 && stationB != null) stationB else stationA

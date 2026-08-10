@@ -75,6 +75,11 @@ class MeasurementStore(context: Context) {
      */
     fun importFrom(input: java.io.InputStream): Int {
         val bytes = input.readBytes()
+        return importFromBytes(bytes)
+    }
+
+    /** Stejné jako [importFrom], ale z už načtených bajtů (jednorázový grant SAF). */
+    fun importFromBytes(bytes: ByteArray): Int {
         require(bytes.isNotEmpty()) { "Soubor je prázdný" }
         val raw = bytes.toString(UTF8)
         val text = raw.removePrefix(BOM)

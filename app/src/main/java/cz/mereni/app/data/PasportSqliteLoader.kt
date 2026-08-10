@@ -244,7 +244,13 @@ object PasportSqliteLoader {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit().remove(INDEXED_FLAG).apply()
         copyUriToLocal(context, uri)
-        rememberUri(context, uri)
+        // OneDrive URI nelze spolehlivě persistovat — neukládat pro pozdější Obnovit
+        if (SafUris.isOneDrive(uri)) {
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit().remove(KEY_URI).apply()
+        } else {
+            rememberUri(context, uri)
+        }
         return load(context).let {
             if (it.fromDeviceSqlite) {
                 it.copy(sourceLabel = displayName(context, uri) ?: it.sourceLabel)
@@ -415,10 +421,10 @@ object PasportSqliteLoader {
 
     private fun copyUriToLocal(context: Context, uri: Uri): File {
         val dest = File(context.filesDir, LOCAL_COPY)
-        context.contentResolver.openInputStream(uri)?.use { input ->
-            dest.outputStream().use { output -> input.copyTo(output) }
-        } ?: error("Nelze otevřít $uri")
-        require(dest.length() > 0L) { "Zkopírovaný soubor je prázdný" }
+        // Přečíst hned (dočasný grant) — bez takePersistable (OneDrive deny)
+        val bytes = SafUris.readAllBytes(context.contentResolver, uri)
+        require(bytes.isNotEmpty()) { "Zkopírovaný soubor je prázdný" }
+        dest.writeBytes(bytes)
         return dest
     }
 

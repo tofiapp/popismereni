@@ -1161,8 +1161,9 @@ fun PasportSettingsButton(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    "Načtení z OneDrive funguje (OpenDocument). Ukládání do OneDrive jen přes Sdílet — " +
-                        "OneDrive neumí systémové „Uložit jako“.",
+                    "Načtení: OneDrive SAF někdy přístup odmítne. Spolehlivější je v OneDrive " +
+                        "Sdílet / Otevřít v → Měření, nebo stáhnout do Download. " +
+                        "Ukládání do OneDrive jen přes Sdílet (ne „Uložit jako“).",
                     color = MereniColors.TextMuted,
                     fontSize = 11.sp,
                 )
