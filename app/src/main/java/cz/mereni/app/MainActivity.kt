@@ -201,6 +201,7 @@ fun MereniApp(
     onUsedLabels: suspend (String) -> Set<String>,
     onPersistUri: suspend (Uri) -> PasportLoadResult,
     onExportCsv: suspend (Uri) -> Unit,
+    onImportCsv: suspend (Uri) -> Int,
     onShareCsv: () -> Unit,
     onReload: suspend () -> PasportLoadResult,
     onKeysForStation: suspend (Station?, List<PasportKey>) -> List<PasportKey>,
