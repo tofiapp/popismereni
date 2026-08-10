@@ -13,6 +13,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,6 +27,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -35,6 +37,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -57,8 +60,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import cz.mereni.app.data.MeasurementStore
 import cz.mereni.app.data.PasportKey
 import cz.mereni.app.data.PasportKind
@@ -171,6 +177,15 @@ class MainActivity : ComponentActivity() {
                     startActivity(chooser)
                     file.nameWithoutExtension
                 },
+                onConfirmOneDriveClear = {
+                    store.confirmOneDriveSavedAndClear()
+                },
+                onCancelOneDriveConfirm = {
+                    store.cancelPendingOneDriveConfirm()
+                },
+                onIsPendingOneDriveConfirm = {
+                    store.isPendingOneDriveConfirm()
+                },
                 onReload = {
                     withContext(Dispatchers.IO) {
                         PasportRepository.reload(this@MainActivity, version)
@@ -199,6 +214,9 @@ fun MereniApp(
     onUsedLabels: suspend (String) -> Set<String>,
     onPersistBytes: suspend (ByteArray, Uri?) -> PasportLoadResult,
     onSaveToOneDrive: () -> String,
+    onConfirmOneDriveClear: () -> Unit,
+    onCancelOneDriveConfirm: () -> Unit,
+    onIsPendingOneDriveConfirm: () -> Boolean,
     onReload: suspend () -> PasportLoadResult,
     onKeysForStation: suspend (Station?, List<PasportKey>) -> List<PasportKey>,
 ) {
@@ -220,8 +238,10 @@ fun MereniApp(
     var nextTokenId by remember { mutableLongStateOf(1L) }
     var note by remember { mutableStateOf("") }
     var recordCount by remember { mutableIntStateOf(initialCount) }
-    var dayRecordNum by remember { mutableIntStateOf(initialDayRecord.coerceAtLeast(1)) }
+    var dayRecordNum by remember { mutableIntStateOf(initialDayRecord.coerceAtLeast(0)) }
     var oneDriveSynced by remember { mutableStateOf(initialOneDriveSynced) }
+    var leftForOneDriveShare by remember { mutableStateOf(false) }
+    var showOneDriveConfirm by remember { mutableStateOf(false) }
     var reorderPole1 by remember { mutableStateOf(false) }
     var reorderPole2 by remember { mutableStateOf(false) }
     var usedLabelsA by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -232,6 +252,27 @@ fun MereniApp(
 
     LaunchedEffect(initialCount) {
         recordCount = initialCount
+    }
+
+    LaunchedEffect(Unit) {
+        if (onIsPendingOneDriveConfirm()) {
+            showOneDriveConfirm = true
+        }
+    }
+
+    val activity = context as? ComponentActivity
+    DisposableEffect(activity) {
+        val owner = activity ?: return@DisposableEffect onDispose { }
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME && leftForOneDriveShare) {
+                leftForOneDriveShare = false
+                if (onIsPendingOneDriveConfirm()) {
+                    showOneDriveConfirm = true
+                }
+            }
+        }
+        owner.lifecycle.addObserver(observer)
+        onDispose { owner.lifecycle.removeObserver(observer) }
     }
 
     val dualMode = stationB != null
@@ -442,10 +483,10 @@ fun MereniApp(
                         Button(
                             onClick = {
                                 exportMessage = null
+                                leftForOneDriveShare = true
                                 val name = onSaveToOneDrive()
-                                oneDriveSynced = true
-                                dayRecordNum = 1
-                                recordCount = 0
+                                // Zůstává červené — smazání až po potvrzení po návratu
+                                oneDriveSynced = false
                                 exportMessage = "Soubor $name — vyber OneDrive"
                             },
                             colors = ButtonDefaults.buttonColors(
@@ -841,6 +882,79 @@ fun MereniApp(
                 }
             },
         )
+
+        if (showOneDriveConfirm) {
+            Dialog(
+                onDismissRequest = {
+                    onCancelOneDriveConfirm()
+                    showOneDriveConfirm = false
+                    oneDriveSynced = false
+                },
+            ) {
+                Column(
+                    modifier = Modifier
+                        .widthIn(min = 280.dp, max = 420.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(MereniColors.SurfaceAlt)
+                        .padding(16.dp),
+                ) {
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            "✕",
+                            color = MereniColors.TextMuted,
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .clickable {
+                                    onCancelOneDriveConfirm()
+                                    showOneDriveConfirm = false
+                                    oneDriveSynced = false
+                                }
+                                .padding(4.dp),
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        "Uložil jsi záznam na OneDrive?",
+                        color = MereniColors.Text,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 17.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "✕ nahoře — záznamy zůstanou, tlačítko zůstane červené.\n" +
+                            "ANO — lokální záznamy se smažou.",
+                        color = MereniColors.TextMuted,
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = {
+                            onConfirmOneDriveClear()
+                            showOneDriveConfirm = false
+                            oneDriveSynced = true
+                            dayRecordNum = 0
+                            recordCount = 0
+                            exportMessage = "Lokální záznamy smazány"
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MereniColors.Vyhybka,
+                            contentColor = Color.White,
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                    ) {
+                        Text("ANO", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    }
+                }
+            }
+        }
     }
 }
 

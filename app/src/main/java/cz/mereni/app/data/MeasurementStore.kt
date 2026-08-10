@@ -7,14 +7,10 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Excel úložiště měření (.xlsx), 4 sloupce:
- * 1) spojky/koleje (čárkou)
- * 2) od–do (pomlčkou)
- * 3) čas
- * 4) poznámka
+ * Excel úložiště měření (.xlsx), 4 sloupce.
  *
- * Řádek 1 = dnešní datum. Při nové stanici prázdný řádek + název stanice.
- * Export na OneDrive: `YYMMDD_N_MD1.xlsx`, poté se lokální soubor vymaže.
+ * Export na OneDrive jen zkopíruje soubor; smazání lokálu až po potvrzení
+ * po návratu do aplikace.
  */
 class MeasurementStore(context: Context) {
 
@@ -42,11 +38,8 @@ class MeasurementStore(context: Context) {
     fun count(): Int =
         SimpleXlsx.read(workingFile).count { it.role == SimpleXlsx.Role.DATA && hasMeasurement(it) }
 
-    /**
-     * Číslo u tlačítka OneDrive: kolikátý záznam v aktuálním lokálním souboru.
-     * Prázdný soubor → 1.
-     */
-    fun dayRecordNumber(): Int = count().coerceAtLeast(1)
+    /** Číslo u tlačítka — 0 po vyčištění / na zeleném, jinak počet záznamů. */
+    fun dayRecordNumber(): Int = count()
 
     fun append(
         stationName: String,
@@ -63,7 +56,6 @@ class MeasurementStore(context: Context) {
         val name = stationName.trim().ifBlank { stationUdu.trim() }
         val lastStation = rows.lastOrNull { it.role == SimpleXlsx.Role.STATION }?.a?.trim()
         if (name.isNotEmpty() && lastStation != name) {
-            // Mezera po zvolení nové stanice, pak název
             rows += SimpleXlsx.Row(role = SimpleXlsx.Role.BLANK)
             rows += SimpleXlsx.Row(a = name, role = SimpleXlsx.Role.STATION)
             prefs.edit().putString(KEY_LAST_STATION_UDU, stationUdu.trim()).apply()
@@ -76,7 +68,10 @@ class MeasurementStore(context: Context) {
             role = SimpleXlsx.Role.DATA,
         )
         SimpleXlsx.write(workingFile, rows)
-        prefs.edit().putBoolean(KEY_SYNCED, false).apply()
+        prefs.edit()
+            .putBoolean(KEY_SYNCED, false)
+            .putBoolean(KEY_PENDING_CONFIRM, false)
+            .apply()
     }
 
     fun usedLabelsForStation(stationName: String): Set<String> {
@@ -100,9 +95,11 @@ class MeasurementStore(context: Context) {
 
     fun isSyncedToOneDrive(): Boolean = prefs.getBoolean(KEY_SYNCED, false)
 
+    fun isPendingOneDriveConfirm(): Boolean = prefs.getBoolean(KEY_PENDING_CONFIRM, false)
+
     /**
-     * Vytvoří `YYMMDD_N_MD1.xlsx`, vymaže lokální pracovní soubor (číslo → 1),
-     * označí jako synchronizované (zelené tlačítko).
+     * Připraví `YYMMDD_N_MD1.xlsx` ke sdílení.
+     * Lokální soubor **nesmaže** — čeká se na potvrzení po návratu.
      */
     fun prepareExportFile(): File {
         ensureReady()
@@ -111,18 +108,31 @@ class MeasurementStore(context: Context) {
         prefs.edit().putInt(KEY_DAY_EXPORT_PREFIX + day, n).apply()
         val name = "${day}_${n}_MD1.xlsx"
         val dest = File(docsDir, name)
-        // Před exportem ještě jednou aktuální datum v řádku 1
         val rows = SimpleXlsx.read(workingFile).toMutableList()
         ensureDateRowIn(rows)
         SimpleXlsx.write(workingFile, rows)
         workingFile.copyTo(dest, overwrite = true)
         lastExportFile = dest
+        prefs.edit()
+            .putBoolean(KEY_PENDING_CONFIRM, true)
+            .putBoolean(KEY_SYNCED, false)
+            .apply()
+        return dest
+    }
+
+    /** ✕ — uživatel není jistý; záznamy zůstávají, tlačítko zůstane červené. */
+    fun cancelPendingOneDriveConfirm() {
+        prefs.edit().putBoolean(KEY_PENDING_CONFIRM, false).apply()
+    }
+
+    /** ANO — smazat lokál, zelené tlačítko, číslo 0. */
+    fun confirmOneDriveSavedAndClear() {
         resetWorkingFile()
         prefs.edit()
             .putBoolean(KEY_SYNCED, true)
+            .putBoolean(KEY_PENDING_CONFIRM, false)
             .remove(KEY_LAST_STATION_UDU)
             .apply()
-        return dest
     }
 
     private fun resetWorkingFile() {
@@ -160,6 +170,7 @@ class MeasurementStore(context: Context) {
         private const val KEY_DAY_EXPORT_PREFIX = "export_count_"
         private const val KEY_LAST_STATION_UDU = "last_station_udu"
         private const val KEY_SYNCED = "synced_onedrive"
+        private const val KEY_PENDING_CONFIRM = "pending_onedrive_confirm"
         private val DAY_FILE_FMT = SimpleDateFormat("yyMMdd", Locale.US)
         private val DATE_DISPLAY_FMT = SimpleDateFormat("d.M.yyyy", Locale("cs", "CZ"))
 
