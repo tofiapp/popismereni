@@ -1,8 +1,8 @@
-# Měření v0.33.0
+# Měření v0.34.0
 
 ## Aktualizace
 ```bash
-adb install -r artifacts/mereni-v0.33.0-debug.apk
+adb install -r artifacts/mereni-v0.34.0-debug.apk
 ```
 
 ## OneDrive

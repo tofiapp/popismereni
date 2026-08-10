@@ -74,23 +74,28 @@ class MeasurementStore(context: Context) {
             .apply()
     }
 
-    fun usedLabelsForStation(stationName: String): Set<String> {
+    /**
+     * Popisky už uložené pro stanici — zvlášť koleje/spojky (sloupec A)
+     * a výhybky od–do (sloupec B), ať se navzájem neblokují.
+     */
+    fun usedLabelsForStation(stationName: String): Pair<Set<String>, Set<String>> {
         val want = stationName.trim()
-        if (want.isEmpty()) return emptySet()
+        if (want.isEmpty()) return emptySet<String>() to emptySet()
+        val pole1 = linkedSetOf<String>()
+        val pole2 = linkedSetOf<String>()
         val rows = SimpleXlsx.read(workingFile)
-        val out = linkedSetOf<String>()
         var active = false
         for (row in rows) {
             when (row.role) {
                 SimpleXlsx.Role.STATION -> active = row.a.trim() == want
                 SimpleXlsx.Role.DATA -> if (active) {
-                    row.a.split(',').map { it.trim() }.filter { it.isNotEmpty() }.forEach { out.add(it) }
-                    row.b.split('-').map { it.trim() }.filter { it.isNotEmpty() }.forEach { out.add(it) }
+                    row.a.split(',').map { it.trim() }.filter { it.isNotEmpty() }.forEach { pole1.add(it) }
+                    row.b.split('-').map { it.trim() }.filter { it.isNotEmpty() }.forEach { pole2.add(it) }
                 }
                 else -> Unit
             }
         }
-        return out
+        return pole1 to pole2
     }
 
     fun isSyncedToOneDrive(): Boolean = prefs.getBoolean(KEY_SYNCED, false)
