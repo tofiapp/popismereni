@@ -152,6 +152,18 @@ class MainActivity : ComponentActivity() {
                         } ?: error("Nelze otevřít cíl pro zápis")
                     }
                 },
+                onImportCsv = { uri ->
+                    try {
+                        contentResolver.takePersistableUriPermission(
+                            uri, Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                        )
+                    } catch (_: SecurityException) { }
+                    withContext(Dispatchers.IO) {
+                        contentResolver.openInputStream(uri)?.use { input ->
+                            store.importFrom(input)
+                        } ?: error("Nelze otevřít CSV")
+                    }
+                },
                 onShareCsv = {
                     store.ensureHeader()
                     val uri = FileProvider.getUriForFile(
@@ -371,6 +383,32 @@ fun MereniApp(
         }
     }
 
+    fun importCsvFromUri(uri: Uri) {
+        scope.launch {
+            runCatching { onImportCsv(uri) }
+                .onSuccess { n ->
+                    recordCount = n
+                    exportMessage = "CSV načteno · $n záznamů (lokální soubor přepsán)"
+                    refreshUsedLabels()
+                }
+                .onFailure { e ->
+                    exportMessage = e.message ?: "Načtení CSV se nepovedlo"
+                }
+        }
+    }
+
+    val importCsv = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri: Uri? ->
+        if (uri != null) importCsvFromUri(uri)
+    }
+
+    val importCsvViaApp = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+    ) { uri: Uri? ->
+        if (uri != null) importCsvFromUri(uri)
+    }
+
     fun useNow() {
         val c = Calendar.getInstance()
         hour = c.get(Calendar.HOUR_OF_DAY)
@@ -486,6 +524,22 @@ fun MereniApp(
                         pasportLoading = true
                         pasportLoadingMsg = "Obnovuji pasport…"
                         scope.launch { applyLoad(onReload()) }
+                    },
+                    onImportCsv = {
+                        exportMessage = null
+                        importCsv.launch(
+                            arrayOf(
+                                "text/*",
+                                "text/csv",
+                                "text/comma-separated-values",
+                                "application/csv",
+                                "*/*",
+                            )
+                        )
+                    },
+                    onImportCsvViaApp = {
+                        exportMessage = null
+                        importCsvViaApp.launch("*/*")
                     },
                     onShareCsv = {
                         exportMessage = null
