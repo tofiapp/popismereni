@@ -91,7 +91,9 @@ class MeasurementStore(context: Context) {
                 SimpleXlsx.Role.STATION -> active = row.a.trim() == want
                 SimpleXlsx.Role.DATA -> if (active) {
                     row.a.split(',').map { it.trim() }.filter { it.isNotEmpty() }.forEach { pole1.add(it) }
-                    row.b.split('-').map { it.trim() }.filter { it.isNotEmpty() }.forEach { pole2.add(it) }
+                    // "1 - 2" i "1-2" → samostatné popisky výhybek
+                    row.b.split(Regex("""\s*-\s*""")).map { it.trim() }
+                        .filter { it.isNotEmpty() }.forEach { pole2.add(it) }
                 }
                 else -> Unit
             }

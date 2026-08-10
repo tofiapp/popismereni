@@ -8,8 +8,12 @@ import java.util.zip.ZipOutputStream
 
 /**
  * Minimální XLSX (4 sloupce) se styly: datum, stanice, data.
- * Role se při čtení bere ze stylu buňky (s="…"), ať řádek jen s "4"
+ *
+ * Role se při čtení bere ze stylu buňky A (s="…"), ať řádek jen s "4"
  * neskončí jako název stanice.
+ *
+ * Datum/stanice: styl + výplň jen ve sloupci A — B/C/D zůstanou prázdné
+ * bez oranžové/modré výplně, ať mezi výhybkami v B není „všechno“.
  */
 object SimpleXlsx {
     enum class Role { DATE, BLANK, STATION, DATA }
@@ -63,36 +67,46 @@ object SimpleXlsx {
         )
         sb.append("<cols>")
         sb.append("""<col min="1" max="1" width="32" customWidth="1"/>""")
-        sb.append("""<col min="2" max="2" width="28" customWidth="1"/>""")
+        sb.append("""<col min="2" max="2" width="18" customWidth="1"/>""")
         sb.append("""<col min="3" max="3" width="14" customWidth="1"/>""")
         sb.append("""<col min="4" max="4" width="36" customWidth="1"/>""")
         sb.append("</cols>")
         sb.append("<sheetData>")
         rows.forEachIndexed { idx, row ->
             val r = idx + 1
-            val style = styleIndex(row.role)
             val ht = if (row.role == Role.BLANK) "12" else "24"
             sb.append("""<row r="$r" ht="$ht" customHeight="1">""")
-            sb.append(cellXml("A$r", row.a, style))
-            sb.append(cellXml("B$r", row.b, style))
-            sb.append(cellXml("C$r", row.c, style))
-            sb.append(cellXml("D$r", row.d, style))
+            when (row.role) {
+                Role.BLANK -> {
+                    // Prázdný řádek — žádná výplň ve sloupci výhybek
+                }
+                Role.DATE, Role.STATION -> {
+                    // Popisek jen v A; B/C/D neplnit stylem (ať B zůstane čistý)
+                    sb.append(cellXml("A$r", row.a, styleIndex(row.role)))
+                }
+                Role.DATA -> {
+                    sb.append(cellXml("A$r", row.a, STYLE_DATA_CENTER))
+                    sb.append(cellXml("B$r", row.b, STYLE_DATA_CENTER))
+                    sb.append(cellXml("C$r", row.c, STYLE_DATA_LEFT))
+                    sb.append(cellXml("D$r", row.d, STYLE_DATA_LEFT))
+                }
+            }
             sb.append("</row>")
         }
         sb.append("</sheetData></worksheet>")
         return sb.toString()
     }
 
-    /** 0 = data (centrovaná čísla), 1 = datum, 2 = stanice (popisky vlevo). */
+    /** 1 = datum, 2 = stanice, 0 = data (centrovaná čísla). */
     private fun styleIndex(role: Role): Int = when (role) {
-        Role.DATE -> 1
-        Role.STATION -> 2
-        Role.BLANK, Role.DATA -> 0
+        Role.DATE -> STYLE_DATE
+        Role.STATION -> STYLE_STATION
+        Role.BLANK, Role.DATA -> STYLE_DATA_CENTER
     }
 
     private fun roleFromStyle(style: Int?): Role = when (style) {
-        1 -> Role.DATE
-        2 -> Role.STATION
+        STYLE_DATE -> Role.DATE
+        STYLE_STATION -> Role.STATION
         else -> Role.DATA
     }
 
@@ -129,14 +143,14 @@ object SimpleXlsx {
         val styleRegex = Regex("""\bs="(\d+)"""")
         for (rowMatch in rowRegex.findAll(xml)) {
             val cells = mutableMapOf<String, String>()
-            var rowStyle: Int? = null
+            var styleA: Int? = null
             for (cellMatch in cellRegex.findAll(rowMatch.groupValues[1])) {
                 val attrs = cellMatch.groupValues[1].ifBlank { cellMatch.groupValues[3] }
                 val text = xmlUnescape(cellMatch.groupValues[2])
                 val ref = refRegex.find(attrs)?.groupValues?.get(1) ?: continue
                 cells[ref] = text
-                if (rowStyle == null) {
-                    styleRegex.find(attrs)?.groupValues?.get(1)?.toIntOrNull()?.let { rowStyle = it }
+                if (ref == "A") {
+                    styleRegex.find(attrs)?.groupValues?.get(1)?.toIntOrNull()?.let { styleA = it }
                 }
             }
             val a = cells["A"].orEmpty()
@@ -145,8 +159,8 @@ object SimpleXlsx {
             val d = cells["D"].orEmpty()
             val role = when {
                 a.isBlank() && b.isBlank() && c.isBlank() && d.isBlank() -> Role.BLANK
-                // Nové soubory: role ze stylu (data s="0" i když je jen sloupec A)
-                rowStyle != null -> roleFromStyle(rowStyle)
+                // Role ze stylu buňky A (datum/stanice vs data)
+                styleA != null -> roleFromStyle(styleA)
                 // Staré soubory bez s="…": jen A = datum/stanice
                 a.isNotBlank() && b.isBlank() && c.isBlank() && d.isBlank() ->
                     if (rows.isEmpty()) Role.DATE else Role.STATION
@@ -163,6 +177,11 @@ object SimpleXlsx {
             .replace("&quot;", "\"")
             .replace("&apos;", "'")
             .replace("&amp;", "&")
+
+    private const val STYLE_DATA_CENTER = 0
+    private const val STYLE_DATE = 1
+    private const val STYLE_STATION = 2
+    private const val STYLE_DATA_LEFT = 3
 
     private const val CONTENT_TYPES = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -193,9 +212,10 @@ object SimpleXlsx {
 </workbook>"""
 
     /**
-     * 0 = data — velké písmo, zarovnání na střed (čísla kolejí/spojek/výhybek)
-     * 1 = datum — modré, vlevo (popisek)
-     * 2 = stanice — oranžové, vlevo (popisek)
+     * 0 = data čísla — střed (koleje/spojky/výhybky)
+     * 1 = datum — modré, vlevo (jen sloupec A)
+     * 2 = stanice — oranžové, vlevo (jen sloupec A)
+     * 3 = data text — vlevo (čas, poznámka)
      */
     private const val STYLES = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
@@ -212,7 +232,7 @@ object SimpleXlsx {
   </fills>
   <borders count="1"><border/></borders>
   <cellStyleXfs count="1"><xf/></cellStyleXfs>
-  <cellXfs count="3">
+  <cellXfs count="4">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">
       <alignment horizontal="center" vertical="center"/>
     </xf>
@@ -220,6 +240,9 @@ object SimpleXlsx {
       <alignment horizontal="left" vertical="center"/>
     </xf>
     <xf numFmtId="0" fontId="2" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1">
+      <alignment horizontal="left" vertical="center"/>
+    </xf>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">
       <alignment horizontal="left" vertical="center"/>
     </xf>
   </cellXfs>
