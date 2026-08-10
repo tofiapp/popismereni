@@ -6,7 +6,7 @@ Option Explicit
 '   - button on sheet Start
 '   - result on sheet Mereni
 '
-' No extra Sešit1 / Mappe1. Button OnAction = same file.
+' No extra Sesit1 / Mappe1. Button OnAction = same file.
 '
 ' Setup once (CZ/DE Excel):
 '   1) New workbook (or empty file)
@@ -55,7 +55,7 @@ Public Sub VytvoritTlacitko()
         Err.Clear
         Application.DisplayAlerts = True
         MsgBox "SaveAs xlsm selhalo (OneDrive/prava)." & vbCrLf & errMsg & vbCrLf & vbCrLf & _
-               "Uloz rucne tento sešit jako Souhrn_mereni.xlsm do slozky mereni," & vbCrLf & _
+               "Uloz rucne tento sesit jako Souhrn_mereni.xlsm do slozky mereni," & vbCrLf & _
                "pak znovu spust VytvoritTlacitko.", vbExclamation
         Exit Sub
     End If
