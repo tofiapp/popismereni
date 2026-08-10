@@ -2,8 +2,8 @@
 """Export pasportu TPI → pasport_tpi_v{VERSION}.json
 
 - DZS_SUPER_RO_TPI.TUDU → UDU = prvních 5 znaků
-- DZS_SUPER_MT_SL.REPRE_TUDU ↔ UDU, zobrazované jméno z JMENO
-  (bez prefixů žst. / odb. / z.)
+- DZS_SUPER_MT_SL.REPRE_TUDU: UDU = 5 míst, TUDU = 6 míst
+  Hlavní JMENO pro UDU = záznam s REPRE_TUDU končícím na 1 (xxxxx1)
 
 Použití:
   python3 tools/export_pasport_v0.3.0.py path/to/DZS_PASPORT_TPI.sqlite
@@ -15,6 +15,7 @@ import json
 import re
 import sqlite3
 import sys
+from collections import defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -60,9 +61,10 @@ def main() -> int:
     con.row_factory = sqlite3.Row
     cur = con.cursor()
 
-    tables = {r[0].upper(): r[0] for r in cur.execute(
-        "SELECT name FROM sqlite_master WHERE type='table'"
-    )}
+    tables = {
+        r[0].upper(): r[0]
+        for r in cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    }
     t_ro = tables.get("DZS_SUPER_RO_TPI")
     t_sl = tables.get("DZS_SUPER_MT_SL")
     if not t_ro:
@@ -92,8 +94,8 @@ def main() -> int:
         print("SL musí mít REPRE_TUDU a JMENO", file=sys.stderr)
         return 1
 
-    # Stanice: REPRE_TUDU → JMENO
-    stations_by_udu: dict[str, dict] = {}
+    # Stanice: hlavní JMENO z REPRE_TUDU končícího na 1 (xxxxx1)
+    by_udu: dict[str, list[dict]] = defaultdict(list)
     for row in cur.execute(f'SELECT "{c_repre}", "{c_jmeno}" FROM "{t_sl}"'):
         repre = "" if row[0] is None else str(row[0]).strip()
         jmeno_raw = "" if row[1] is None else str(row[1]).strip()
@@ -103,24 +105,38 @@ def main() -> int:
         jmeno = clean_jmeno(jmeno_raw)
         if not jmeno:
             continue
-        # první výskyt vyhraje; případně delší jméno
-        prev = stations_by_udu.get(udu)
-        if prev is None or len(jmeno) > len(prev["jmeno"]):
-            stations_by_udu[udu] = {
+        by_udu[udu].append(
+            {"udu": udu, "tudu": repre, "jmeno": jmeno, "jmeno_raw": jmeno_raw}
+        )
+
+    stations: list[dict] = []
+    for udu, entries in by_udu.items():
+        primary = next((e for e in entries if str(e["tudu"]).endswith("1")), None)
+        if primary is None:
+            primary = max(entries, key=lambda e: len(e["jmeno"]))
+        aliases = sorted({e["jmeno"] for e in entries if e["jmeno"] != primary["jmeno"]})
+        stations.append(
+            {
                 "udu": udu,
-                "jmeno": jmeno,
-                "jmeno_raw": jmeno_raw,
+                "tudu": primary["tudu"],
+                "jmeno": primary["jmeno"],
+                "jmeno_raw": primary["jmeno_raw"],
+                "aliases": aliases,
             }
+        )
 
     wanted = [c for c in [c_cobjekt, c_iob, c_poloha, c_tpi, c_tudu] if c]
     select = ", ".join(f'"{c}"' for c in wanted)
     rows_out = []
     for row in cur.execute(f'SELECT {select} FROM "{t_ro}"'):
+
         def get(name: str | None) -> str:
             if not name:
                 return ""
             v = row[name]
-            return "" if v is None else str(v).strip()
+            if v is None:
+                return ""
+            return str(v).strip()
 
         tudu = get(c_tudu)
         udu = tudu[:5] if tudu else ""
@@ -134,38 +150,33 @@ def main() -> int:
                 "udu": udu,
             }
         )
-    con.close()
 
-    # Jen stanice, které mají aspoň jeden řádek v RO
     used_udu = {r["udu"] for r in rows_out if r["udu"]}
-    stations = [
-        stations_by_udu[u]
-        for u in sorted(used_udu, key=lambda x: stations_by_udu.get(x, {}).get("jmeno", x).lower())
-        if u in stations_by_udu
-    ]
-    # UDU bez JMENO — přidej aspoň kód (nemělo by se ukazovat ideálně)
+    stations = [s for s in stations if s["udu"] in used_udu]
     for u in sorted(used_udu):
-        if u not in stations_by_udu:
-            stations.append({"udu": u, "jmeno": u, "jmeno_raw": u})
+        if not any(s["udu"] == u for s in stations):
+            stations.append(
+                {
+                    "udu": u,
+                    "tudu": f"{u}1",
+                    "jmeno": u,
+                    "jmeno_raw": u,
+                    "aliases": [],
+                }
+            )
 
     stations.sort(key=lambda s: s["jmeno"].lower())
 
-    payload = {
+    out = {
         "version": VERSION,
-        "source": f"{db_path.name} / DZS_SUPER_RO_TPI + DZS_SUPER_MT_SL",
+        "source": "DZS_PASPORT_TPI.sqlite / DZS_SUPER_RO_TPI + DZS_SUPER_MT_SL",
+        "note": "Hlavní název UDU z REPRE_TUDU xxxxx1",
         "stations": stations,
         "rows": rows_out,
     }
-
-    out_assets = ROOT / "app" / "src" / "main" / "assets" / OUT_NAME
-    out_data = ROOT / "data" / OUT_NAME
-    out_assets.parent.mkdir(parents=True, exist_ok=True)
-    out_data.parent.mkdir(parents=True, exist_ok=True)
-    text = json.dumps(payload, ensure_ascii=False, indent=2)
-    out_assets.write_text(text + "\n", encoding="utf-8")
-    out_data.write_text(text + "\n", encoding="utf-8")
-    print(f"Stanic: {len(stations)}, řádků: {len(rows_out)} → {out_assets.relative_to(ROOT)}")
-    print(f"Verze souboru: v{VERSION}")
+    out_path = ROOT / "app" / "src" / "main" / "assets" / OUT_NAME
+    out_path.write_text(json.dumps(out, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print(f"OK → {out_path} ({len(stations)} stanic, {len(rows_out)} řádků)")
     return 0
 
 
