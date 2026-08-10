@@ -56,6 +56,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import cz.mereni.app.data.MeasurementStore
 import cz.mereni.app.data.PasportKey
 import cz.mereni.app.data.PasportKind
@@ -151,6 +152,30 @@ class MainActivity : ComponentActivity() {
                         } ?: error("Nelze otevřít cíl pro zápis")
                     }
                 },
+                onShareCsv = {
+                    store.ensureHeader()
+                    val uri = FileProvider.getUriForFile(
+                        this@MainActivity,
+                        "${packageName}.fileprovider",
+                        store.csvFile,
+                    )
+                    val send = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/*"
+                        putExtra(Intent.EXTRA_STREAM, uri)
+                        putExtra(Intent.EXTRA_SUBJECT, MeasurementStore.CSV_NAME)
+                        putExtra(Intent.EXTRA_TITLE, MeasurementStore.CSV_NAME)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        clipData = android.content.ClipData.newUri(
+                            contentResolver,
+                            MeasurementStore.CSV_NAME,
+                            uri,
+                        )
+                    }
+                    val chooser = Intent.createChooser(send, "Sdílet mereni.csv").apply {
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    startActivity(chooser)
+                },
                 onReload = {
                     withContext(Dispatchers.IO) {
                         PasportRepository.reload(this@MainActivity, version)
@@ -176,6 +201,7 @@ fun MereniApp(
     onUsedLabels: suspend (String) -> Set<String>,
     onPersistUri: suspend (Uri) -> PasportLoadResult,
     onExportCsv: suspend (Uri) -> Unit,
+    onShareCsv: () -> Unit,
     onReload: suspend () -> PasportLoadResult,
     onKeysForStation: suspend (Station?, List<PasportKey>) -> List<PasportKey>,
 ) {
@@ -297,40 +323,49 @@ fun MereniApp(
         list.add(to, item)
     }
 
-    val pickPasport = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument(),
-    ) { uri: Uri? ->
-        if (uri != null) {
-            pasportLoading = true
-            pasportLoadingMsg = "Načítám ${PasportSqliteLoader.DB_FILE_NAME}…"
-            scope.launch {
-                runCatching { onPersistUri(uri) }
-                    .onSuccess { applyLoad(it) }
-                    .onFailure { e ->
-                        pasportLoading = false
-                        pasportLoadingMsg = ""
-                        onLoadChange(
-                            PasportLoadResult(
-                                data = pasport,
-                                fromDeviceSqlite = false,
-                                sourceLabel = uri.toString(),
-                                error = e.message ?: "Nepodařilo se načíst SQLite",
-                            )
+    fun loadPasportFromUri(uri: Uri) {
+        pasportLoading = true
+        pasportLoadingMsg = "Načítám ${PasportSqliteLoader.DB_FILE_NAME}…"
+        scope.launch {
+            runCatching { onPersistUri(uri) }
+                .onSuccess { applyLoad(it) }
+                .onFailure { e ->
+                    pasportLoading = false
+                    pasportLoadingMsg = ""
+                    onLoadChange(
+                        PasportLoadResult(
+                            data = pasport,
+                            fromDeviceSqlite = false,
+                            sourceLabel = uri.toString(),
+                            error = e.message ?: "Nepodařilo se načíst SQLite",
                         )
-                    }
-            }
+                    )
+                }
         }
     }
 
-    val exportCsv = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("text/csv"),
+    val pickPasport = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri: Uri? ->
+        if (uri != null) loadPasportFromUri(uri)
+    }
+
+    /** Často ukáže OneDrive přímo v seznamu aplikací (na rozdíl od Google Files). */
+    val pickPasportViaApp = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+    ) { uri: Uri? ->
+        if (uri != null) loadPasportFromUri(uri)
+    }
+
+    val saveCsvAs = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/*"),
     ) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
             runCatching { onExportCsv(uri) }
-                .onSuccess { exportMessage = "CSV exportováno" }
+                .onSuccess { exportMessage = "CSV uloženo" }
                 .onFailure { e ->
-                    exportMessage = e.message ?: "Export se nepovedl"
+                    exportMessage = e.message ?: "Uložení se nepovedlo"
                 }
         }
     }
@@ -442,14 +477,23 @@ fun MereniApp(
                             )
                         )
                     },
+                    onPickViaApp = {
+                        // Hvězdička MIME — SQLite často nemá správný typ; uživatel zvolí OneDrive
+                        pickPasportViaApp.launch("*/*")
+                    },
                     onReload = {
                         pasportLoading = true
                         pasportLoadingMsg = "Obnovuji pasport…"
                         scope.launch { applyLoad(onReload()) }
                     },
-                    onExportCsv = {
+                    onShareCsv = {
                         exportMessage = null
-                        exportCsv.launch(MeasurementStore.CSV_NAME)
+                        onShareCsv()
+                        exportMessage = "Otevřen výběr aplikací (OneDrive, …)"
+                    },
+                    onSaveCsvAs = {
+                        exportMessage = null
+                        saveCsvAs.launch(MeasurementStore.CSV_NAME)
                     },
                     exportMessage = exportMessage,
                 )
