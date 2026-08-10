@@ -600,7 +600,7 @@ fun MereniApp(
                         onExportModeChange(mode)
                         exportMessage = when (mode) {
                             OneDriveExportMode.DAILY ->
-                                "Režim: denní soubor YYMMDD_MD1.xlsx"
+                                "Režim: denní YYMMDD_N_MD1.xlsx (víc souborů za den)"
                             OneDriveExportMode.REPLACE ->
                                 "Režim: přepisovat mereni_MD1.xlsx"
                         }
@@ -979,7 +979,8 @@ fun MereniApp(
                     Text(
                         when (exportMode) {
                             OneDriveExportMode.DAILY ->
-                                "Soubor YYMMDD_MD1.xlsx ulož do OneDrive.\n\n" +
+                                "Soubor YYMMDD_N_MD1.xlsx ulož do OneDrive\n" +
+                                    "(N = pořadí dávky ten den: 1, 2, 3…).\n\n" +
                                     "✕ — tlačítko zůstane červené.\n" +
                                     "ANO — vymazat místní záznamy (zelená)."
                             OneDriveExportMode.REPLACE ->

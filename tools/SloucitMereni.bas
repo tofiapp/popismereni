@@ -8,6 +8,7 @@ Option Explicit
 '   Station name                 <- station (orange, column A only)
 '   koleje | vyhybky | cas | poznamka   <- data A-D
 '
+' Matches YYMMDD_N_MD1.xlsx (N = batch that day) and mereni_MD1.xlsx.
 ' German Excel:
 '   Alt+F11 -> Datei -> Datei importieren... -> this .bas
 '   Then Alt+F8 -> SloucitVsechnaMereni -> Ausfuhren
@@ -275,9 +276,11 @@ Private Sub WriteDataRow(ByVal ws As Worksheet, ByVal row As Long, ByVal a As St
 End Sub
 
 Private Function DateFromFileName(ByVal fileName As String) As String
+    ' YYMMDD_N_MD1.xlsx or legacy YYMMDD_MD1.xlsx -> d.M.yyyy
     Dim y As Integer
     Dim m As Integer
     Dim d As Integer
+
     If Len(fileName) < 10 Then
         DateFromFileName = ""
         Exit Function
@@ -286,10 +289,12 @@ Private Function DateFromFileName(ByVal fileName As String) As String
         DateFromFileName = ""
         Exit Function
     End If
-    If Mid$(fileName, 7, 4) <> "_MD1" Then
+
+    If InStr(1, fileName, "_MD1", vbTextCompare) = 0 Then
         DateFromFileName = ""
         Exit Function
     End If
+
     y = CInt(Left$(fileName, 2))
     m = CInt(Mid$(fileName, 3, 2))
     d = CInt(Mid$(fileName, 5, 2))
