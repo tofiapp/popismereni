@@ -101,7 +101,7 @@ fun FieldKeyboard(
                 onKey = onPasportKey,
             )
             ActiveField.POLE2 -> Pole2Keyboard(
-                keys = pasportKeys,
+                keys = pasportKeys.filter { it.kind == PasportKind.VYHYBKA },
                 usedLabels = usedLabels,
                 lockedLabels = lockedLabels,
                 onKey = onPasportKey,
@@ -176,7 +176,7 @@ fun Pole2Keyboard(
         KeyboardHalf(
             "Výhybky",
             MereniColors.Vyhybka,
-            keys.filter { it.kind == PasportKind.VYHYBKA },
+            keys.filter { it.kind == PasportKind.VYHYBKA }, // jen výhybky stanice
             onKey,
             Modifier.weight(1f),
             usedLabels = usedLabels,

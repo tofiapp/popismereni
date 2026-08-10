@@ -476,13 +476,6 @@ fun MereniApp(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text(
-                    text = "Měření",
-                    color = MereniColors.Text,
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold,
-                )
-                Spacer(modifier = Modifier.width(10.dp))
                 StationSearchPicker(
                     stations = pasport.stations,
                     selected = stationA,
@@ -527,12 +520,24 @@ fun MereniApp(
                                 fontSize = 13.sp,
                             )
                         }
-                        Text(
-                            text = "$dayRecordNum",
-                            color = MereniColors.Text,
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                        )
+                        val countShape = RoundedCornerShape(8.dp)
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .height(40.dp)
+                                .widthIn(min = 44.dp)
+                                .clip(countShape)
+                                .background(MereniColors.Cas.copy(alpha = 0.18f))
+                                .border(2.dp, MereniColors.Cas, countShape)
+                                .padding(horizontal = 12.dp),
+                        ) {
+                            Text(
+                                text = "$dayRecordNum",
+                                color = MereniColors.Cas,
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
                     }
                 }
                 if (dualMode) {
@@ -676,7 +681,7 @@ fun MereniApp(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Poznámka + Další / Vymazat uprostřed (nad klávesnicí) — mimo systémové menu tabletu
+            // Poznámka + Další záznam uprostřed (nad klávesnicí)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -690,7 +695,7 @@ fun MereniApp(
                     textStyle = TextStyle(color = MereniColors.Text, fontSize = 14.sp),
                     modifier = Modifier
                         .weight(1f)
-                        .height(40.dp)
+                        .height(48.dp)
                         .clip(noteShape)
                         .background(
                             if (noteFocused) MereniColors.Poznamka.copy(alpha = 0.14f)
@@ -702,7 +707,7 @@ fun MereniApp(
                             shape = noteShape,
                         )
                         .onFocusChanged { noteFocused = it.isFocused }
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                        .padding(horizontal = 12.dp, vertical = 12.dp),
                     decorationBox = { inner ->
                         Box(contentAlignment = Alignment.CenterStart) {
                             if (note.isEmpty()) {
@@ -771,24 +776,19 @@ fun MereniApp(
                         refreshUsedLabels()
                     },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = MereniColors.Accent,
-                        contentColor = MereniColors.BackgroundTop,
+                        containerColor = MereniColors.Vyhybka,
+                        contentColor = Color.White,
                     ),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                    modifier = Modifier.height(40.dp),
+                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
+                    modifier = Modifier
+                        .height(48.dp)
+                        .widthIn(min = 168.dp),
                 ) {
-                    Text("Další", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                }
-                Button(
-                    onClick = { clearAll() },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MereniColors.SurfaceAlt,
-                        contentColor = MereniColors.Text,
-                    ),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                    modifier = Modifier.height(40.dp),
-                ) {
-                    Text("Vymazat", fontSize = 13.sp)
+                    Text(
+                        "Další záznam",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                    )
                 }
             }
 
