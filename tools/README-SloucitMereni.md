@@ -1,22 +1,21 @@
-# VBA: sloučení `*_MD1.xlsx`
+# VBA: sloučení měření
 
-## Co se změnilo
-- **Jeden soubor** `Souhrn_mereni.xlsm` — při každém běhu se **přepíše list Mereni**, nevzniká nový Book.
-- Oprava **Laufzeitfehler 1004** u `SaveAs` (OneDrive) — otevře existující soubor a volá `.Save`.
-- **Tlačítko** na listu `Start`.
+## Proč tlačítko nefungovalo a F8 ano
+Makro bylo v **jednom** sešitu, tlačítko v **druhém** (`Souhrn…`).  
+F8 najde makro všude; tlačítko hledá makro **ve stejném souboru**.
 
-## Jednorázové nastavení (německý Excel)
+## Správně = vše v jednom `Souhrn_mereni.xlsm`
 
-1. Stáhni `SloucitMereni.bas` z repa.
-2. **Alt+F11** → starý modul **Entfernen**.
-3. **Datei → Datei importieren…** → nový `.bas`.
+1. Otevři **nový prázdný sešit** (ne starý Souhrn bez maker).
+2. **Alt+F11** → smaž staré moduly `SloucitMereni` ve všech sešitech, ať není duplicita.
+3. **Datei → Datei importieren…** → nový `SloucitMereni.bas`  
+   (musí být uvnitř **tohoto** sešitu ve stromu vlevo).
 4. **Alt+F8** → `VytvoritTlacitko` → **Ausführen**  
-   (vytvoří `Souhrn_mereni.xlsm` ve složce OneDrive + tlačítko).
-5. Pokud Excel hlásí makra: **Inhalt aktivieren**.
+   - uloží **tento** sešit jako `…\MD1_rozdeleno\Souhrn_mereni.xlsm`  
+   - vytvoří list **Start** + tlačítko  
+   - list **Mereni** = výsledek  
+5. Zavři ostatní zbytečné sešity (Sešit1 / Mappe1).
+6. Příště: otevři jen `Souhrn_mereni.xlsm` → **Inhalt aktivieren** → klik **Sloucit mereni**.
 
-## Pak už jen
-Otevři `Souhrn_mereni.xlsm` → klikni **Sloucit mereni**.
-
-## Výstup (list Mereni)
-Stejný vzhled jako appka: datum / stanice nahoře, data A–D pod nimi.  
-Zdroje: `YYMMDD_N_MD1.xlsx` i `mereni_MD1.xlsx`.
+## Download
+https://raw.githubusercontent.com/tofiapp/popismereni/cursor/update-and-ui-tweaks-3a97/tools/SloucitMereni.bas

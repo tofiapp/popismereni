@@ -1,22 +1,22 @@
 Attribute VB_Name = "SloucitMereni"
 Option Explicit
 
-' ONE summary workbook in the OneDrive folder:
-'   Souhrn_mereni.xlsm  (same file every run - overwritten, not a new Book)
+' EVERYTHING in ONE workbook (ThisWorkbook):
+'   - macros (this module)
+'   - button on sheet Start
+'   - result on sheet Mereni
 '
-' Layout of sheet "Mereni" = Android app:
-'   date (blue) / station (orange) / data A-D
+' No extra Sešit1 / Mappe1. Button OnAction = same file.
 '
-' Sources: YYMMDD_N_MD1.xlsx and mereni_MD1.xlsx
-'
-' Setup (German Excel), once:
-'   1) Alt+F11 -> Datei -> Datei importieren... -> this .bas
-'   2) Alt+F8 -> VytvoritTlacitko -> Ausfuhren
-'      -> creates/opens Souhrn_mereni.xlsm with a big button
-'   3) Later: just click the button (no Alt+F8)
+' Setup once (CZ/DE Excel):
+'   1) New workbook (or empty file)
+'   2) Alt+F11 -> Datei/Soubor -> Import -> this .bas
+'   3) Alt+F8 -> VytvoritTlacitko -> Run
+'      Saves THIS file as Souhrn_mereni.xlsm into OneDrive folder + makes button
+'   4) Next times: open Souhrn_mereni.xlsm -> click button
+'      (Inhalt aktivieren / Povolit makra if asked)
 
 Private Function SourceFolder() As String
-    ' Path via ChrW = ASCII-safe .bas (Sprava zeleznic)
     SourceFolder = "C:\Users\hrubesk\OneDrive - Spr" & ChrW(225) & "va " & _
                    ChrW(382) & "eleznic\MD1_rozdeleno"
 End Function
@@ -28,35 +28,54 @@ Private Function SourcePath() As String
     SourcePath = p
 End Function
 
-Private Function SouhrnPath() As String
-    SouhrnPath = SourcePath() & "Souhrn_mereni.xlsm"
+Private Function SouhrnPathXlsm() As String
+    SouhrnPathXlsm = SourcePath() & "Souhrn_mereni.xlsm"
 End Function
 
-' --- run once: make the button workbook ---
+' ========== once: save this workbook + create button ==========
 Public Sub VytvoritTlacitko()
     Dim src As String
     src = SourcePath()
     If Dir(src, vbDirectory) = "" Then
-        MsgBox "Folder not found:" & vbCrLf & src, vbCritical
+        MsgBox "Slozka nenalezena / Ordner fehlt:" & vbCrLf & src, vbCritical
         Exit Sub
     End If
 
+    ' Macros must live in ThisWorkbook (= the file where you imported .bas)
     Dim wb As Workbook
-    Set wb = OpenOrCreateSouhrn()
+    Set wb = ThisWorkbook
+
+    Application.DisplayAlerts = False
+    On Error Resume Next
+    ' Save as macro workbook into the OneDrive folder (ONE file forever)
+    wb.SaveAs Filename:=SouhrnPathXlsm(), FileFormat:=52
+    If Err.Number <> 0 Then
+        Dim errMsg As String
+        errMsg = Err.Description
+        Err.Clear
+        Application.DisplayAlerts = True
+        MsgBox "SaveAs xlsm selhalo (OneDrive/prava)." & vbCrLf & errMsg & vbCrLf & vbCrLf & _
+               "Uloz rucne tento sešit jako Souhrn_mereni.xlsm do slozky mereni," & vbCrLf & _
+               "pak znovu spust VytvoritTlacitko.", vbExclamation
+        Exit Sub
+    End If
+    On Error GoTo 0
+    Application.DisplayAlerts = True
 
     Dim wsBtn As Worksheet
     Set wsBtn = EnsureSheet(wb, "Start")
+    On Error Resume Next
     wsBtn.Move Before:=wb.Sheets(1)
+    On Error GoTo 0
 
     wsBtn.Cells.Clear
-    wsBtn.Range("A1").Value = "Mereni - slouceni OneDrive"
+    wsBtn.Range("A1").Value = "Mereni - slouceni"
     wsBtn.Range("A1").Font.Size = 18
     wsBtn.Range("A1").Font.Bold = True
-    wsBtn.Range("A3").Value = "Klikni tlacitko nize. Vysledek je list Mereni ve STEJNEM souboru."
-    wsBtn.Range("A4").Value = "Soubor: " & SouhrnPath()
-    wsBtn.Columns("A").ColumnWidth = 80
+    wsBtn.Range("A3").Value = "Klikni tlacitko. Vysledek = list Mereni ve STEJNEM souboru."
+    wsBtn.Range("A4").Value = wb.FullName
+    wsBtn.Columns("A").ColumnWidth = 90
 
-    ' remove old buttons
     Dim shp As Shape
     On Error Resume Next
     For Each shp In wsBtn.Shapes
@@ -64,21 +83,24 @@ Public Sub VytvoritTlacitko()
     Next shp
     On Error GoTo 0
 
+    ' Form button - OnAction WITHOUT workbook name = macro in THIS file
     Dim btn As Button
-    Set btn = wsBtn.Buttons.Add(Left:=20, Top:=100, Width:=260, Height:=50)
-    btn.OnAction = "'" & wb.Name & "'!SloucitVsechnaMereni"
+    Set btn = wsBtn.Buttons.Add(Left:=20, Top:=100, Width:=280, Height:=55)
+    btn.OnAction = "SloucitVsechnaMereni"
     btn.Characters.Text = "Sloucit mereni"
     btn.Font.Size = 16
     btn.Font.Bold = True
 
     Call EnsureSheet(wb, "Mereni")
-    Call SaveSouhrn(wb)
+    wb.Save
 
-    MsgBox "Hotovo. Ulozene:" & vbCrLf & SouhrnPath() & vbCrLf & vbCrLf & _
-           "Priste otevri tento soubor a klikni tlacitko.", vbInformation
+    MsgBox "OK. Makra + tlacitko + list Mereni = jeden soubor:" & vbCrLf & _
+           wb.FullName & vbCrLf & vbCrLf & _
+           "Priste jen otevri tento soubor, povol makra, klikni tlacitko." & vbCrLf & _
+           "(F8 uz nepotrebujes)", vbInformation
 End Sub
 
-' --- main: refresh list Mereni inside the SAME Souhrn file ---
+' ========== main: refresh Mereni inside THIS workbook ==========
 Public Sub SloucitVsechnaMereni()
     Const FILE_PATTERN As String = "*_MD1.xlsx"
     Const COLOR_DATE As Long = 16506555
@@ -88,16 +110,16 @@ Public Sub SloucitVsechnaMereni()
     srcPath = SourcePath()
 
     If Dir(srcPath, vbDirectory) = "" Then
-        MsgBox "Folder not found:" & vbCrLf & srcPath & vbCrLf & _
-               "Edit SourceFolder() in the macro.", vbCritical
+        MsgBox "Slozka nenalezena:" & vbCrLf & srcPath, vbCritical
         Exit Sub
     End If
 
+    ' ALWAYS the workbook that contains this macro - never Workbooks.Add
     Dim wbOut As Workbook
-    Dim wsOut As Worksheet
-    Set wbOut = OpenOrCreateSouhrn()
-    Set wsOut = EnsureSheet(wbOut, "Mereni")
+    Set wbOut = ThisWorkbook
 
+    Dim wsOut As Worksheet
+    Set wsOut = EnsureSheet(wbOut, "Mereni")
     wsOut.Cells.Clear
     wsOut.Columns("A").ColumnWidth = 32
     wsOut.Columns("B").ColumnWidth = 18
@@ -148,6 +170,12 @@ Public Sub SloucitVsechnaMereni()
 
         If Not ok Then
             filesSkipped = filesSkipped + 1
+            GoTo NextFile
+        End If
+
+        ' never treat the summary workbook as a source
+        If StrComp(wbIn.FullName, wbOut.FullName, vbTextCompare) = 0 Then
+            wbIn.Close SaveChanges:=False
             GoTo NextFile
         End If
 
@@ -228,101 +256,23 @@ NextSrcRow:
 NextFile:
     Next i
 
-    Call SaveSouhrn(wbOut)
+    On Error Resume Next
+    wbOut.Save
+    On Error GoTo 0
 
     Application.StatusBar = False
     Application.DisplayAlerts = True
     Application.ScreenUpdating = True
 
     On Error Resume Next
-    wbOut.Sheets("Mereni").Activate
+    wsOut.Activate
     On Error GoTo 0
 
-    MsgBox "Hotovo - jeden soubor Souhrn_mereni.xlsm." & vbCrLf & _
+    MsgBox "Hotovo (stejny soubor, bez noveho Sesitu)." & vbCrLf & _
            "Zdroju OK: " & filesProcessed & vbCrLf & _
            "Preskoceno: " & filesSkipped & vbCrLf & _
-           "Ulozeno: " & SouhrnPath(), vbInformation
+           "Soubor: " & wbOut.FullName, vbInformation
 End Sub
-
-' Open existing Souhrn_mereni.xlsm / .xlsx, or create once.
-Private Function OpenOrCreateSouhrn() As Workbook
-    Dim pathXlsm As String
-    Dim pathXlsx As String
-    Dim wb As Workbook
-
-    pathXlsm = SouhrnPath()
-    pathXlsx = SourcePath() & "Souhrn_mereni.xlsx"
-
-    Set wb = WorkbookByFullName(pathXlsm)
-    If Not wb Is Nothing Then
-        Set OpenOrCreateSouhrn = wb
-        Exit Function
-    End If
-
-    Set wb = WorkbookByFullName(pathXlsx)
-    If Not wb Is Nothing Then
-        Set OpenOrCreateSouhrn = wb
-        Exit Function
-    End If
-
-    If Dir(pathXlsm) <> "" Then
-        Set OpenOrCreateSouhrn = Workbooks.Open(Filename:=pathXlsm, UpdateLinks:=0)
-        Exit Function
-    End If
-
-    If Dir(pathXlsx) <> "" Then
-        Set wb = Workbooks.Open(Filename:=pathXlsx, UpdateLinks:=0)
-        ' migrate to xlsm once (macros + button need it)
-        Application.DisplayAlerts = False
-        On Error Resume Next
-        wb.SaveAs Filename:=pathXlsm, FileFormat:=52
-        On Error GoTo 0
-        Application.DisplayAlerts = True
-        Set OpenOrCreateSouhrn = wb
-        Exit Function
-    End If
-
-    Set wb = Workbooks.Add
-    Application.DisplayAlerts = False
-    On Error Resume Next
-    wb.SaveAs Filename:=pathXlsm, FileFormat:=52
-    If Err.Number <> 0 Then
-        Err.Clear
-        ' OneDrive sometimes blocks xlsm -> fall back xlsx (button still works if macros in this wb)
-        wb.SaveAs Filename:=pathXlsx, FileFormat:=51
-    End If
-    On Error GoTo 0
-    Application.DisplayAlerts = True
-    Set OpenOrCreateSouhrn = wb
-End Function
-
-Private Sub SaveSouhrn(ByVal wb As Workbook)
-    Application.DisplayAlerts = False
-    On Error Resume Next
-    wb.Save
-    If Err.Number <> 0 Then
-        Err.Clear
-        ' retry SaveAs to known path (OneDrive lock workaround)
-        If LCase$(Right$(wb.FullName, 5)) = ".xlsm" Or InStr(1, wb.Name, ".xlsm", vbTextCompare) > 0 Then
-            wb.SaveAs Filename:=SouhrnPath(), FileFormat:=52
-        Else
-            wb.SaveAs Filename:=SourcePath() & "Souhrn_mereni.xlsx", FileFormat:=51
-        End If
-    End If
-    On Error GoTo 0
-    Application.DisplayAlerts = True
-End Sub
-
-Private Function WorkbookByFullName(ByVal fullPath As String) As Workbook
-    Dim wb As Workbook
-    For Each wb In Application.Workbooks
-        If StrComp(wb.FullName, fullPath, vbTextCompare) = 0 Then
-            Set WorkbookByFullName = wb
-            Exit Function
-        End If
-    Next wb
-    Set WorkbookByFullName = Nothing
-End Function
 
 Private Function EnsureSheet(ByVal wb As Workbook, ByVal sheetName As String) As Worksheet
     Dim ws As Worksheet
@@ -331,7 +281,9 @@ Private Function EnsureSheet(ByVal wb As Workbook, ByVal sheetName As String) As
     On Error GoTo 0
     If ws Is Nothing Then
         Set ws = wb.Worksheets.Add(After:=wb.Sheets(wb.Sheets.Count))
+        On Error Resume Next
         ws.Name = sheetName
+        On Error GoTo 0
     End If
     Set EnsureSheet = ws
 End Function
