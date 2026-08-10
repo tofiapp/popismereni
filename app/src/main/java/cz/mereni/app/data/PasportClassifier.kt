@@ -38,7 +38,8 @@ object PasportClassifier {
         if (cobjekt.isEmpty()) return null
 
         return when {
-            poloha.isNotEmpty() -> PasportKind.VYHYBKA
+            // Jen známé kódy POLOHY — jinak se do výhybek sypou i koleje/spojky
+            poloha.isNotEmpty() && poloha in VYHYBKA_POLOHY -> PasportKind.VYHYBKA
             // Spojka — rozhoduje jen IOB X/S (zhl může mít i kolej)
             iob in SPOJKA_IOB -> PasportKind.SPOJKA
             // Kolej — prázdné IOB nebo A/B/… (nikdy X/S)

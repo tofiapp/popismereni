@@ -327,12 +327,12 @@ object PasportSqliteLoader {
             if (col == null) "1=1"
             else """(trim(coalesce(CAST($col AS TEXT),'')) IN ('','-','—','.','null','NULL'))"""
 
-        fun nonEmptyExpr(col: String?) =
-            if (col == null) "0=1"
-            else """(trim(coalesce(CAST($col AS TEXT),'')) NOT IN ('','-','—','.','null','NULL'))"""
-
+        val vyhybkaPolohy = PasportClassifier.VYHYBKA_POLOHY.joinToString(",") { "'$it'" }
         val kindWhere = when (kind) {
-            KindFilter.VYHYBKA -> nonEmptyExpr(poloha)
+            // Jen známé POLOHY (JAP, CA, …) — ne jakákoli neprázdná hodnota
+            KindFilter.VYHYBKA ->
+                if (poloha == null) "0=1"
+                else "upper(trim(coalesce(CAST($poloha AS TEXT),''))) IN ($vyhybkaPolohy)"
             // Spojka: prázdná POLOHA + IOB X/S (zhl nerozhoduje — může mít i kolej)
             KindFilter.SPOJKA ->
                 "${emptyExpr(poloha)} AND " +
