@@ -258,6 +258,27 @@ object PasportSqliteLoader {
         }
     }
 
+    /** Pasport už načtený do paměti (grant OneDrive spotřebovaný na Main). */
+    fun loadFromBytes(context: Context, bytes: ByteArray, sourceUri: Uri? = null): PasportLoadResult {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().remove(INDEXED_FLAG).apply()
+        val dest = File(context.filesDir, LOCAL_COPY)
+        require(bytes.isNotEmpty()) { "Soubor pasportu je prázdný" }
+        dest.writeBytes(bytes)
+        if (sourceUri != null && !SafUris.isOneDrive(sourceUri)) {
+            rememberUri(context, sourceUri)
+        } else {
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit().remove(KEY_URI).apply()
+        }
+        return load(context).let {
+            if (it.fromDeviceSqlite) {
+                val label = sourceUri?.let { u -> displayName(context, u) }
+                it.copy(sourceLabel = label ?: it.sourceLabel)
+            } else it
+        }
+    }
+
     fun reload(context: Context): PasportLoadResult {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit().remove(INDEXED_FLAG).apply()

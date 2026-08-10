@@ -57,7 +57,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import cz.mereni.app.data.GetContentChooser
 import cz.mereni.app.data.MeasurementStore
+import cz.mereni.app.data.OpenOneDriveDocument
+import cz.mereni.app.data.isOneDriveInstalled
 import cz.mereni.app.data.PasportKey
 import cz.mereni.app.data.PasportKind
 import cz.mereni.app.data.PasportLoadResult
@@ -74,6 +77,7 @@ import cz.mereni.app.ui.FieldPanel
 import cz.mereni.app.ui.MereniColors
 import cz.mereni.app.ui.PasportSettingsButton
 import cz.mereni.app.ui.StationSearchPicker
+import androidx.compose.ui.platform.LocalContext
 import java.util.Calendar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -133,32 +137,39 @@ class MainActivity : ComponentActivity() {
 
             LaunchedEffect(Unit) {
                 externalUris.collectLatest { uri ->
-                    val name = contentResolver.query(uri, null, null, null, null)?.use { c ->
-                        val i = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                        if (i >= 0 && c.moveToFirst()) c.getString(i) else null
-                    }.orEmpty().lowercase()
+                    // Číst hned na Main — OneDrive grant je krátký
+                    val bytes = runCatching { SafUris.readAllBytes(contentResolver, uri) }
+                    val name = runCatching {
+                        contentResolver.query(uri, null, null, null, null)?.use { c ->
+                            val i = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                            if (i >= 0 && c.moveToFirst()) c.getString(i) else null
+                        }
+                    }.getOrNull().orEmpty().lowercase()
                     val mime = contentResolver.getType(uri).orEmpty().lowercase()
-                    val asCsv = name.endsWith(".csv") || "csv" in mime || "text/" in mime
+                    val asCsv = name.endsWith(".csv") || "csv" in mime ||
+                        (mime.startsWith("text/") && !name.contains("pasport"))
                     val asSqlite = name.endsWith(".sqlite") || name.endsWith(".db") ||
                         "sqlite" in mime || name.contains("pasport")
+                    bytes.onFailure { e ->
+                        bootCsvMessage = e.message ?: SafUris.denyMessage(uri)
+                        return@collectLatest
+                    }
+                    val data = bytes.getOrThrow()
                     when {
-                        asCsv || (!asSqlite && "text" in mime) -> {
+                        asCsv || (!asSqlite && mime.startsWith("text/")) -> {
                             runCatching {
-                                withContext(Dispatchers.IO) {
-                                    val bytes = SafUris.readAllBytes(contentResolver, uri)
-                                    store.importFromBytes(bytes)
-                                }
+                                withContext(Dispatchers.IO) { store.importFromBytes(data) }
                             }.onSuccess { n ->
                                 bootRecordCount = n
                                 bootCsvMessage = "CSV ze sdílení načteno · $n záznamů"
                             }.onFailure { e ->
-                                bootCsvMessage = e.message ?: SafUris.denyMessage(uri)
+                                bootCsvMessage = e.message ?: "Import CSV selhal"
                             }
                         }
                         else -> {
                             runCatching {
                                 withContext(Dispatchers.IO) {
-                                    PasportRepository.loadFromUri(this@MainActivity, uri)
+                                    PasportRepository.loadFromBytes(this@MainActivity, data, uri)
                                 }
                             }.onSuccess { load = it }
                                 .onFailure { e ->
@@ -184,11 +195,9 @@ class MainActivity : ComponentActivity() {
                         store.usedLabelsForUdu(udu)
                     }
                 },
-                onPersistUri = { uri ->
-                    // Bez takePersistable u OneDrive — hned zkopírovat
-                    SafUris.takePersistableReadIfUseful(contentResolver, uri)
+                onPersistBytes = { bytes, uri ->
                     withContext(Dispatchers.IO) {
-                        PasportRepository.loadFromUri(this@MainActivity, uri)
+                        PasportRepository.loadFromBytes(this@MainActivity, bytes, uri)
                     }
                 },
                 onExportCsv = { uri ->
@@ -198,10 +207,8 @@ class MainActivity : ComponentActivity() {
                         } ?: error("Nelze otevřít cíl pro zápis")
                     }
                 },
-                onImportCsv = { uri ->
-                    // Nikdy takePersistable před čtením OneDrive — deny
+                onImportBytes = { bytes ->
                     withContext(Dispatchers.IO) {
-                        val bytes = SafUris.readAllBytes(contentResolver, uri)
                         store.importFromBytes(bytes)
                     }
                 },
@@ -275,13 +282,15 @@ fun MereniApp(
     externalStatusMessage: String? = null,
     onSave: (udu: String, pole1: String, pole2: String, casMereni: String, poznamka: String) -> Int,
     onUsedLabels: suspend (String) -> Set<String>,
-    onPersistUri: suspend (Uri) -> PasportLoadResult,
+    onPersistBytes: suspend (ByteArray, Uri?) -> PasportLoadResult,
     onExportCsv: suspend (Uri) -> Unit,
-    onImportCsv: suspend (Uri) -> Int,
+    onImportBytes: suspend (ByteArray) -> Int,
     onShareCsv: () -> Unit,
     onReload: suspend () -> PasportLoadResult,
     onKeysForStation: suspend (Station?, List<PasportKey>) -> List<PasportKey>,
 ) {
+    val context = LocalContext.current
+    val oneDriveOk = remember(context) { OpenOneDriveDocument.canResolve(context) }
     val scope = rememberCoroutineScope()
     val pasport = load.data
     var activeField by remember { mutableStateOf(ActiveField.POLE1) }
@@ -406,11 +415,16 @@ fun MereniApp(
     }
 
     fun loadPasportFromUri(uri: Uri) {
+        val bytes = runCatching {
+            SafUris.readAllBytes(context.contentResolver, uri)
+        }
         pasportLoading = true
         pasportLoadingMsg = "Načítám ${PasportSqliteLoader.DB_FILE_NAME}…"
         scope.launch {
-            runCatching { onPersistUri(uri) }
-                .onSuccess { applyLoad(it) }
+            runCatching {
+                val data = bytes.getOrThrow()
+                onPersistBytes(data, uri)
+            }.onSuccess { applyLoad(it) }
                 .onFailure { e ->
                     pasportLoading = false
                     pasportLoadingMsg = ""
@@ -419,7 +433,7 @@ fun MereniApp(
                             data = pasport,
                             fromDeviceSqlite = false,
                             sourceLabel = uri.toString(),
-                            error = e.message ?: "Nepodařilo se načíst SQLite",
+                            error = e.message ?: SafUris.denyMessage(uri),
                         )
                     )
                 }
@@ -432,11 +446,17 @@ fun MereniApp(
         if (uri != null) loadPasportFromUri(uri)
     }
 
-    /** Často ukáže OneDrive přímo v seznamu aplikací (na rozdíl od Google Files). */
-    val pickPasportViaApp = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent(),
+    val pickPasportChooser = rememberLauncherForActivityResult(
+        contract = GetContentChooser("Vyber aplikaci pro pasport"),
     ) { uri: Uri? ->
         if (uri != null) loadPasportFromUri(uri)
+    }
+
+    val pickPasportOneDrive = rememberLauncherForActivityResult(
+        contract = OpenOneDriveDocument(),
+    ) { uri: Uri? ->
+        if (uri != null) loadPasportFromUri(uri)
+        else exportMessage = "OneDrive výběr zrušen nebo OneDrive neotevřel soubor"
     }
 
     val saveCsvAs = rememberLauncherForActivityResult(
@@ -453,16 +473,17 @@ fun MereniApp(
     }
 
     fun importCsvFromUri(uri: Uri) {
+        val bytes = runCatching { SafUris.readAllBytes(context.contentResolver, uri) }
         scope.launch {
-            runCatching { onImportCsv(uri) }
-                .onSuccess { n ->
-                    recordCount = n
-                    exportMessage = "CSV načteno · $n záznamů (lokální soubor přepsán)"
-                    refreshUsedLabels()
-                }
-                .onFailure { e ->
-                    exportMessage = e.message ?: "Načtení CSV se nepovedlo"
-                }
+            runCatching {
+                onImportBytes(bytes.getOrThrow())
+            }.onSuccess { n ->
+                recordCount = n
+                exportMessage = "CSV načteno · $n záznamů (lokální soubor přepsán)"
+                refreshUsedLabels()
+            }.onFailure { e ->
+                exportMessage = e.message ?: SafUris.denyMessage(uri)
+            }
         }
     }
 
@@ -472,10 +493,17 @@ fun MereniApp(
         if (uri != null) importCsvFromUri(uri)
     }
 
-    val importCsvViaApp = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent(),
+    val importCsvChooser = rememberLauncherForActivityResult(
+        contract = GetContentChooser("Vyber aplikaci pro CSV"),
     ) { uri: Uri? ->
         if (uri != null) importCsvFromUri(uri)
+    }
+
+    val importCsvOneDrive = rememberLauncherForActivityResult(
+        contract = OpenOneDriveDocument(),
+    ) { uri: Uri? ->
+        if (uri != null) importCsvFromUri(uri)
+        else exportMessage = "OneDrive výběr zrušen nebo OneDrive neotevřel soubor"
     }
 
     fun useNow() {
@@ -585,10 +613,10 @@ fun MereniApp(
                             )
                         )
                     },
-                    onPickViaApp = {
-                        // Hvězdička MIME — SQLite často nemá správný typ; uživatel zvolí OneDrive
-                        pickPasportViaApp.launch("*/*")
-                    },
+                    onPickChooser = { pickPasportChooser.launch("*/*") },
+                    onPickOneDrive = if (oneDriveOk) {
+                        { pickPasportOneDrive.launch("*/*") }
+                    } else null,
                     onReload = {
                         pasportLoading = true
                         pasportLoadingMsg = "Obnovuji pasport…"
@@ -606,10 +634,16 @@ fun MereniApp(
                             )
                         )
                     },
-                    onImportCsvViaApp = {
+                    onImportCsvChooser = {
                         exportMessage = null
-                        importCsvViaApp.launch("*/*")
+                        importCsvChooser.launch("*/*")
                     },
+                    onImportCsvOneDrive = if (oneDriveOk) {
+                        {
+                            exportMessage = null
+                            importCsvOneDrive.launch("*/*")
+                        }
+                    } else null,
                     onShareCsv = {
                         exportMessage = null
                         onShareCsv()

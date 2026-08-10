@@ -27,8 +27,8 @@ object SafUris {
     }
 
     /**
-     * Přečte celý obsah hned (dokud platí dočasný grant).
-     * Při deny od OneDrive hodí srozumitelnou chybu.
+     * Přečte celý obsah **hned na volajícím vlákně** (ideálně Main v Activity Result).
+     * Odložení na Dispatchers.IO u OneDrive často skončí deny — grant je krátký.
      */
     fun readAllBytes(resolver: ContentResolver, uri: Uri): ByteArray {
         return try {
@@ -41,8 +41,9 @@ object SafUris {
 
     fun denyMessage(uri: Uri): String =
         if (isOneDrive(uri)) {
-            "OneDrive odmítl přístup (SAF). Z OneDrive appky: Sdílet / Otevřít v → Měření, " +
-                "nebo soubor nejdřív stáhni do Download a načti odtud."
+            "OneDrive odmítl přístup. Zkus tlačítko „Z OneDrive…“, " +
+                "nebo v OneDrive appce: Sdílet / Otevřít v → Měření " +
+                "(případně stáhni do Download)."
         } else {
             "Nelze otevřít soubor (chybí oprávnění)."
         }
