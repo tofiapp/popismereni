@@ -1,28 +1,84 @@
 Attribute VB_Name = "SloucitMereni"
 Option Explicit
 
-' EVERYTHING in ONE workbook (ThisWorkbook):
-'   - macros (this module)
-'   - button on sheet Start
-'   - result on sheet Mereni
+' ONE shared workbook:
+'   - macros + button (Start) + result (Mereni)
+'   - Auto_Open: merge on open
+'   - folder watch: every POLL_SECONDS check *_MD1.xlsx; if new/changed -> merge
+'   (Excel must stay open for the watch; closed file waits until next open)
 '
-' No extra Sesit1 / Mappe1. Button OnAction = same file.
-'
-' Setup once (CZ/DE Excel):
-'   1) New workbook
-'   2) Alt+F11 -> import this .bas
-'   3) Save As Souhrn_mereni.xlsm into the SHARED OneDrive folder (with *_MD1.xlsx)
-'   4) Alt+F8 -> VytvoritTlacitko
-'   5) Colleague opens the SAME xlsm from OneDrive, enables macros, clicks button
-'
-' Source files = same folder as this workbook (ThisWorkbook.Path) - works on every PC.
+' Setup:
+'   1) New workbook -> import this .bas
+'   2) Save As Souhrn_mereni.xlsm into shared OneDrive folder (with *_MD1.xlsx)
+'   3) Alt+F8 -> VytvoritTlacitko
+'   4) Enable macros when opening
+
+Private Const FILE_PATTERN As String = "*_MD1.xlsx"
+Private Const COLOR_DATE As Long = 16506555
+Private Const COLOR_STATION As Long = 11723007
+Private Const POLL_SECONDS As Long = 120
+Private Const SIG_NAME As String = "MereniFolderSig"
+
+' next OnTime tick (must cancel on close)
+Public gNextPoll As Date
+Private gBusy As Boolean
+
+' ---------- auto start / stop ----------
+Public Sub Auto_Open()
+    Application.StatusBar = "Mereni: slouceni pri otevreni..."
+    Call SloucitCore(True)
+    Call StartFolderWatch
+    Application.StatusBar = "Mereni: hlida slozku kazdych " & POLL_SECONDS & " s"
+End Sub
+
+Public Sub Auto_Close()
+    Call StopFolderWatch
+    Application.StatusBar = False
+End Sub
+
+Public Sub StartFolderWatch()
+    Call StopFolderWatch
+    On Error Resume Next
+    gNextPoll = Now + TimeSerial(0, 0, POLL_SECONDS)
+    Application.OnTime EarliestTime:=gNextPoll, Procedure:="CheckFolderAndRefresh", Schedule:=True
+    On Error GoTo 0
+End Sub
+
+Public Sub StopFolderWatch()
+    On Error Resume Next
+    If gNextPoll <> 0 Then
+        Application.OnTime EarliestTime:=gNextPoll, Procedure:="CheckFolderAndRefresh", Schedule:=False
+    End If
+    On Error GoTo 0
+    gNextPoll = 0
+End Sub
+
+' Called by OnTime - silent refresh only when folder content changed
+Public Sub CheckFolderAndRefresh()
+    On Error GoTo ScheduleNext
+
+    Dim srcPath As String
+    srcPath = SourcePath()
+    If Len(srcPath) = 0 Then GoTo ScheduleNext
+
+    Dim sig As String
+    sig = FolderFingerprint(srcPath)
+    If Len(sig) > 0 And sig <> GetStoredSig() Then
+        Application.StatusBar = "Mereni: novy/zmeneny soubor - slouci..."
+        Call SloucitCore(True)
+    End If
+
+ScheduleNext:
+    On Error Resume Next
+    gNextPoll = Now + TimeSerial(0, 0, POLL_SECONDS)
+    Application.OnTime EarliestTime:=gNextPoll, Procedure:="CheckFolderAndRefresh", Schedule:=True
+    On Error GoTo 0
+End Sub
 
 Private Function SourceFolder() As String
-    ' Same folder as this shared workbook (works for every PC / OneDrive sync)
     Dim p As String
     p = ThisWorkbook.Path
     If Len(p) = 0 Then
-        MsgBox "Nejdrive uloz Souhrn_mereni.xlsm (Soubor musi mit cestu).", vbExclamation
         SourceFolder = ""
         Exit Function
     End If
@@ -40,29 +96,18 @@ Private Function SourcePath() As String
     SourcePath = p
 End Function
 
-Private Function SouhrnPathXlsm() As String
-    ' Keep file where it already is (shared OneDrive folder)
-    If Len(ThisWorkbook.Path) > 0 Then
-        SouhrnPathXlsm = ThisWorkbook.FullName
-    Else
-        SouhrnPathXlsm = Environ$("USERPROFILE") & "\Souhrn_mereni.xlsm"
-    End If
-End Function
-
-' ========== once: save this workbook + create button ==========
+' ========== once: button + hint text ==========
 Public Sub VytvoritTlacitko()
     Dim wb As Workbook
     Set wb = ThisWorkbook
 
-    ' If not saved yet, ask user to save into the shared OneDrive mereni folder
     If Len(wb.Path) = 0 Then
         MsgBox "Nejdrive uloz tento sesit do sdilene OneDrive slozky s *_MD1.xlsx" & vbCrLf & _
-               "(Soubor -> Ulozit jako -> Souhrn_mereni.xlsm do MD1_rozdeleno)," & vbCrLf & _
+               "(Ulozit jako -> Souhrn_mereni.xlsm)," & vbCrLf & _
                "pak znovu spust VytvoritTlacitko.", vbInformation
         Exit Sub
     End If
 
-    ' Prefer .xlsm so macros+button travel with the shared file
     If LCase$(Right$(wb.Name, 5)) <> ".xlsm" Then
         Application.DisplayAlerts = False
         On Error Resume Next
@@ -72,8 +117,7 @@ Public Sub VytvoritTlacitko()
             errMsg = Err.Description
             Err.Clear
             Application.DisplayAlerts = True
-            MsgBox "SaveAs xlsm selhalo:" & vbCrLf & errMsg & vbCrLf & _
-                   "Uloz rucne jako Souhrn_mereni.xlsm ve stejne slozce.", vbExclamation
+            MsgBox "SaveAs xlsm selhalo:" & vbCrLf & errMsg, vbExclamation
             Exit Sub
         End If
         On Error GoTo 0
@@ -92,10 +136,11 @@ Public Sub VytvoritTlacitko()
     wsBtn.Range("A1").Value = "Mereni - slouceni (sdileny soubor)"
     wsBtn.Range("A1").Font.Size = 18
     wsBtn.Range("A1").Font.Bold = True
-    wsBtn.Range("A3").Value = "Klikni tlacitko. Cte *_MD1.xlsx ze STEJNE slozky jako tento soubor."
-    wsBtn.Range("A4").Value = "Slozka: " & wb.Path
-    wsBtn.Range("A5").Value = "Soubor: " & wb.FullName
-    wsBtn.Columns("A").ColumnWidth = 90
+    wsBtn.Range("A3").Value = "Automaticky: pri otevreni + kazde 2 minuty, kdyz ve slozce pribyde/zmeni se *_MD1.xlsx"
+    wsBtn.Range("A4").Value = "Excel musi zustat otevreny (jinak az pri pristim otevreni)."
+    wsBtn.Range("A5").Value = "Slozka: " & wb.Path
+    wsBtn.Range("A6").Value = "Soubor: " & wb.FullName
+    wsBtn.Columns("A").ColumnWidth = 95
 
     Dim shp As Shape
     On Error Resume Next
@@ -105,36 +150,48 @@ Public Sub VytvoritTlacitko()
     On Error GoTo 0
 
     Dim btn As Button
-    Set btn = wsBtn.Buttons.Add(Left:=20, Top:=120, Width:=280, Height:=55)
+    Set btn = wsBtn.Buttons.Add(Left:=20, Top:=140, Width:=280, Height:=55)
     btn.OnAction = "SloucitVsechnaMereni"
-    btn.Characters.Text = "Sloucit mereni"
+    btn.Characters.Text = "Sloucit ted"
     btn.Font.Size = 16
     btn.Font.Bold = True
 
     Call EnsureSheet(wb, "Mereni")
+    Call StartFolderWatch
     wb.Save
 
-    MsgBox "OK. Sdilene xlsm:" & vbCrLf & wb.FullName & vbCrLf & vbCrLf & _
-           "Kolega: otevrit stejny soubor z OneDrive, povolit makra, kliknout tlacitko." & vbCrLf & _
-           "Zdrojove *_MD1.xlsx musi byt ve stejne slozce.", vbInformation
+    MsgBox "OK." & vbCrLf & wb.FullName & vbCrLf & vbCrLf & _
+           "Pri otevreni se slouci samo." & vbCrLf & _
+           "Pak kazde " & POLL_SECONDS & " s kontrola slozky (kdyz Excel bezi)." & vbCrLf & _
+           "Tlacitko = okamzite rucne.", vbInformation
 End Sub
 
-' ========== main: refresh Mereni inside THIS workbook ==========
+' Manual button - with MsgBox
 Public Sub SloucitVsechnaMereni()
-    Const FILE_PATTERN As String = "*_MD1.xlsx"
-    Const COLOR_DATE As Long = 16506555
-    Const COLOR_STATION As Long = 11723007
+    Call StopFolderWatch
+    Call SloucitCore(False)
+    Call StartFolderWatch
+End Sub
+
+' ========== core merge ==========
+Private Sub SloucitCore(ByVal silent As Boolean)
+    If gBusy Then Exit Sub
+    gBusy = True
 
     Dim srcPath As String
     srcPath = SourcePath()
-    If Len(srcPath) = 0 Then Exit Sub
-
-    If Dir(srcPath, vbDirectory) = "" Then
-        MsgBox "Slozka nenalezena:" & vbCrLf & srcPath, vbCritical
+    If Len(srcPath) = 0 Then
+        If Not silent Then MsgBox "Nejdrive uloz Souhrn_mereni.xlsm do slozky s merenim.", vbExclamation
+        gBusy = False
         Exit Sub
     End If
 
-    ' ALWAYS the workbook that contains this macro - never Workbooks.Add
+    If Dir(srcPath, vbDirectory) = "" Then
+        If Not silent Then MsgBox "Slozka nenalezena:" & vbCrLf & srcPath, vbCritical
+        gBusy = False
+        Exit Sub
+    End If
+
     Dim wbOut As Workbook
     Set wbOut = ThisWorkbook
 
@@ -151,7 +208,7 @@ Public Sub SloucitVsechnaMereni()
 
     Application.ScreenUpdating = False
     Application.DisplayAlerts = False
-    Application.StatusBar = "Sloucit mereni..."
+    Application.StatusBar = "Mereni: slouci..."
 
     Dim files As Collection
     Set files = ListSortedFiles(srcPath, FILE_PATTERN)
@@ -193,7 +250,6 @@ Public Sub SloucitVsechnaMereni()
             GoTo NextFile
         End If
 
-        ' never treat the summary workbook as a source
         If StrComp(wbIn.FullName, wbOut.FullName, vbTextCompare) = 0 Then
             wbIn.Close SaveChanges:=False
             GoTo NextFile
@@ -276,22 +332,67 @@ NextSrcRow:
 NextFile:
     Next i
 
+    Call SetStoredSig(FolderFingerprint(srcPath))
+
     On Error Resume Next
     wbOut.Save
     On Error GoTo 0
 
-    Application.StatusBar = False
+    Application.StatusBar = "Mereni: OK (" & filesProcessed & " souboru)"
     Application.DisplayAlerts = True
     Application.ScreenUpdating = True
 
-    On Error Resume Next
-    wsOut.Activate
-    On Error GoTo 0
+    If Not silent Then
+        On Error Resume Next
+        wsOut.Activate
+        On Error GoTo 0
+        MsgBox "Hotovo." & vbCrLf & _
+               "Zdroju OK: " & filesProcessed & vbCrLf & _
+               "Preskoceno: " & filesSkipped & vbCrLf & _
+               "Soubor: " & wbOut.FullName, vbInformation
+    End If
 
-    MsgBox "Hotovo (stejny soubor, bez noveho Sesitu)." & vbCrLf & _
-           "Zdroju OK: " & filesProcessed & vbCrLf & _
-           "Preskoceno: " & filesSkipped & vbCrLf & _
-           "Soubor: " & wbOut.FullName, vbInformation
+    gBusy = False
+End Sub
+
+Private Function FolderFingerprint(ByVal srcPath As String) As String
+    Dim name As String
+    Dim sig As String
+    Dim full As String
+    sig = ""
+    name = Dir(srcPath & FILE_PATTERN)
+    Do While name <> ""
+        If StrComp(name, "Souhrn_mereni.xlsx", vbTextCompare) <> 0 And _
+           StrComp(name, "Souhrn_mereni.xlsm", vbTextCompare) <> 0 Then
+            full = srcPath & name
+            On Error Resume Next
+            sig = sig & name & "|" & CStr(FileDateTime(full)) & "|" & CStr(FileLen(full)) & ";"
+            On Error GoTo 0
+        End If
+        name = Dir()
+    Loop
+    FolderFingerprint = sig
+End Function
+
+Private Function GetStoredSig() As String
+    On Error Resume Next
+    GetStoredSig = CStr(ThisWorkbook.Names(SIG_NAME).RefersToRange.Value)
+    If Err.Number <> 0 Then
+        Err.Clear
+        GetStoredSig = ""
+    End If
+    On Error GoTo 0
+End Function
+
+Private Sub SetStoredSig(ByVal sig As String)
+    Dim ws As Worksheet
+    Set ws = EnsureSheet(ThisWorkbook, "Start")
+    On Error Resume Next
+    ThisWorkbook.Names(SIG_NAME).Delete
+    On Error GoTo 0
+    ' store on Start!IV1 (far cell) + named range
+    ws.Range("IV1").Value = sig
+    ThisWorkbook.Names.Add Name:=SIG_NAME, RefersTo:=ws.Range("IV1")
 End Sub
 
 Private Function EnsureSheet(ByVal wb As Workbook, ByVal sheetName As String) As Worksheet

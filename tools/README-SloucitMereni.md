@@ -1,22 +1,17 @@
-# VBA: sloučení měření (sdílený soubor)
+# VBA: automatické sloučení
 
-## Funguje to kolegovi na jiném PC?
-**Ano**, pokud:
-1. Ve sdílené OneDrive složce je `Souhrn_mereni.xlsm` (makra + tlačítko uvnitř souboru).
-2. Ve **stejné** složce leží i `*_MD1.xlsx` z appky.
-3. Kolega soubor otevře, počká na sync (zelená fajfka), klikne **Inhalt aktivieren** / povolit makra, pak **Sloucit mereni**.
+## Co dělá
+- **Při otevření** `Souhrn_mereni.xlsm` → sloučí (bez MsgBox)
+- **Každé 2 minuty** (zatímco je Excel otevřený) zkontroluje složku; když přibude/změní se `*_MD1.xlsx` → sloučí znovu
+- **Tlačítko „Sloucit ted“** = okamžitě ručně (s hláškou)
 
-Makro bere cestu z `ThisWorkbook.Path` — **ne** z `C:\Users\hrubesk\...`, takže na každém PC sedí.
+Excel **musí běžet** s otevřeným souborem. Když je zavřený, sloučí se až při příštím otevření (ne Windows služba na pozadí).
 
-## Pozor (firma / IT)
-OneDrive často označí `.xlsm` jako „z internetu“ a **zablokuje makra**.  
-Pak F8/tlačítko nejde, dokud IT nepovolí makra z důvěryhodného umístění, nebo soubor neodblokujete (Vlastnosti souboru → Odblokovat), pokud to politika dovolí.
-
-## Nastavení jednou u tebe
-1. Nový sešit → import `SloucitMereni.bas`
-2. **Ulož jako** `Souhrn_mereni.xlsm` do sdílené složky s `*_MD1.xlsx`
+## Nastavení
+1. Import nového `SloucitMereni.bas` do sešitu
+2. Ulož jako `Souhrn_mereni.xlsm` do sdílené složky s `*_MD1.xlsx`
 3. Alt+F8 → `VytvoritTlacitko`
-4. Sdílej tenhle `.xlsm` (stejná OneDrive složka)
+4. Kolega: otevřít stejný soubor → povolit makra
 
 ## Download
 https://raw.githubusercontent.com/tofiapp/popismereni/cursor/update-and-ui-tweaks-3a97/tools/SloucitMereni.bas
