@@ -400,29 +400,39 @@ object PasportSqliteLoader {
     }
 
     /** Jen MT_SL — bez DISTINCT přes celou RO (to zamrzalo).
-     * Stejné UDU → jeden záznam s nejběžnějším názvem (Nymburk, Český Těšín…);
-     * podnázvy jdou do aliases pro vyhledávání. */
+     * UDU = 5 míst; hlavní JMENO z REPRE_TUDU končícího na 1 (xxxxx1);
+     * ostatní názvy stejného UDU → aliases. */
     private fun loadStations(db: SQLiteDatabase, schema: DbSchema): List<Station> {
-        val namesByUdu = linkedMapOf<String, MutableList<Pair<String, String>>>()
+        val byUdu = linkedMapOf<String, MutableList<StationNameCleaner.NameCandidate>>()
         db.rawQuery(
             """SELECT "${schema.cRepre}", "${schema.cJmeno}" FROM "$TABLE_SL"""",
             null,
         ).use { c ->
             while (c.moveToNext()) {
-                val udu = normalizeUdu(cell(c, schema.cRepre))
+                val tuduFull = cell(c, schema.cRepre)?.trim().orEmpty()
+                val udu = normalizeUdu(tuduFull)
                 val raw = cell(c, schema.cJmeno) ?: continue
                 if (udu.isEmpty()) continue
                 val jmeno = StationNameCleaner.clean(raw)
                 if (jmeno.isEmpty()) continue
-                namesByUdu.getOrPut(udu) { mutableListOf() }.add(jmeno to raw)
+                byUdu.getOrPut(udu) { mutableListOf() }.add(
+                    StationNameCleaner.NameCandidate(
+                        jmeno = jmeno,
+                        raw = raw,
+                        tudu = tuduFull,
+                    ),
+                )
             }
         }
-        return namesByUdu.map { (udu, pairs) ->
-            val names = pairs.map { it.first }
-            val preferred = StationNameCleaner.preferName(names)
-            val raw = pairs.firstOrNull { it.first == preferred }?.second ?: preferred
-            val aliases = names.distinct().filter { it != preferred }
-            Station(udu = udu, jmeno = preferred, jmenoRaw = raw, aliases = aliases)
+        return byUdu.map { (udu, candidates) ->
+            val primary = StationNameCleaner.pickPrimary(candidates)
+            val aliases = candidates.map { it.jmeno }.distinct().filter { it != primary.jmeno }
+            Station(
+                udu = udu,
+                jmeno = primary.jmeno,
+                jmenoRaw = primary.raw,
+                aliases = aliases,
+            )
         }.sortedBy { it.jmeno.lowercase() }
     }
 

@@ -57,6 +57,7 @@ object PasportRepository {
     private fun loadAssetsFallback(context: Context, appVersion: String): PasportData? {
         val candidates = listOf(
             "pasport_tpi_v$appVersion.json",
+            "pasport_tpi_v0.39.0.json",
             "pasport_tpi_v0.38.0.json",
             "pasport_tpi_v0.37.0.json",
             "pasport_tpi_v0.36.0.json",
@@ -104,23 +105,39 @@ object PasportRepository {
 
         val stations = buildList {
             val arr = root.optJSONArray("stations") ?: return@buildList
-            val namesByUdu = linkedMapOf<String, MutableList<Pair<String, String>>>()
+            val byUdu = linkedMapOf<String, MutableList<StationNameCleaner.NameCandidate>>()
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
-                val udu = PasportSqliteLoader.normalizeUdu(o.optString("udu"))
+                val tuduFull = o.optString("tudu").ifBlank {
+                    o.optString("repre_tudu").ifBlank { o.optString("udu") }
+                }.trim()
+                val udu = PasportSqliteLoader.normalizeUdu(
+                    o.optString("udu").ifBlank { tuduFull },
+                )
                 val raw = o.optString("jmeno_raw").ifBlank { o.optString("jmeno") }.trim()
                 val jmeno = StationNameCleaner.clean(
-                    o.optString("jmeno").ifBlank { raw }
+                    o.optString("jmeno").ifBlank { raw },
                 )
                 if (udu.isEmpty() || jmeno.isEmpty()) continue
-                namesByUdu.getOrPut(udu) { mutableListOf() }.add(jmeno to raw)
+                byUdu.getOrPut(udu) { mutableListOf() }.add(
+                    StationNameCleaner.NameCandidate(
+                        jmeno = jmeno,
+                        raw = raw,
+                        tudu = tuduFull,
+                    ),
+                )
             }
-            for ((udu, pairs) in namesByUdu) {
-                val names = pairs.map { it.first }
-                val preferred = StationNameCleaner.preferName(names)
-                val raw = pairs.firstOrNull { it.first == preferred }?.second ?: preferred
-                val aliases = names.distinct().filter { it != preferred }
-                add(Station(udu = udu, jmeno = preferred, jmenoRaw = raw, aliases = aliases))
+            for ((udu, candidates) in byUdu) {
+                val primary = StationNameCleaner.pickPrimary(candidates)
+                val aliases = candidates.map { it.jmeno }.distinct().filter { it != primary.jmeno }
+                add(
+                    Station(
+                        udu = udu,
+                        jmeno = primary.jmeno,
+                        jmenoRaw = primary.raw,
+                        aliases = aliases,
+                    ),
+                )
             }
         }.sortedBy { it.jmeno.lowercase() }
 
