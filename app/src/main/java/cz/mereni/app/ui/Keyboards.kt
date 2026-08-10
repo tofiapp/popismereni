@@ -596,7 +596,7 @@ fun ChipToken(
                     .background(bg)
                     .then(
                         if (fromSecond) Modifier.border(2.5.dp, MereniColors.Dual, shape)
-                        else Modifier
+                        else Modifier.border(2.5.dp, MereniColors.Search1, shape)
                     )
                     .padding(horizontal = 14.dp)
             ) {

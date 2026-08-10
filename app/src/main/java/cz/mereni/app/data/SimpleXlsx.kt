@@ -9,11 +9,9 @@ import java.util.zip.ZipOutputStream
 /**
  * Minimální XLSX (4 sloupce) se styly: datum, stanice, data.
  *
- * Role se při čtení bere ze stylu buňky A (s="…"), ať řádek jen s "4"
- * neskončí jako název stanice.
- *
- * Datum/stanice: styl + výplň jen ve sloupci A — B/C/D zůstanou prázdné
- * bez oranžové/modré výplně, ať mezi výhybkami v B není „všechno“.
+ * Role ze stylu buňky A. Datum/stanice jen ve sloupci A.
+ * Styl 0 = výchozí Excelu (bez úprav) — centrovaná data mají vlastní index,
+ * jinak Excel zarovnání na střed ignoruje.
  */
 object SimpleXlsx {
     enum class Role { DATE, BLANK, STATION, DATA }
@@ -77,18 +75,16 @@ object SimpleXlsx {
             val ht = if (row.role == Role.BLANK) "12" else "24"
             sb.append("""<row r="$r" ht="$ht" customHeight="1">""")
             when (row.role) {
-                Role.BLANK -> {
-                    // Prázdný řádek — žádná výplň ve sloupci výhybek
-                }
+                Role.BLANK -> Unit
                 Role.DATE, Role.STATION -> {
-                    // Popisek jen v A; B/C/D neplnit stylem (ať B zůstane čistý)
                     sb.append(cellXml("A$r", row.a, styleIndex(row.role)))
                 }
                 Role.DATA -> {
+                    // Všechna data na střed (koleje, výhybky, čas, poznámka)
                     sb.append(cellXml("A$r", row.a, STYLE_DATA_CENTER))
                     sb.append(cellXml("B$r", row.b, STYLE_DATA_CENTER))
-                    sb.append(cellXml("C$r", row.c, STYLE_DATA_LEFT))
-                    sb.append(cellXml("D$r", row.d, STYLE_DATA_LEFT))
+                    sb.append(cellXml("C$r", row.c, STYLE_DATA_CENTER))
+                    sb.append(cellXml("D$r", row.d, STYLE_DATA_CENTER))
                 }
             }
             sb.append("</row>")
@@ -97,7 +93,6 @@ object SimpleXlsx {
         return sb.toString()
     }
 
-    /** 1 = datum, 2 = stanice, 0 = data (centrovaná čísla). */
     private fun styleIndex(role: Role): Int = when (role) {
         Role.DATE -> STYLE_DATE
         Role.STATION -> STYLE_STATION
@@ -107,7 +102,7 @@ object SimpleXlsx {
     private fun roleFromStyle(style: Int?): Role = when (style) {
         STYLE_DATE -> Role.DATE
         STYLE_STATION -> Role.STATION
-        else -> Role.DATA
+        else -> Role.DATA // 0 výchozí / 3 centrovaná data / staré 0
     }
 
     private fun cellXml(ref: String, value: String, style: Int): String {
@@ -159,9 +154,7 @@ object SimpleXlsx {
             val d = cells["D"].orEmpty()
             val role = when {
                 a.isBlank() && b.isBlank() && c.isBlank() && d.isBlank() -> Role.BLANK
-                // Role ze stylu buňky A (datum/stanice vs data)
                 styleA != null -> roleFromStyle(styleA)
-                // Staré soubory bez s="…": jen A = datum/stanice
                 a.isNotBlank() && b.isBlank() && c.isBlank() && d.isBlank() ->
                     if (rows.isEmpty()) Role.DATE else Role.STATION
                 else -> Role.DATA
@@ -178,10 +171,12 @@ object SimpleXlsx {
             .replace("&apos;", "'")
             .replace("&amp;", "&")
 
-    private const val STYLE_DATA_CENTER = 0
+    // 0 = Excel default (nepoužívat pro střed — Excel styl 0 často ignoruje)
+    // 1 = datum, 2 = stanice (stejné indexy jako dřív kvůli starým souborům)
+    // 3 = data na střed
     private const val STYLE_DATE = 1
     private const val STYLE_STATION = 2
-    private const val STYLE_DATA_LEFT = 3
+    private const val STYLE_DATA_CENTER = 3
 
     private const val CONTENT_TYPES = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -212,17 +207,17 @@ object SimpleXlsx {
 </workbook>"""
 
     /**
-     * 0 = data čísla — střed (koleje/spojky/výhybky)
-     * 1 = datum — modré, vlevo (jen sloupec A)
-     * 2 = stanice — oranžové, vlevo (jen sloupec A)
-     * 3 = data text — vlevo (čas, poznámka)
+     * 0 = výchozí Excel
+     * 1 = datum — modré, vlevo
+     * 2 = stanice — oranžové, vlevo
+     * 3 = data — střed
      */
     private const val STYLES = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
   <fonts count="3">
-    <font><sz val="14"/><name val="Calibri"/></font>
-    <font><sz val="16"/><b/><name val="Calibri"/></font>
-    <font><sz val="16"/><b/><name val="Calibri"/></font>
+    <font><sz val="14"/><color theme="1"/><name val="Calibri"/><family val="2"/></font>
+    <font><sz val="16"/><b/><color theme="1"/><name val="Calibri"/><family val="2"/></font>
+    <font><sz val="16"/><b/><color theme="1"/><name val="Calibri"/><family val="2"/></font>
   </fonts>
   <fills count="4">
     <fill><patternFill patternType="none"/></fill>
@@ -230,12 +225,12 @@ object SimpleXlsx {
     <fill><patternFill patternType="solid"><fgColor rgb="FFBBDEFB"/></patternFill></fill>
     <fill><patternFill patternType="solid"><fgColor rgb="FFFFE0B2"/></patternFill></fill>
   </fills>
-  <borders count="1"><border/></borders>
-  <cellStyleXfs count="1"><xf/></cellStyleXfs>
+  <borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
+  <cellStyleXfs count="1">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>
+  </cellStyleXfs>
   <cellXfs count="4">
-    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">
-      <alignment horizontal="center" vertical="center"/>
-    </xf>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
     <xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1">
       <alignment horizontal="left" vertical="center"/>
     </xf>
@@ -243,8 +238,11 @@ object SimpleXlsx {
       <alignment horizontal="left" vertical="center"/>
     </xf>
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">
-      <alignment horizontal="left" vertical="center"/>
+      <alignment horizontal="center" vertical="center"/>
     </xf>
   </cellXfs>
+  <cellStyles count="1">
+    <cellStyle name="Normal" xfId="0" builtinId="0"/>
+  </cellStyles>
 </styleSheet>"""
 }
