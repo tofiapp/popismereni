@@ -66,7 +66,7 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import cz.mereni.app.data.MeasurementStore
-import cz.mereni.app.data.OneDriveGraph
+import cz.mereni.app.data.OneDriveExportMode
 import cz.mereni.app.data.PasportKey
 import cz.mereni.app.data.PasportKind
 import cz.mereni.app.data.PasportLoadResult
@@ -139,6 +139,7 @@ class MainActivity : ComponentActivity() {
                 initialCount = bootRecordCount,
                 initialDayRecord = store.dayRecordNumber(),
                 initialOneDriveSynced = store.isSyncedToOneDrive(),
+                initialExportMode = store.exportMode,
                 onSave = { stationName, udu, pole1, pole2, cas, poznamka ->
                     store.append(stationName, udu, pole1, pole2, cas, poznamka)
                     store.count() to store.dayRecordNumber()
@@ -160,6 +161,7 @@ class MainActivity : ComponentActivity() {
                 },
                 onConfirmOneDriveSaved = {
                     store.confirmOneDriveSavedAndClear()
+                    store.count() to store.dayRecordNumber()
                 },
                 onCancelOneDriveConfirm = {
                     store.cancelPendingOneDriveConfirm()
@@ -167,7 +169,10 @@ class MainActivity : ComponentActivity() {
                 onIsPendingOneDriveConfirm = {
                     store.isPendingOneDriveConfirm()
                 },
-                onShareOneDriveFallback = { file ->
+                onExportModeChange = { mode ->
+                    store.exportMode = mode
+                },
+                onShareOneDrive = { file ->
                     val uri = FileProvider.getUriForFile(
                         this@MainActivity,
                         "${packageName}.fileprovider",
@@ -214,25 +219,22 @@ fun MereniApp(
     initialCount: Int,
     initialDayRecord: Int,
     initialOneDriveSynced: Boolean,
+    initialExportMode: OneDriveExportMode,
     onSave: (stationName: String, udu: String, pole1: String, pole2: String, casMereni: String, poznamka: String) -> Pair<Int, Int>,
     onUsedLabels: suspend (String) -> Pair<Set<String>, Set<String>>,
     onPersistBytes: suspend (ByteArray, Uri?) -> PasportLoadResult,
     onPrepareOneDriveFile: suspend () -> java.io.File,
-    onConfirmOneDriveSaved: () -> Unit,
+    onConfirmOneDriveSaved: () -> Pair<Int, Int>,
     onCancelOneDriveConfirm: () -> Unit,
     onIsPendingOneDriveConfirm: () -> Boolean,
-    onShareOneDriveFallback: (java.io.File) -> Unit,
+    onExportModeChange: (OneDriveExportMode) -> Unit,
+    onShareOneDrive: (java.io.File) -> Unit,
     onReload: suspend () -> PasportLoadResult,
     onKeysForStation: suspend (Station?, List<PasportKey>) -> List<PasportKey>,
 ) {
     val context = LocalContext.current
     val activity = context as? ComponentActivity
     val scope = rememberCoroutineScope()
-    val oneDriveGraph = remember(context) { OneDriveGraph(context) }
-    var graphClientId by remember { mutableStateOf(oneDriveGraph.clientId) }
-    var graphPath by remember { mutableStateOf(oneDriveGraph.filePath) }
-    var graphAccount by remember { mutableStateOf<String?>(null) }
-    var graphBusy by remember { mutableStateOf(false) }
     val pasport = load.data
     var activeField by remember { mutableStateOf(ActiveField.POLE1) }
     var stationA by remember { mutableStateOf<Station?>(null) }
@@ -251,6 +253,7 @@ fun MereniApp(
     var recordCount by remember { mutableIntStateOf(initialCount) }
     var dayRecordNum by remember { mutableIntStateOf(initialDayRecord.coerceAtLeast(0)) }
     var oneDriveSynced by remember { mutableStateOf(initialOneDriveSynced) }
+    var exportMode by remember { mutableStateOf(initialExportMode) }
     var leftForOneDriveShare by remember { mutableStateOf(false) }
     var showOneDriveConfirm by remember { mutableStateOf(false) }
     var reorderPole1 by remember { mutableStateOf(false) }
@@ -271,7 +274,6 @@ fun MereniApp(
         if (onIsPendingOneDriveConfirm()) {
             showOneDriveConfirm = true
         }
-        graphAccount = runCatching { oneDriveGraph.signedInAccount() }.getOrNull()
     }
 
     DisposableEffect(activity) {
@@ -520,43 +522,12 @@ fun MereniApp(
                                 .border(2.5.dp, oneDriveAccent, oneDriveShape)
                                 .clickable {
                                     exportMessage = null
-                                    val act = activity
-                                    if (oneDriveGraph.hasClientId() && act != null) {
-                                        scope.launch {
-                                            graphBusy = true
-                                            exportMessage = "Nahrávám na OneDrive (Graph)…"
-                                            try {
-                                                val file = onPrepareOneDriveFile()
-                                                val bytes = withContext(Dispatchers.IO) {
-                                                    file.readBytes()
-                                                }
-                                                val path = oneDriveGraph.uploadOrReplaceXlsx(
-                                                    act,
-                                                    bytes,
-                                                )
-                                                onConfirmOneDriveSaved()
-                                                oneDriveSynced = true
-                                                exportMessage = "Nahráno: $path"
-                                            } catch (e: Exception) {
-                                                oneDriveSynced = false
-                                                exportMessage = e.message ?: "Graph upload selhal"
-                                            } finally {
-                                                graphBusy = false
-                                            }
-                                        }
-                                    } else {
-                                        leftForOneDriveShare = true
-                                        scope.launch {
-                                            val file = onPrepareOneDriveFile()
-                                            onShareOneDriveFallback(file)
-                                            oneDriveSynced = false
-                                            exportMessage =
-                                                if (oneDriveGraph.hasClientId()) {
-                                                    "Sdílení… (nebo Přihlásit v ⚙)"
-                                                } else {
-                                                    "Bez Client ID — sdílení. Nastav Graph v ⚙"
-                                                }
-                                        }
+                                    leftForOneDriveShare = true
+                                    scope.launch {
+                                        val file = onPrepareOneDriveFile()
+                                        onShareOneDrive(file)
+                                        oneDriveSynced = false
+                                        exportMessage = "Sdílení ${file.name}…"
                                     }
                                 }
                                 .padding(horizontal = 14.dp),
@@ -604,7 +575,7 @@ fun MereniApp(
                 PasportSettingsButton(
                     statusText = pasportStatusText,
                     statusOk = load.fromDeviceSqlite && !pasportLoading,
-                    loading = pasportLoading || keysLoading || graphBusy,
+                    loading = pasportLoading || keysLoading,
                     appVersion = appVersion,
                     recordCount = recordCount,
                     onPick = {
@@ -623,49 +594,15 @@ fun MereniApp(
                         scope.launch { applyLoad(onReload()) }
                     },
                     exportMessage = exportMessage,
-                    graphClientId = graphClientId,
-                    onGraphClientIdChange = {
-                        graphClientId = it
-                        oneDriveGraph.clientId = it
-                    },
-                    graphPath = graphPath,
-                    onGraphPathChange = {
-                        graphPath = it
-                        oneDriveGraph.filePath = it
-                    },
-                    graphAccount = graphAccount,
-                    graphBusy = graphBusy,
-                    onGraphSignIn = {
-                        val act = activity ?: return@PasportSettingsButton
-                        scope.launch {
-                            graphBusy = true
-                            exportMessage = "Přihlašuji k Microsoft…"
-                            runCatching { oneDriveGraph.signIn(act) }
-                                .onSuccess {
-                                    graphAccount = it
-                                    exportMessage = "Přihlášeno: $it"
-                                }
-                                .onFailure { e ->
-                                    exportMessage = e.message ?: "Přihlášení selhalo"
-                                }
-                            graphBusy = false
-                        }
-                    },
-                    onGraphSignOut = {
-                        scope.launch {
-                            graphBusy = true
-                            runCatching { oneDriveGraph.signOut() }
-                            graphAccount = null
-                            exportMessage = "Odhlášeno"
-                            graphBusy = false
-                        }
-                    },
-                    onShareFallback = {
-                        leftForOneDriveShare = true
-                        scope.launch {
-                            val file = onPrepareOneDriveFile()
-                            onShareOneDriveFallback(file)
-                            exportMessage = "Sdílení mereni_MD1.xlsx…"
+                    exportMode = exportMode,
+                    onExportModeChange = { mode ->
+                        exportMode = mode
+                        onExportModeChange(mode)
+                        exportMessage = when (mode) {
+                            OneDriveExportMode.DAILY ->
+                                "Režim: denní soubor YYMMDD_MD1.xlsx"
+                            OneDriveExportMode.REPLACE ->
+                                "Režim: přepisovat mereni_MD1.xlsx"
                         }
                     },
                 )
@@ -1026,7 +963,12 @@ fun MereniApp(
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        "Nahrál jsi mereni_MD1.xlsx na OneDrive?",
+                        when (exportMode) {
+                            OneDriveExportMode.DAILY ->
+                                "Nahrál jsi denní soubor na OneDrive?"
+                            OneDriveExportMode.REPLACE ->
+                                "Nahrál jsi mereni_MD1.xlsx na OneDrive?"
+                        },
                         color = MereniColors.Text,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 17.sp,
@@ -1035,10 +977,17 @@ fun MereniApp(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "Stejný soubor na OneDrive nahraď — lokální záznamy se nemažou,\n" +
-                            "další měření se do něj donahrají.\n\n" +
-                            "✕ — tlačítko zůstane červené.\n" +
-                            "ANO — označit jako uložené (zelená).",
+                        when (exportMode) {
+                            OneDriveExportMode.DAILY ->
+                                "Soubor YYMMDD_MD1.xlsx ulož do OneDrive.\n\n" +
+                                    "✕ — tlačítko zůstane červené.\n" +
+                                    "ANO — vymazat místní záznamy (zelená)."
+                            OneDriveExportMode.REPLACE ->
+                                "Stejný soubor na OneDrive nahraď — lokální záznamy se nemažou,\n" +
+                                    "další měření se do něj donahrají.\n\n" +
+                                    "✕ — tlačítko zůstane červené.\n" +
+                                    "ANO — označit jako uložené (zelená)."
+                        },
                         color = MereniColors.TextMuted,
                         fontSize = 12.sp,
                         textAlign = TextAlign.Center,
@@ -1047,10 +996,17 @@ fun MereniApp(
                     Spacer(modifier = Modifier.height(16.dp))
                     Button(
                         onClick = {
-                            onConfirmOneDriveSaved()
+                            val (count, day) = onConfirmOneDriveSaved()
+                            recordCount = count
+                            dayRecordNum = day
                             showOneDriveConfirm = false
                             oneDriveSynced = true
-                            exportMessage = "OneDrive má mereni_MD1.xlsx — další záznamy se donahrají"
+                            exportMessage = when (exportMode) {
+                                OneDriveExportMode.DAILY ->
+                                    "Uloženo — místní záznamy vymazány"
+                                OneDriveExportMode.REPLACE ->
+                                    "OneDrive má mereni_MD1.xlsx — další záznamy se donahrají"
+                            }
                         },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MereniColors.Vyhybka,

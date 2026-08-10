@@ -48,7 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import cz.mereni.app.ActiveField
-import cz.mereni.app.data.OneDriveGraph
+import cz.mereni.app.data.OneDriveExportMode
 import cz.mereni.app.data.PasportKey
 import cz.mereni.app.data.PasportKind
 import cz.mereni.app.data.SelectedToken
@@ -1061,7 +1061,7 @@ fun StationSearchPicker(
 }
 
 /**
- * Ozubené kolečko — pasport, verze, OneDrive Graph.
+ * Ozubené kolečko — pasport, verze, režim OneDrive.
  */
 @Composable
 fun PasportSettingsButton(
@@ -1073,15 +1073,8 @@ fun PasportSettingsButton(
     onPick: () -> Unit,
     onReload: () -> Unit,
     exportMessage: String? = null,
-    graphClientId: String = "",
-    onGraphClientIdChange: (String) -> Unit = {},
-    graphPath: String = OneDriveGraph.DEFAULT_PATH,
-    onGraphPathChange: (String) -> Unit = {},
-    graphAccount: String? = null,
-    graphBusy: Boolean = false,
-    onGraphSignIn: () -> Unit = {},
-    onGraphSignOut: () -> Unit = {},
-    onShareFallback: () -> Unit = {},
+    exportMode: OneDriveExportMode,
+    onExportModeChange: (OneDriveExportMode) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var open by remember { mutableStateOf(false) }
@@ -1133,80 +1126,31 @@ fun PasportSettingsButton(
 
                 Spacer(modifier = Modifier.height(14.dp))
                 Text(
-                    "OneDrive (Microsoft Graph)",
+                    "Uložit na OneDrive",
                     color = MereniColors.Text,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 15.sp,
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    "IT zaregistruje app v Azure AD (Client ID), redirect\n" +
-                        "${OneDriveGraph.REDIRECT_URI}\n" +
-                        "a oprávnění Files.ReadWrite. Pak Přihlásit a Uložit na OneDrive.",
+                    "Sdílením Intent (OneDrive / Files). Vyber režim souboru:",
                     color = MereniColors.TextMuted,
-                    fontSize = 11.sp,
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("Azure Client ID", color = MereniColors.TextMuted, fontSize = 11.sp)
-                BasicTextField(
-                    value = graphClientId,
-                    onValueChange = onGraphClientIdChange,
-                    singleLine = true,
-                    textStyle = TextStyle(color = MereniColors.Text, fontSize = 13.sp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MereniColors.Surface)
-                        .border(1.dp, MereniColors.ChipBorder, RoundedCornerShape(8.dp))
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                    decorationBox = { inner ->
-                        Box {
-                            if (graphClientId.isEmpty()) {
-                                Text("xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx", color = MereniColors.TextMuted, fontSize = 12.sp)
-                            }
-                            inner()
-                        }
-                    },
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("Cesta v OneDrive", color = MereniColors.TextMuted, fontSize = 11.sp)
-                BasicTextField(
-                    value = graphPath,
-                    onValueChange = onGraphPathChange,
-                    singleLine = true,
-                    textStyle = TextStyle(color = MereniColors.Text, fontSize = 13.sp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MereniColors.Surface)
-                        .border(1.dp, MereniColors.ChipBorder, RoundedCornerShape(8.dp))
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = when {
-                        graphBusy -> "Graph: pracuji…"
-                        graphAccount != null -> "Účet: $graphAccount"
-                        else -> "Nepřihlášeno"
-                    },
-                    color = if (graphAccount != null) MereniColors.Vyhybka else MereniColors.TextMuted,
                     fontSize = 12.sp,
                 )
+                Spacer(modifier = Modifier.height(8.dp))
+                ExportModeOption(
+                    selected = exportMode == OneDriveExportMode.DAILY,
+                    title = "1 · Každý den jeden záznam",
+                    detail = "Soubor YYMMDD_MD1.xlsx · po ANO se místní vymaže",
+                    onClick = { onExportModeChange(OneDriveExportMode.DAILY) },
+                )
                 Spacer(modifier = Modifier.height(6.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TextButton(onClick = onGraphSignIn, enabled = !graphBusy) {
-                        Text("Přihlásit", color = MereniColors.Accent, fontWeight = FontWeight.SemiBold)
-                    }
-                    TextButton(onClick = onGraphSignOut, enabled = !graphBusy) {
-                        Text("Odhlásit", color = MereniColors.TextMuted)
-                    }
-                    TextButton(onClick = {
-                        onShareFallback()
-                        open = false
-                    }) {
-                        Text("Sdílet…", color = MereniColors.TextMuted)
-                    }
-                }
+                ExportModeOption(
+                    selected = exportMode == OneDriveExportMode.REPLACE,
+                    title = "2 · Přepisující se soubor",
+                    detail = "Vždy mereni_MD1.xlsx · místní záznamy zůstávají",
+                    onClick = { onExportModeChange(OneDriveExportMode.REPLACE) },
+                )
 
                 Spacer(modifier = Modifier.height(14.dp))
                 Text(
@@ -1246,5 +1190,34 @@ fun PasportSettingsButton(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ExportModeOption(
+    selected: Boolean,
+    title: String,
+    detail: String,
+    onClick: () -> Unit,
+) {
+    val border = if (selected) MereniColors.Vyhybka else MereniColors.ChipBorder
+    val bg = if (selected) MereniColors.Vyhybka.copy(alpha = 0.12f) else MereniColors.Surface
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(bg)
+            .border(2.dp, border, RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Text(
+            title,
+            color = MereniColors.Text,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 14.sp,
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(detail, color = MereniColors.TextMuted, fontSize = 12.sp)
     }
 }
