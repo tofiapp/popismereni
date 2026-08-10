@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import cz.mereni.app.ActiveField
+import cz.mereni.app.data.OneDriveGraph
 import cz.mereni.app.data.PasportKey
 import cz.mereni.app.data.PasportKind
 import cz.mereni.app.data.SelectedToken
@@ -1060,7 +1061,7 @@ fun StationSearchPicker(
 }
 
 /**
- * Ozubené kolečko — nastavení pasportu + verze.
+ * Ozubené kolečko — pasport, verze, OneDrive Graph.
  */
 @Composable
 fun PasportSettingsButton(
@@ -1072,6 +1073,15 @@ fun PasportSettingsButton(
     onPick: () -> Unit,
     onReload: () -> Unit,
     exportMessage: String? = null,
+    graphClientId: String = "",
+    onGraphClientIdChange: (String) -> Unit = {},
+    graphPath: String = OneDriveGraph.DEFAULT_PATH,
+    onGraphPathChange: (String) -> Unit = {},
+    graphAccount: String? = null,
+    graphBusy: Boolean = false,
+    onGraphSignIn: () -> Unit = {},
+    onGraphSignOut: () -> Unit = {},
+    onShareFallback: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var open by remember { mutableStateOf(false) }
@@ -1090,10 +1100,12 @@ fun PasportSettingsButton(
         Dialog(onDismissRequest = { open = false }) {
             Column(
                 modifier = Modifier
-                    .widthIn(min = 280.dp, max = 480.dp)
+                    .widthIn(min = 280.dp, max = 520.dp)
+                    .heightIn(max = 560.dp)
                     .clip(RoundedCornerShape(14.dp))
                     .background(MereniColors.SurfaceAlt)
                     .padding(16.dp)
+                    .verticalScroll(rememberScrollState()),
             ) {
                 Text(
                     "Nastavení",
@@ -1118,7 +1130,85 @@ fun PasportSettingsButton(
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(exportMessage, color = MereniColors.Kolej, fontSize = 12.sp)
                 }
-                Spacer(modifier = Modifier.height(12.dp))
+
+                Spacer(modifier = Modifier.height(14.dp))
+                Text(
+                    "OneDrive (Microsoft Graph)",
+                    color = MereniColors.Text,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "IT zaregistruje app v Azure AD (Client ID), redirect\n" +
+                        "${OneDriveGraph.REDIRECT_URI}\n" +
+                        "a oprávnění Files.ReadWrite. Pak Přihlásit a Uložit na OneDrive.",
+                    color = MereniColors.TextMuted,
+                    fontSize = 11.sp,
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Azure Client ID", color = MereniColors.TextMuted, fontSize = 11.sp)
+                BasicTextField(
+                    value = graphClientId,
+                    onValueChange = onGraphClientIdChange,
+                    singleLine = true,
+                    textStyle = TextStyle(color = MereniColors.Text, fontSize = 13.sp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MereniColors.Surface)
+                        .border(1.dp, MereniColors.ChipBorder, RoundedCornerShape(8.dp))
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    decorationBox = { inner ->
+                        Box {
+                            if (graphClientId.isEmpty()) {
+                                Text("xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx", color = MereniColors.TextMuted, fontSize = 12.sp)
+                            }
+                            inner()
+                        }
+                    },
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Cesta v OneDrive", color = MereniColors.TextMuted, fontSize = 11.sp)
+                BasicTextField(
+                    value = graphPath,
+                    onValueChange = onGraphPathChange,
+                    singleLine = true,
+                    textStyle = TextStyle(color = MereniColors.Text, fontSize = 13.sp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MereniColors.Surface)
+                        .border(1.dp, MereniColors.ChipBorder, RoundedCornerShape(8.dp))
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = when {
+                        graphBusy -> "Graph: pracuji…"
+                        graphAccount != null -> "Účet: $graphAccount"
+                        else -> "Nepřihlášeno"
+                    },
+                    color = if (graphAccount != null) MereniColors.Vyhybka else MereniColors.TextMuted,
+                    fontSize = 12.sp,
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = onGraphSignIn, enabled = !graphBusy) {
+                        Text("Přihlásit", color = MereniColors.Accent, fontWeight = FontWeight.SemiBold)
+                    }
+                    TextButton(onClick = onGraphSignOut, enabled = !graphBusy) {
+                        Text("Odhlásit", color = MereniColors.TextMuted)
+                    }
+                    TextButton(onClick = {
+                        onShareFallback()
+                        open = false
+                    }) {
+                        Text("Sdílet…", color = MereniColors.TextMuted)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
                 Text(
                     "Pasport",
                     color = MereniColors.Text,
