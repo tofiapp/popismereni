@@ -9,58 +9,78 @@ Option Explicit
 ' No extra Sesit1 / Mappe1. Button OnAction = same file.
 '
 ' Setup once (CZ/DE Excel):
-'   1) New workbook (or empty file)
-'   2) Alt+F11 -> Datei/Soubor -> Import -> this .bas
-'   3) Alt+F8 -> VytvoritTlacitko -> Run
-'      Saves THIS file as Souhrn_mereni.xlsm into OneDrive folder + makes button
-'   4) Next times: open Souhrn_mereni.xlsm -> click button
-'      (Inhalt aktivieren / Povolit makra if asked)
+'   1) New workbook
+'   2) Alt+F11 -> import this .bas
+'   3) Save As Souhrn_mereni.xlsm into the SHARED OneDrive folder (with *_MD1.xlsx)
+'   4) Alt+F8 -> VytvoritTlacitko
+'   5) Colleague opens the SAME xlsm from OneDrive, enables macros, clicks button
+'
+' Source files = same folder as this workbook (ThisWorkbook.Path) - works on every PC.
 
 Private Function SourceFolder() As String
-    SourceFolder = "C:\Users\hrubesk\OneDrive - Spr" & ChrW(225) & "va " & _
-                   ChrW(382) & "eleznic\MD1_rozdeleno"
+    ' Same folder as this shared workbook (works for every PC / OneDrive sync)
+    Dim p As String
+    p = ThisWorkbook.Path
+    If Len(p) = 0 Then
+        MsgBox "Nejdrive uloz Souhrn_mereni.xlsm (Soubor musi mit cestu).", vbExclamation
+        SourceFolder = ""
+        Exit Function
+    End If
+    SourceFolder = p
 End Function
 
 Private Function SourcePath() As String
     Dim p As String
     p = SourceFolder()
+    If Len(p) = 0 Then
+        SourcePath = ""
+        Exit Function
+    End If
     If Right$(p, 1) <> "\" Then p = p & "\"
     SourcePath = p
 End Function
 
 Private Function SouhrnPathXlsm() As String
-    SouhrnPathXlsm = SourcePath() & "Souhrn_mereni.xlsm"
+    ' Keep file where it already is (shared OneDrive folder)
+    If Len(ThisWorkbook.Path) > 0 Then
+        SouhrnPathXlsm = ThisWorkbook.FullName
+    Else
+        SouhrnPathXlsm = Environ$("USERPROFILE") & "\Souhrn_mereni.xlsm"
+    End If
 End Function
 
 ' ========== once: save this workbook + create button ==========
 Public Sub VytvoritTlacitko()
-    Dim src As String
-    src = SourcePath()
-    If Dir(src, vbDirectory) = "" Then
-        MsgBox "Slozka nenalezena / Ordner fehlt:" & vbCrLf & src, vbCritical
-        Exit Sub
-    End If
-
-    ' Macros must live in ThisWorkbook (= the file where you imported .bas)
     Dim wb As Workbook
     Set wb = ThisWorkbook
 
-    Application.DisplayAlerts = False
-    On Error Resume Next
-    ' Save as macro workbook into the OneDrive folder (ONE file forever)
-    wb.SaveAs Filename:=SouhrnPathXlsm(), FileFormat:=52
-    If Err.Number <> 0 Then
-        Dim errMsg As String
-        errMsg = Err.Description
-        Err.Clear
-        Application.DisplayAlerts = True
-        MsgBox "SaveAs xlsm selhalo (OneDrive/prava)." & vbCrLf & errMsg & vbCrLf & vbCrLf & _
-               "Uloz rucne tento sesit jako Souhrn_mereni.xlsm do slozky mereni," & vbCrLf & _
-               "pak znovu spust VytvoritTlacitko.", vbExclamation
+    ' If not saved yet, ask user to save into the shared OneDrive mereni folder
+    If Len(wb.Path) = 0 Then
+        MsgBox "Nejdrive uloz tento sesit do sdilene OneDrive slozky s *_MD1.xlsx" & vbCrLf & _
+               "(Soubor -> Ulozit jako -> Souhrn_mereni.xlsm do MD1_rozdeleno)," & vbCrLf & _
+               "pak znovu spust VytvoritTlacitko.", vbInformation
         Exit Sub
     End If
-    On Error GoTo 0
-    Application.DisplayAlerts = True
+
+    ' Prefer .xlsm so macros+button travel with the shared file
+    If LCase$(Right$(wb.Name, 5)) <> ".xlsm" Then
+        Application.DisplayAlerts = False
+        On Error Resume Next
+        wb.SaveAs Filename:=wb.Path & "\Souhrn_mereni.xlsm", FileFormat:=52
+        If Err.Number <> 0 Then
+            Dim errMsg As String
+            errMsg = Err.Description
+            Err.Clear
+            Application.DisplayAlerts = True
+            MsgBox "SaveAs xlsm selhalo:" & vbCrLf & errMsg & vbCrLf & _
+                   "Uloz rucne jako Souhrn_mereni.xlsm ve stejne slozce.", vbExclamation
+            Exit Sub
+        End If
+        On Error GoTo 0
+        Application.DisplayAlerts = True
+    Else
+        wb.Save
+    End If
 
     Dim wsBtn As Worksheet
     Set wsBtn = EnsureSheet(wb, "Start")
@@ -69,11 +89,12 @@ Public Sub VytvoritTlacitko()
     On Error GoTo 0
 
     wsBtn.Cells.Clear
-    wsBtn.Range("A1").Value = "Mereni - slouceni"
+    wsBtn.Range("A1").Value = "Mereni - slouceni (sdileny soubor)"
     wsBtn.Range("A1").Font.Size = 18
     wsBtn.Range("A1").Font.Bold = True
-    wsBtn.Range("A3").Value = "Klikni tlacitko. Vysledek = list Mereni ve STEJNEM souboru."
-    wsBtn.Range("A4").Value = wb.FullName
+    wsBtn.Range("A3").Value = "Klikni tlacitko. Cte *_MD1.xlsx ze STEJNE slozky jako tento soubor."
+    wsBtn.Range("A4").Value = "Slozka: " & wb.Path
+    wsBtn.Range("A5").Value = "Soubor: " & wb.FullName
     wsBtn.Columns("A").ColumnWidth = 90
 
     Dim shp As Shape
@@ -83,9 +104,8 @@ Public Sub VytvoritTlacitko()
     Next shp
     On Error GoTo 0
 
-    ' Form button - OnAction WITHOUT workbook name = macro in THIS file
     Dim btn As Button
-    Set btn = wsBtn.Buttons.Add(Left:=20, Top:=100, Width:=280, Height:=55)
+    Set btn = wsBtn.Buttons.Add(Left:=20, Top:=120, Width:=280, Height:=55)
     btn.OnAction = "SloucitVsechnaMereni"
     btn.Characters.Text = "Sloucit mereni"
     btn.Font.Size = 16
@@ -94,10 +114,9 @@ Public Sub VytvoritTlacitko()
     Call EnsureSheet(wb, "Mereni")
     wb.Save
 
-    MsgBox "OK. Makra + tlacitko + list Mereni = jeden soubor:" & vbCrLf & _
-           wb.FullName & vbCrLf & vbCrLf & _
-           "Priste jen otevri tento soubor, povol makra, klikni tlacitko." & vbCrLf & _
-           "(F8 uz nepotrebujes)", vbInformation
+    MsgBox "OK. Sdilene xlsm:" & vbCrLf & wb.FullName & vbCrLf & vbCrLf & _
+           "Kolega: otevrit stejny soubor z OneDrive, povolit makra, kliknout tlacitko." & vbCrLf & _
+           "Zdrojove *_MD1.xlsx musi byt ve stejne slozce.", vbInformation
 End Sub
 
 ' ========== main: refresh Mereni inside THIS workbook ==========
@@ -108,6 +127,7 @@ Public Sub SloucitVsechnaMereni()
 
     Dim srcPath As String
     srcPath = SourcePath()
+    If Len(srcPath) = 0 Then Exit Sub
 
     If Dir(srcPath, vbDirectory) = "" Then
         MsgBox "Slozka nenalezena:" & vbCrLf & srcPath, vbCritical
