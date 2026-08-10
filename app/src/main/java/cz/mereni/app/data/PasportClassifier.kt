@@ -2,10 +2,10 @@ package cz.mereni.app.data
 
 /**
  * Klasifikace DZS_SUPER_RO_TPI:
- * - Výhybka: neprázdná POLOHA
+ * - Výhybka: POLOHA ∈ {JAP, JBP, …, CH}
  * - Spojka: prázdná POLOHA + IOB ∈ {X, S}
  *   (COBJEKT_TPI smí být zhl i u koleje — nerozhoduje)
- * - Kolej: prázdná POLOHA + IOB ∉ {X, S} (včetně prázdného IOB)
+ * - Kolej: prázdná / nevýhybková POLOHA + IOB ∉ {X, S} (včetně prázdného IOB)
  */
 object PasportClassifier {
 

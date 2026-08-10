@@ -10,10 +10,13 @@ object MereniColors {
     val SurfaceAlt = Color(0xFFE2EAF0)
     val Text = Color(0xFF152033)
     val TextMuted = Color(0xFF5A6A7A)
-    /** Systémová barva — Uložit, Zavřít, vyhledávač stanic (ne barvy typů). */
+    /** Systémová barva — Zavřít, nastavení (ne barvy typů / vyhledávačů). */
     val Accent = Color(0xFF456A8A)
     val AccentDark = Color(0xFF345270)
     val Danger = Color(0xFFB33A3A)
+
+    /** 1. vyhledávač stanic — sytá ocelově modrá */
+    val Search1 = Color(0xFF1B6A8F)
 
     /** Spojka (X/S) — měděná */
     val Spojka = Color(0xFFB85A2A)
@@ -33,7 +36,7 @@ object MereniColors {
     /** Poznámka — prašná ocelově modrá */
     val Poznamka = Color(0xFF5C6E8A)
 
-    /** Druhá stanice (dual) — chladnější fuchsie, větší odstup od mědi spojek */
+    /** 2. vyhledávač (dual) — chladnější fuchsie */
     val Dual = Color(0xFF8E1F7A)
 
     val ChipBg = Color(0xFFFFFFFF)

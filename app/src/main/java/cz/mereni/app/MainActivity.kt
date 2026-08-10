@@ -480,7 +480,7 @@ fun MereniApp(
                     stations = pasport.stations,
                     selected = stationA,
                     onSelect = { selectStationA(it, clearFields = stationA == null) },
-                    accentColor = MereniColors.Accent,
+                    accentColor = MereniColors.Search1,
                     isKeySource = activeSlot == 0 && stationA != null,
                     slotLabel = if (dualMode) "1" else null,
                     onActivate = { activeSlot = 0 },
@@ -494,28 +494,31 @@ fun MereniApp(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        Button(
-                            onClick = {
-                                exportMessage = null
-                                leftForOneDriveShare = true
-                                val name = onSaveToOneDrive()
-                                // Zůstává červené — smazání až po potvrzení po návratu
-                                oneDriveSynced = false
-                                exportMessage = "Soubor $name — vyber OneDrive"
-                            },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (oneDriveSynced) {
-                                    MereniColors.Vyhybka
-                                } else {
-                                    MereniColors.Danger
-                                },
-                                contentColor = Color.White,
-                            ),
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-                            modifier = Modifier.height(40.dp),
+                        val oneDriveAccent = if (oneDriveSynced) {
+                            MereniColors.Vyhybka
+                        } else {
+                            MereniColors.Danger
+                        }
+                        val oneDriveShape = RoundedCornerShape(10.dp)
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .height(40.dp)
+                                .clip(oneDriveShape)
+                                .background(oneDriveAccent.copy(alpha = 0.12f))
+                                .border(2.5.dp, oneDriveAccent, oneDriveShape)
+                                .clickable {
+                                    exportMessage = null
+                                    leftForOneDriveShare = true
+                                    val name = onSaveToOneDrive()
+                                    oneDriveSynced = false
+                                    exportMessage = "Soubor $name — vyber OneDrive"
+                                }
+                                .padding(horizontal = 14.dp),
                         ) {
                             Text(
                                 "Uložit na OneDrive",
+                                color = oneDriveAccent,
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 13.sp,
                             )
@@ -527,7 +530,7 @@ fun MereniApp(
                                 .height(40.dp)
                                 .widthIn(min = 44.dp)
                                 .clip(countShape)
-                                .background(MereniColors.Cas.copy(alpha = 0.18f))
+                                .background(MereniColors.Cas.copy(alpha = 0.14f))
                                 .border(2.dp, MereniColors.Cas, countShape)
                                 .padding(horizontal = 12.dp),
                         ) {
@@ -717,75 +720,76 @@ fun MereniApp(
                         }
                     },
                 )
-                Button(
-                    onClick = {
-                        val cas = if (timeChosen) timeLabel() else ""
-                        val noteText = note.trim()
-                        val hasContent = pole1.isNotEmpty() || pole2.isNotEmpty() ||
-                            cas.isNotBlank() || noteText.isNotBlank()
-                        if (!hasContent) return@Button
-
-                        fun saveFor(
-                            station: Station?,
-                            p1: List<SelectedToken>,
-                            p2: List<SelectedToken>,
-                            withMeta: Boolean,
-                        ) {
-                            if (p1.isEmpty() && p2.isEmpty() && !withMeta) return
-                            val st = station
-                            val udu = st?.udu.orEmpty()
-                            val name = st?.jmeno.orEmpty()
-                            if (udu.isBlank() && name.isBlank() && p1.isEmpty() && p2.isEmpty() && !withMeta) return
-                            val result = onSave(
-                                name,
-                                udu,
-                                p1.joinToString(", ") { it.label },
-                                p2.joinToString(" - ") { it.label },
-                                if (withMeta) cas else "",
-                                if (withMeta) noteText else "",
-                            )
-                            recordCount = result.first
-                            dayRecordNum = result.second
-                            oneDriveSynced = false
-                        }
-
-                        if (dualMode) {
-                            // Název stanice podle první vybrané výhybky (pořadí v poli od–do)
-                            val nameStation = when {
-                                pole2.isNotEmpty() ->
-                                    if (pole2.first().fromSlot == 1) stationB else stationA
-                                pole1.isNotEmpty() ->
-                                    if (pole1.first().fromSlot == 1) stationB else stationA
-                                else -> stationA
-                            }
-                            saveFor(
-                                nameStation,
-                                pole1.toList(),
-                                pole2.toList(),
-                                true,
-                            )
-                        } else {
-                            saveFor(
-                                stationA,
-                                pole1.toList(),
-                                pole2.toList(),
-                                true,
-                            )
-                        }
-                        clearAll()
-                        refreshUsedLabels()
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MereniColors.Vyhybka,
-                        contentColor = Color.White,
-                    ),
-                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
+                val dalsiShape = RoundedCornerShape(10.dp)
+                Box(
+                    contentAlignment = Alignment.Center,
                     modifier = Modifier
                         .height(48.dp)
-                        .widthIn(min = 168.dp),
+                        .widthIn(min = 168.dp)
+                        .clip(dalsiShape)
+                        .background(MereniColors.Vyhybka.copy(alpha = 0.12f))
+                        .border(2.5.dp, MereniColors.Vyhybka, dalsiShape)
+                        .clickable {
+                            val cas = if (timeChosen) timeLabel() else ""
+                            val noteText = note.trim()
+                            val hasContent = pole1.isNotEmpty() || pole2.isNotEmpty() ||
+                                cas.isNotBlank() || noteText.isNotBlank()
+                            if (!hasContent) return@clickable
+
+                            fun saveFor(
+                                station: Station?,
+                                p1: List<SelectedToken>,
+                                p2: List<SelectedToken>,
+                                withMeta: Boolean,
+                            ) {
+                                if (p1.isEmpty() && p2.isEmpty() && !withMeta) return
+                                val st = station
+                                val udu = st?.udu.orEmpty()
+                                val name = st?.jmeno.orEmpty()
+                                if (udu.isBlank() && name.isBlank() && p1.isEmpty() && p2.isEmpty() && !withMeta) return
+                                val result = onSave(
+                                    name,
+                                    udu,
+                                    p1.joinToString(", ") { it.label },
+                                    p2.joinToString(" - ") { it.label },
+                                    if (withMeta) cas else "",
+                                    if (withMeta) noteText else "",
+                                )
+                                recordCount = result.first
+                                dayRecordNum = result.second
+                                oneDriveSynced = false
+                            }
+
+                            if (dualMode) {
+                                val nameStation = when {
+                                    pole2.isNotEmpty() ->
+                                        if (pole2.first().fromSlot == 1) stationB else stationA
+                                    pole1.isNotEmpty() ->
+                                        if (pole1.first().fromSlot == 1) stationB else stationA
+                                    else -> stationA
+                                }
+                                saveFor(
+                                    nameStation,
+                                    pole1.toList(),
+                                    pole2.toList(),
+                                    true,
+                                )
+                            } else {
+                                saveFor(
+                                    stationA,
+                                    pole1.toList(),
+                                    pole2.toList(),
+                                    true,
+                                )
+                            }
+                            clearAll()
+                            refreshUsedLabels()
+                        }
+                        .padding(horizontal = 20.dp),
                 ) {
                     Text(
                         "Další záznam",
+                        color = MereniColors.Vyhybka,
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp,
                     )
