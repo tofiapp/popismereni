@@ -211,7 +211,7 @@ fun MereniApp(
     initialDayRecord: Int,
     initialOneDriveSynced: Boolean,
     onSave: (stationName: String, udu: String, pole1: String, pole2: String, casMereni: String, poznamka: String) -> Pair<Int, Int>,
-    onUsedLabels: suspend (String) -> Set<String>,
+    onUsedLabels: suspend (String) -> Pair<Set<String>, Set<String>>,
     onPersistBytes: suspend (ByteArray, Uri?) -> PasportLoadResult,
     onSaveToOneDrive: () -> String,
     onConfirmOneDriveClear: () -> Unit,
@@ -244,8 +244,10 @@ fun MereniApp(
     var showOneDriveConfirm by remember { mutableStateOf(false) }
     var reorderPole1 by remember { mutableStateOf(false) }
     var reorderPole2 by remember { mutableStateOf(false) }
-    var usedLabelsA by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var usedLabelsB by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var usedPole1A by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var usedPole2A by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var usedPole1B by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var usedPole2B by remember { mutableStateOf<Set<String>>(emptySet()) }
     var customDialogFor by remember { mutableStateOf<ActiveField?>(null) }
     var noteFocused by remember { mutableStateOf(false) }
     var exportMessage by remember { mutableStateOf<String?>(null) }
@@ -278,21 +280,38 @@ fun MereniApp(
     val dualMode = stationB != null
     val activeStation = if (activeSlot == 1 && stationB != null) stationB else stationA
     val stationKeys = if (activeSlot == 1 && dualMode) keysB else keysA
-    /** CSV zašednutí jen pro aktivní vyhledávač (přesné UDU). */
-    val usedLabels = if (activeSlot == 1 && dualMode) usedLabelsB else usedLabelsA
+    /** CSV/Excel zašednutí — zvlášť koleje/spojky a výhybky, jen aktivní vyhledávač. */
+    val usedLabels = when {
+        activeField == ActiveField.POLE1 && activeSlot == 1 && dualMode -> usedPole1B
+        activeField == ActiveField.POLE1 -> usedPole1A
+        activeField == ActiveField.POLE2 && activeSlot == 1 && dualMode -> usedPole2B
+        activeField == ActiveField.POLE2 -> usedPole2A
+        else -> emptySet()
+    }
     /**
-     * Právě v horních obdélnících z **tohoto** slotu — zašedlé a nelze znovu přidat.
-     * Slot 1 a slot 2 se navzájem neblokují (stejná kolej 3a na obou OK).
+     * Právě v horním poli stejného typu z **tohoto** slotu.
+     * Koleje a výhybky se navzájem neblokují (kolej 4 ≠ výhybka 4).
      */
-    val lockedLabels = (pole1 + pole2)
-        .filter { !dualMode || it.fromSlot == activeSlot }
-        .map { it.label }
-        .toSet()
+    val lockedLabels = when (activeField) {
+        ActiveField.POLE1 -> pole1
+            .filter { !dualMode || it.fromSlot == activeSlot }
+            .map { it.label }
+            .toSet()
+        ActiveField.POLE2 -> pole2
+            .filter { !dualMode || it.fromSlot == activeSlot }
+            .map { it.label }
+            .toSet()
+        ActiveField.CAS -> emptySet()
+    }
 
     fun refreshUsedLabels() {
         scope.launch {
-            usedLabelsA = stationA?.jmeno?.takeIf { it.isNotBlank() }?.let { onUsedLabels(it) } ?: emptySet()
-            usedLabelsB = stationB?.jmeno?.takeIf { it.isNotBlank() }?.let { onUsedLabels(it) } ?: emptySet()
+            val a = stationA?.jmeno?.takeIf { it.isNotBlank() }?.let { onUsedLabels(it) }
+            usedPole1A = a?.first ?: emptySet()
+            usedPole2A = a?.second ?: emptySet()
+            val b = stationB?.jmeno?.takeIf { it.isNotBlank() }?.let { onUsedLabels(it) }
+            usedPole1B = b?.first ?: emptySet()
+            usedPole2B = b?.second ?: emptySet()
         }
     }
 
@@ -319,8 +338,10 @@ fun MereniApp(
         note = ""
         reorderPole1 = false
         reorderPole2 = false
-        usedLabelsA = emptySet()
-        usedLabelsB = emptySet()
+        usedPole1A = emptySet()
+        usedPole2A = emptySet()
+        usedPole1B = emptySet()
+        usedPole2B = emptySet()
         pasportLoading = false
         pasportLoadingMsg = ""
     }
@@ -713,8 +734,8 @@ fun MereniApp(
                             val result = onSave(
                                 name,
                                 udu,
-                                p1.joinToString(",") { it.label },
-                                p2.joinToString("-") { it.label },
+                                p1.joinToString(", ") { it.label },
+                                p2.joinToString(" - ") { it.label },
                                 if (withMeta) cas else "",
                                 if (withMeta) noteText else "",
                             )
@@ -724,25 +745,20 @@ fun MereniApp(
                         }
 
                         if (dualMode) {
-                            val slots = listOf(
-                                0 to stationA,
-                                1 to stationB,
+                            // Název stanice podle první vybrané výhybky (pořadí v poli od–do)
+                            val nameStation = when {
+                                pole2.isNotEmpty() ->
+                                    if (pole2.first().fromSlot == 1) stationB else stationA
+                                pole1.isNotEmpty() ->
+                                    if (pole1.first().fromSlot == 1) stationB else stationA
+                                else -> stationA
+                            }
+                            saveFor(
+                                nameStation,
+                                pole1.toList(),
+                                pole2.toList(),
+                                true,
                             )
-                            var metaDone = false
-                            for ((slot, st) in slots) {
-                                if (st == null) continue
-                                val p1 = pole1.filter { it.fromSlot == slot }
-                                val p2 = pole2.filter { it.fromSlot == slot }
-                                val withMeta = !metaDone &&
-                                    (p1.isNotEmpty() || p2.isNotEmpty() ||
-                                        cas.isNotBlank() || noteText.isNotBlank())
-                                if (p1.isEmpty() && p2.isEmpty() && !withMeta) continue
-                                saveFor(st, p1, p2, withMeta)
-                                if (withMeta) metaDone = true
-                            }
-                            if (!metaDone && (cas.isNotBlank() || noteText.isNotBlank())) {
-                                saveFor(stationA, emptyList(), emptyList(), true)
-                            }
                         } else {
                             saveFor(
                                 stationA,
