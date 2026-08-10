@@ -830,35 +830,6 @@ fun CustomTokenDialog(
     }
 }
 
-/** Nápis aktivního pole — sjednocená kapitálka, barvy typů. */
-@Composable
-fun ActiveFieldCaption(activeField: ActiveField) {
-    when (activeField) {
-        ActiveField.POLE1 -> Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text("Koleje", color = MereniColors.Kolej, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            Text("a", color = MereniColors.TextMuted, fontSize = 15.sp)
-            Text("spojky", color = MereniColors.Spojka, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-        }
-        ActiveField.POLE2 -> Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text("Od", color = MereniColors.Vyhybka, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            Text(",", color = MereniColors.TextMuted, fontSize = 15.sp)
-            Text("do", color = MereniColors.Vyhybka, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-        }
-        ActiveField.CAS -> Text(
-            "Čas",
-            color = MereniColors.Cas,
-            fontSize = 18.sp,
-            fontWeight = FontWeight.Bold,
-        )
-    }
-}
-
 /**
  * Vyhledávač stanice. V dual režimu klepnutí aktivuje zdroj kláves;
  * 🔍 otevře dialog. U výsledků lze volitelně otevřít 2. vyhledávač.
@@ -1089,7 +1060,7 @@ fun StationSearchPicker(
 }
 
 /**
- * Ozubené kolečko — nastavení pasportu + verze + mereni.csv.
+ * Ozubené kolečko — nastavení pasportu + verze.
  */
 @Composable
 fun PasportSettingsButton(
@@ -1100,18 +1071,6 @@ fun PasportSettingsButton(
     recordCount: Int,
     onPick: () -> Unit,
     onReload: () -> Unit,
-    onImportCsv: () -> Unit,
-    graphClientId: String,
-    onGraphClientIdChange: (String) -> Unit,
-    graphPath: String,
-    onGraphPathChange: (String) -> Unit,
-    graphAccount: String?,
-    graphBusy: Boolean,
-    onGraphSignIn: () -> Unit,
-    onGraphSignOut: () -> Unit,
-    onGraphImport: () -> Unit,
-    onShareCsv: () -> Unit,
-    onSaveCsvAs: () -> Unit,
     exportMessage: String? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -1131,11 +1090,10 @@ fun PasportSettingsButton(
         Dialog(onDismissRequest = { open = false }) {
             Column(
                 modifier = Modifier
-                    .widthIn(min = 320.dp, max = 560.dp)
+                    .widthIn(min = 280.dp, max = 480.dp)
                     .clip(RoundedCornerShape(14.dp))
                     .background(MereniColors.SurfaceAlt)
                     .padding(16.dp)
-                    .verticalScroll(rememberScrollState())
             ) {
                 Text(
                     "Nastavení",
@@ -1160,135 +1118,6 @@ fun PasportSettingsButton(
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(exportMessage, color = MereniColors.Kolej, fontSize = 12.sp)
                 }
-
-                Spacer(modifier = Modifier.height(10.dp))
-                Text(
-                    "OneDrive (Microsoft Graph)",
-                    color = MereniColors.Text,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 15.sp,
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    "SAF, Files i Download ve firmě typicky nefungují. " +
-                        "Načtení jde jen přes Graph: IT zaregistruje app v Azure AD " +
-                        "(veřejný klient / mobile), přidá redirect " +
-                        "msauth://cz.mereni.app/yiIoprpAmLGx1r3h3rLOILUdCE0= " +
-                        "a oprávnění Files.Read. Sem vlož Client ID.",
-                    color = MereniColors.TextMuted,
-                    fontSize = 11.sp,
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                Text("Azure Client ID", color = MereniColors.TextMuted, fontSize = 11.sp)
-                BasicTextField(
-                    value = graphClientId,
-                    onValueChange = onGraphClientIdChange,
-                    singleLine = true,
-                    textStyle = TextStyle(
-                        color = MereniColors.Text,
-                        fontSize = 13.sp,
-                        fontFamily = FontFamily.Monospace,
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MereniColors.Surface)
-                        .border(1.dp, MereniColors.ChipBorder, RoundedCornerShape(8.dp))
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                Text("Cesta v OneDrive", color = MereniColors.TextMuted, fontSize = 11.sp)
-                BasicTextField(
-                    value = graphPath,
-                    onValueChange = onGraphPathChange,
-                    singleLine = true,
-                    textStyle = TextStyle(
-                        color = MereniColors.Text,
-                        fontSize = 13.sp,
-                        fontFamily = FontFamily.Monospace,
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MereniColors.Surface)
-                        .border(1.dp, MereniColors.ChipBorder, RoundedCornerShape(8.dp))
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    if (graphAccount != null) "Účet: $graphAccount" else "Nejsi přihlášen",
-                    color = MereniColors.TextMuted,
-                    fontSize = 12.sp,
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TextButton(
-                        onClick = onGraphSignIn,
-                        enabled = !graphBusy,
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                    ) {
-                        Text(
-                            "Přihlásit",
-                            color = MereniColors.Accent,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 13.sp,
-                        )
-                    }
-                    TextButton(
-                        onClick = onGraphSignOut,
-                        enabled = !graphBusy && graphAccount != null,
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                    ) {
-                        Text("Odhlásit", color = MereniColors.TextMuted, fontSize = 13.sp)
-                    }
-                    TextButton(
-                        onClick = onGraphImport,
-                        enabled = !graphBusy,
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                    ) {
-                        Text(
-                            if (graphBusy) "Načítám…" else "Načíst z OneDrive",
-                            color = MereniColors.Accent,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 13.sp,
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-                Text(
-                    "Lokálně / export",
-                    color = MereniColors.Text,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 15.sp,
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TextButton(
-                        onClick = onImportCsv,
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                    ) {
-                        Text("CSV z Files…", color = MereniColors.TextMuted, fontSize = 13.sp)
-                    }
-                    TextButton(
-                        onClick = onShareCsv,
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                    ) {
-                        Text(
-                            "Sdílet CSV…",
-                            color = MereniColors.Accent,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 13.sp,
-                        )
-                    }
-                    TextButton(
-                        onClick = onSaveCsvAs,
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                    ) {
-                        Text("Uložit do Files…", color = MereniColors.TextMuted, fontSize = 13.sp)
-                    }
-                }
-
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
                     "Pasport",

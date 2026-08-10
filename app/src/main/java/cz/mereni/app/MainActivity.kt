@@ -1,7 +1,6 @@
 package cz.mereni.app
 
 import android.Manifest
-import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -60,7 +59,6 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import cz.mereni.app.data.MeasurementStore
-import cz.mereni.app.data.OneDriveGraph
 import cz.mereni.app.data.PasportKey
 import cz.mereni.app.data.PasportKind
 import cz.mereni.app.data.PasportLoadResult
@@ -69,7 +67,6 @@ import cz.mereni.app.data.PasportSqliteLoader
 import cz.mereni.app.data.SafUris
 import cz.mereni.app.data.SelectedToken
 import cz.mereni.app.data.Station
-import cz.mereni.app.ui.ActiveFieldCaption
 import cz.mereni.app.ui.ChipRow
 import cz.mereni.app.ui.CustomTokenDialog
 import cz.mereni.app.ui.FieldKeyboard
@@ -79,15 +76,10 @@ import cz.mereni.app.ui.PasportSettingsButton
 import cz.mereni.app.ui.StationSearchPicker
 import java.util.Calendar
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
-
-    /** URI ze Sdílet / Otevřít v (OneDrive často grantuje jen touto cestou). */
-    private val externalUris = MutableSharedFlow<Uri>(extraBufferCapacity = 4)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -96,12 +88,10 @@ class MainActivity : ComponentActivity() {
         store.ensureHeader()
         val version = BuildConfig.VERSION_NAME
         val initial = PasportRepository.load(this, version)
-        extractIncomingUri(intent)?.let { externalUris.tryEmit(it) }
 
         setContent {
             val scope = rememberCoroutineScope()
             var load by remember { mutableStateOf(initial) }
-            var bootCsvMessage by remember { mutableStateOf<String?>(null) }
             var bootRecordCount by remember { mutableIntStateOf(store.count()) }
 
             val permissionLauncher = rememberLauncherForActivityResult(
@@ -134,57 +124,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            LaunchedEffect(Unit) {
-                externalUris.collectLatest { uri ->
-                    // Číst hned na Main — OneDrive grant je krátký
-                    val bytes = runCatching { SafUris.readAllBytes(contentResolver, uri) }
-                    val name = runCatching {
-                        contentResolver.query(uri, null, null, null, null)?.use { c ->
-                            val i = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                            if (i >= 0 && c.moveToFirst()) c.getString(i) else null
-                        }
-                    }.getOrNull().orEmpty().lowercase()
-                    val mime = contentResolver.getType(uri).orEmpty().lowercase()
-                    val asCsv = name.endsWith(".csv") || "csv" in mime ||
-                        (mime.startsWith("text/") && !name.contains("pasport"))
-                    val asSqlite = name.endsWith(".sqlite") || name.endsWith(".db") ||
-                        "sqlite" in mime || name.contains("pasport")
-                    bytes.onFailure { e ->
-                        bootCsvMessage = e.message ?: SafUris.denyMessage(uri)
-                        return@collectLatest
-                    }
-                    val data = bytes.getOrThrow()
-                    when {
-                        asCsv || (!asSqlite && mime.startsWith("text/")) -> {
-                            runCatching {
-                                withContext(Dispatchers.IO) { store.importFromBytes(data) }
-                            }.onSuccess { n ->
-                                bootRecordCount = n
-                                bootCsvMessage = "CSV ze sdílení načteno · $n záznamů"
-                            }.onFailure { e ->
-                                bootCsvMessage = e.message ?: "Import CSV selhal"
-                            }
-                        }
-                        else -> {
-                            runCatching {
-                                withContext(Dispatchers.IO) {
-                                    PasportRepository.loadFromBytes(this@MainActivity, data, uri)
-                                }
-                            }.onSuccess { load = it }
-                                .onFailure { e ->
-                                    bootCsvMessage = e.message ?: SafUris.denyMessage(uri)
-                                }
-                        }
-                    }
-                }
-            }
-
             MereniApp(
                 appVersion = version,
                 load = load,
                 onLoadChange = { load = it },
                 initialCount = bootRecordCount,
-                externalStatusMessage = bootCsvMessage,
                 onSave = { udu, pole1, pole2, cas, poznamka ->
                     store.append(udu, pole1, pole2, cas, poznamka)
                     store.count()
@@ -199,19 +143,7 @@ class MainActivity : ComponentActivity() {
                         PasportRepository.loadFromBytes(this@MainActivity, bytes, uri)
                     }
                 },
-                onExportCsv = { uri ->
-                    withContext(Dispatchers.IO) {
-                        contentResolver.openOutputStream(uri)?.use { out ->
-                            store.exportTo(out)
-                        } ?: error("Nelze otevřít cíl pro zápis")
-                    }
-                },
-                onImportBytes = { bytes ->
-                    withContext(Dispatchers.IO) {
-                        store.importFromBytes(bytes)
-                    }
-                },
-                onShareCsv = {
+                onSaveToOneDrive = {
                     store.ensureHeader()
                     val uri = FileProvider.getUriForFile(
                         this@MainActivity,
@@ -230,7 +162,7 @@ class MainActivity : ComponentActivity() {
                             uri,
                         )
                     }
-                    val chooser = Intent.createChooser(send, "Sdílet mereni.csv").apply {
+                    val chooser = Intent.createChooser(send, "Uložit na OneDrive").apply {
                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     }
                     startActivity(chooser)
@@ -249,36 +181,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        setIntent(intent)
-        extractIncomingUri(intent)?.let { externalUris.tryEmit(it) }
-    }
-
-    private fun extractIncomingUri(intent: Intent?): Uri? {
-        if (intent == null) return null
-        return when (intent.action) {
-            Intent.ACTION_VIEW -> intent.data
-            Intent.ACTION_SEND -> {
-                if (Build.VERSION.SDK_INT >= 33) {
-                    intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
-                } else {
-                    @Suppress("DEPRECATION")
-                    intent.getParcelableExtra(Intent.EXTRA_STREAM) as? Uri
-                } ?: intent.data
-            }
-            Intent.ACTION_SEND_MULTIPLE -> {
-                val list = if (Build.VERSION.SDK_INT >= 33) {
-                    intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)
-                } else {
-                    @Suppress("DEPRECATION")
-                    intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM)
-                }
-                list?.firstOrNull()
-            }
-            else -> null
-        }
-    }
 }
 
 @Composable
@@ -287,13 +189,10 @@ fun MereniApp(
     load: PasportLoadResult,
     onLoadChange: (PasportLoadResult) -> Unit,
     initialCount: Int,
-    externalStatusMessage: String? = null,
     onSave: (udu: String, pole1: String, pole2: String, casMereni: String, poznamka: String) -> Int,
     onUsedLabels: suspend (String) -> Set<String>,
     onPersistBytes: suspend (ByteArray, Uri?) -> PasportLoadResult,
-    onExportCsv: suspend (Uri) -> Unit,
-    onImportBytes: suspend (ByteArray) -> Int,
-    onShareCsv: () -> Unit,
+    onSaveToOneDrive: () -> Unit,
     onReload: suspend () -> PasportLoadResult,
     onKeysForStation: suspend (Station?, List<PasportKey>) -> List<PasportKey>,
 ) {
@@ -322,19 +221,8 @@ fun MereniApp(
     var customDialogFor by remember { mutableStateOf<ActiveField?>(null) }
     var noteFocused by remember { mutableStateOf(false) }
     var exportMessage by remember { mutableStateOf<String?>(null) }
-    val oneDriveGraph = remember(context) { OneDriveGraph(context) }
-    var graphClientId by remember { mutableStateOf(oneDriveGraph.clientId) }
-    var graphPath by remember { mutableStateOf(oneDriveGraph.filePath) }
-    var graphAccount by remember { mutableStateOf<String?>(null) }
-    var graphBusy by remember { mutableStateOf(false) }
-    val activity = context as? Activity
 
-    LaunchedEffect(graphClientId) {
-        graphAccount = runCatching { oneDriveGraph.signedInAccount() }.getOrNull()
-    }
-
-    LaunchedEffect(externalStatusMessage, initialCount) {
-        if (externalStatusMessage != null) exportMessage = externalStatusMessage
+    LaunchedEffect(initialCount) {
         recordCount = initialCount
     }
 
@@ -463,49 +351,6 @@ fun MereniApp(
         if (uri != null) loadPasportFromUri(uri)
     }
 
-    val saveCsvAs = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("text/*"),
-    ) { uri: Uri? ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        scope.launch {
-            runCatching { onExportCsv(uri) }
-                .onSuccess { exportMessage = "CSV uloženo" }
-                .onFailure { e ->
-                    exportMessage = e.message ?: "Uložení se nepovedlo"
-                }
-        }
-    }
-
-    fun importCsvFromBytes(bytes: ByteArray, sourceLabel: String) {
-        scope.launch {
-            runCatching {
-                onImportBytes(bytes)
-            }.onSuccess { n ->
-                recordCount = n
-                exportMessage = "CSV načteno ($sourceLabel) · $n záznamů"
-                refreshUsedLabels()
-            }.onFailure { e ->
-                exportMessage = e.message ?: "Import CSV selhal"
-            }
-        }
-    }
-
-    fun importCsvFromUri(uri: Uri) {
-        val bytes = runCatching { SafUris.readAllBytes(context.contentResolver, uri) }
-        if (bytes.isFailure) {
-            exportMessage = bytes.exceptionOrNull()?.message ?: SafUris.denyMessage(uri)
-            return
-        }
-        importCsvFromBytes(bytes.getOrThrow(), "Files")
-    }
-
-
-    val importCsv = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument(),
-    ) { uri: Uri? ->
-        if (uri != null) importCsvFromUri(uri)
-    }
-
     fun useNow() {
         val c = Calendar.getInstance()
         hour = c.get(Calendar.HOUR_OF_DAY)
@@ -582,7 +427,25 @@ fun MereniApp(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier.weight(1f),
                 ) {
-                    ActiveFieldCaption(activeField = activeField)
+                    Button(
+                        onClick = {
+                            exportMessage = null
+                            onSaveToOneDrive()
+                            exportMessage = "Vyber OneDrive ve sdílení"
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MereniColors.Accent,
+                            contentColor = MereniColors.BackgroundTop,
+                        ),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                        modifier = Modifier.height(40.dp),
+                    ) {
+                        Text(
+                            "Uložit na OneDrive",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp,
+                        )
+                    }
                 }
                 if (dualMode) {
                     StationSearchPicker(
@@ -617,97 +480,6 @@ fun MereniApp(
                         pasportLoading = true
                         pasportLoadingMsg = "Obnovuji pasport…"
                         scope.launch { applyLoad(onReload()) }
-                    },
-                    onImportCsv = {
-                        exportMessage = null
-                        importCsv.launch(
-                            arrayOf(
-                                "text/*",
-                                "text/csv",
-                                "text/comma-separated-values",
-                                "application/csv",
-                                "*/*",
-                            )
-                        )
-                    },
-                    graphClientId = graphClientId,
-                    onGraphClientIdChange = {
-                        graphClientId = it
-                        oneDriveGraph.clientId = it
-                    },
-                    graphPath = graphPath,
-                    onGraphPathChange = {
-                        graphPath = it
-                        oneDriveGraph.filePath = it
-                    },
-                    graphAccount = graphAccount,
-                    graphBusy = graphBusy,
-                    onGraphSignIn = {
-                        val act = activity
-                        if (act == null) {
-                            exportMessage = "Activity nedostupná"
-                        } else {
-                            graphBusy = true
-                            exportMessage = null
-                            scope.launch {
-                                runCatching { oneDriveGraph.signIn(act) }
-                                    .onSuccess {
-                                        graphAccount = it
-                                        exportMessage = "Přihlášeno: $it"
-                                    }
-                                    .onFailure { e ->
-                                        exportMessage = e.message ?: "Přihlášení selhalo"
-                                    }
-                                graphBusy = false
-                            }
-                        }
-                    },
-                    onGraphSignOut = {
-                        graphBusy = true
-                        scope.launch {
-                            runCatching { oneDriveGraph.signOut() }
-                                .onSuccess {
-                                    graphAccount = null
-                                    exportMessage = "Odhlášeno"
-                                }
-                                .onFailure { e ->
-                                    exportMessage = e.message ?: "Odhlášení selhalo"
-                                }
-                            graphBusy = false
-                        }
-                    },
-                    onGraphImport = {
-                        val act = activity
-                        if (act == null) {
-                            exportMessage = "Activity nedostupná"
-                        } else {
-                            graphBusy = true
-                            exportMessage = "Stahuji z OneDrive (Graph)…"
-                            scope.launch {
-                                runCatching {
-                                    val bytes = oneDriveGraph.downloadMereniCsv(act)
-                                    onImportBytes(bytes)
-                                }.onSuccess { n ->
-                                    recordCount = n
-                                    graphAccount =
-                                        runCatching { oneDriveGraph.signedInAccount() }.getOrNull()
-                                    exportMessage = "CSV z OneDrive · $n záznamů"
-                                    refreshUsedLabels()
-                                }.onFailure { e ->
-                                    exportMessage = e.message ?: "Graph import selhal"
-                                }
-                                graphBusy = false
-                            }
-                        }
-                    },
-                    onShareCsv = {
-                        exportMessage = null
-                        onShareCsv()
-                        exportMessage = "Otevřen výběr aplikací (OneDrive, …)"
-                    },
-                    onSaveCsvAs = {
-                        exportMessage = null
-                        saveCsvAs.launch(MeasurementStore.CSV_NAME)
                     },
                     exportMessage = exportMessage,
                 )
@@ -915,7 +687,7 @@ fun MereniApp(
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                     modifier = Modifier.height(40.dp),
                 ) {
-                    Text("Uložit", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    Text("Další", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                 }
                 Button(
                     onClick = { clearAll() },
