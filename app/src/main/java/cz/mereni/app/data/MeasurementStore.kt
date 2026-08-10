@@ -9,8 +9,10 @@ import java.util.Locale
 /**
  * Excel úložiště měření (.xlsx), 4 sloupce.
  *
- * Export na OneDrive jen zkopíruje soubor; smazání lokálu až po potvrzení
- * po návratu do aplikace.
+ * Lokální soubor se **hromadí** (Další jen přidává řádky).
+ * Na OneDrive jde vždy stejný soubor [EXPORT_NAME] — uživatel ho nahradí,
+ * čímž „donahraje“ nové záznamy do jednoho Excelu. Po potvrzení se lokál
+ * **nemaže**.
  */
 class MeasurementStore(context: Context) {
 
@@ -38,7 +40,7 @@ class MeasurementStore(context: Context) {
     fun count(): Int =
         SimpleXlsx.read(workingFile).count { it.role == SimpleXlsx.Role.DATA && hasMeasurement(it) }
 
-    /** Číslo u tlačítka — 0 po vyčištění / na zeleném, jinak počet záznamů. */
+    /** Číslo u tlačítka — celkový počet záznamů v rostoucím Excelu. */
     fun dayRecordNumber(): Int = count()
 
     fun append(
@@ -91,7 +93,6 @@ class MeasurementStore(context: Context) {
                 SimpleXlsx.Role.STATION -> active = row.a.trim() == want
                 SimpleXlsx.Role.DATA -> if (active) {
                     row.a.split(',').map { it.trim() }.filter { it.isNotEmpty() }.forEach { pole1.add(it) }
-                    // "1 - 2" i "1-2" → samostatné popisky výhybek
                     row.b.split(Regex("""\s*-\s*""")).map { it.trim() }
                         .filter { it.isNotEmpty() }.forEach { pole2.add(it) }
                 }
@@ -106,16 +107,12 @@ class MeasurementStore(context: Context) {
     fun isPendingOneDriveConfirm(): Boolean = prefs.getBoolean(KEY_PENDING_CONFIRM, false)
 
     /**
-     * Připraví `YYMMDD_N_MD1.xlsx` ke sdílení.
-     * Lokální soubor **nesmaže** — čeká se na potvrzení po návratu.
+     * Připraví stále stejný [EXPORT_NAME] ke sdílení (nahradit na OneDrive).
+     * Lokální záznamy se **nemažou** — další Další se do stejného sešitu přidají.
      */
     fun prepareExportFile(): File {
         ensureReady()
-        val day = DAY_FILE_FMT.format(Date())
-        val n = prefs.getInt(KEY_DAY_EXPORT_PREFIX + day, 0) + 1
-        prefs.edit().putInt(KEY_DAY_EXPORT_PREFIX + day, n).apply()
-        val name = "${day}_${n}_MD1.xlsx"
-        val dest = File(docsDir, name)
+        val dest = File(docsDir, EXPORT_NAME)
         val rows = SimpleXlsx.read(workingFile).toMutableList()
         ensureDateRowIn(rows)
         SimpleXlsx.write(workingFile, rows)
@@ -128,18 +125,19 @@ class MeasurementStore(context: Context) {
         return dest
     }
 
-    /** ✕ — uživatel není jistý; záznamy zůstávají, tlačítko zůstane červené. */
+    /** ✕ — uživatel není jistý; tlačítko zůstane červené. */
     fun cancelPendingOneDriveConfirm() {
         prefs.edit().putBoolean(KEY_PENDING_CONFIRM, false).apply()
     }
 
-    /** ANO — smazat lokál, zelené tlačítko, číslo 0. */
+    /**
+     * ANO — OneDrive má aktuální soubor; zelené tlačítko.
+     * Lokální Excel **zůstává** (další záznamy se donahrají při příštím uložení).
+     */
     fun confirmOneDriveSavedAndClear() {
-        resetWorkingFile()
         prefs.edit()
             .putBoolean(KEY_SYNCED, true)
             .putBoolean(KEY_PENDING_CONFIRM, false)
-            .remove(KEY_LAST_STATION_UDU)
             .apply()
     }
 
@@ -175,11 +173,11 @@ class MeasurementStore(context: Context) {
     companion object {
         private const val PREFS = "measurement_xlsx"
         private const val WORKING_NAME = "mereni_working.xlsx"
-        private const val KEY_DAY_EXPORT_PREFIX = "export_count_"
+        /** Stálý název na OneDrive — vždy nahradit stejný soubor. */
+        const val EXPORT_NAME = "mereni_MD1.xlsx"
         private const val KEY_LAST_STATION_UDU = "last_station_udu"
         private const val KEY_SYNCED = "synced_onedrive"
         private const val KEY_PENDING_CONFIRM = "pending_onedrive_confirm"
-        private val DAY_FILE_FMT = SimpleDateFormat("yyMMdd", Locale.US)
         private val DATE_DISPLAY_FMT = SimpleDateFormat("d.M.yyyy", Locale("cs", "CZ"))
 
         const val MIME_XLSX =

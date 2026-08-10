@@ -175,7 +175,7 @@ class MainActivity : ComponentActivity() {
                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     }
                     startActivity(chooser)
-                    file.nameWithoutExtension
+                    file.name
                 },
                 onConfirmOneDriveClear = {
                     store.confirmOneDriveSavedAndClear()
@@ -512,7 +512,7 @@ fun MereniApp(
                                     leftForOneDriveShare = true
                                     val name = onSaveToOneDrive()
                                     oneDriveSynced = false
-                                    exportMessage = "Soubor $name — vyber OneDrive"
+                                    exportMessage = "Nahraď mereni_MD1.xlsx na OneDrive"
                                 }
                                 .padding(horizontal = 14.dp),
                         ) {
@@ -936,7 +936,7 @@ fun MereniApp(
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        "Uložil jsi záznam na OneDrive?",
+                        "Nahrál jsi mereni_MD1.xlsx na OneDrive?",
                         color = MereniColors.Text,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 17.sp,
@@ -945,8 +945,10 @@ fun MereniApp(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "✕ nahoře — záznamy zůstanou, tlačítko zůstane červené.\n" +
-                            "ANO — lokální záznamy se smažou.",
+                        "Stejný soubor na OneDrive nahraď — lokální záznamy se nemažou,\n" +
+                            "další měření se do něj donahrají.\n\n" +
+                            "✕ — tlačítko zůstane červené.\n" +
+                            "ANO — označit jako uložené (zelená).",
                         color = MereniColors.TextMuted,
                         fontSize = 12.sp,
                         textAlign = TextAlign.Center,
@@ -958,9 +960,7 @@ fun MereniApp(
                             onConfirmOneDriveClear()
                             showOneDriveConfirm = false
                             oneDriveSynced = true
-                            dayRecordNum = 0
-                            recordCount = 0
-                            exportMessage = "Lokální záznamy smazány"
+                            exportMessage = "OneDrive má mereni_MD1.xlsx — další záznamy se donahrají"
                         },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MereniColors.Vyhybka,
