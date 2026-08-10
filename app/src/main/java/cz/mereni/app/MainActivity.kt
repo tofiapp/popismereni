@@ -144,6 +144,13 @@ class MainActivity : ComponentActivity() {
                         PasportRepository.loadFromUri(this@MainActivity, uri)
                     }
                 },
+                onExportCsv = { uri ->
+                    withContext(Dispatchers.IO) {
+                        contentResolver.openOutputStream(uri)?.use { out ->
+                            store.exportTo(out)
+                        } ?: error("Nelze otevřít cíl pro zápis")
+                    }
+                },
                 onReload = {
                     withContext(Dispatchers.IO) {
                         PasportRepository.reload(this@MainActivity, version)
@@ -168,6 +175,7 @@ fun MereniApp(
     onSave: (udu: String, pole1: String, pole2: String, casMereni: String, poznamka: String) -> Int,
     onUsedLabels: suspend (String) -> Set<String>,
     onPersistUri: suspend (Uri) -> PasportLoadResult,
+    onExportCsv: suspend (Uri) -> Unit,
     onReload: suspend () -> PasportLoadResult,
     onKeysForStation: suspend (Station?, List<PasportKey>) -> List<PasportKey>,
 ) {
@@ -194,6 +202,7 @@ fun MereniApp(
     var usedLabelsB by remember { mutableStateOf<Set<String>>(emptySet()) }
     var customDialogFor by remember { mutableStateOf<ActiveField?>(null) }
     var noteFocused by remember { mutableStateOf(false) }
+    var exportMessage by remember { mutableStateOf<String?>(null) }
 
     val dualMode = stationB != null
     val activeStation = if (activeSlot == 1 && stationB != null) stationB else stationA
@@ -313,6 +322,19 @@ fun MereniApp(
         }
     }
 
+    val exportCsv = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/csv"),
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            runCatching { onExportCsv(uri) }
+                .onSuccess { exportMessage = "CSV exportováno" }
+                .onFailure { e ->
+                    exportMessage = e.message ?: "Export se nepovedl"
+                }
+        }
+    }
+
     fun useNow() {
         val c = Calendar.getInstance()
         hour = c.get(Calendar.HOUR_OF_DAY)
@@ -425,6 +447,11 @@ fun MereniApp(
                         pasportLoadingMsg = "Obnovuji pasport…"
                         scope.launch { applyLoad(onReload()) }
                     },
+                    onExportCsv = {
+                        exportMessage = null
+                        exportCsv.launch(MeasurementStore.CSV_NAME)
+                    },
+                    exportMessage = exportMessage,
                 )
             }
 

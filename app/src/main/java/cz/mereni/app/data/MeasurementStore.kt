@@ -59,6 +59,17 @@ class MeasurementStore(context: Context) {
     }
 
     /**
+     * Zkopíruje aktuální [csvFile] do výstupu (např. SAF / OneDrive přes CREATE_DOCUMENT).
+     * Vrací počet zapsaných bajtů.
+     */
+    fun exportTo(output: java.io.OutputStream): Long {
+        ensureHeader()
+        return csvFile.inputStream().use { input ->
+            input.copyTo(output).also { output.flush() }
+        }
+    }
+
+    /**
      * Popisky už uložené **jen** pro přesné UDU (ne dual `A+B`) —
      * z [pole1] (mezery) i [pole2] (` - `).
      * Zašednutí tak nepropadá mezi dvěma vyhledávači.

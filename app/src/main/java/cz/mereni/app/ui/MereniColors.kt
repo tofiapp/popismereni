@@ -27,14 +27,14 @@ object MereniColors {
     /** Čas — měkký oceánský teal */
     val Cas = Color(0xFF3F8FA0)
 
-    /** Vlastní (+) — měkká šalvěj, odlišená od výhybky */
-    val Custom = Color(0xFF6A8F7A)
+    /** Vlastní (+) — okrová, jasně oddělená od zelené výhybky i mědi spojek */
+    val Custom = Color(0xFFA07A2A)
 
     /** Poznámka — prašná ocelově modrá */
     val Poznamka = Color(0xFF5C6E8A)
 
-    /** Druhá stanice (dual) — malinová, oddělená od mědi spojek i ocelové modré */
-    val Dual = Color(0xFFB23A6E)
+    /** Druhá stanice (dual) — chladnější fuchsie, větší odstup od mědi spojek */
+    val Dual = Color(0xFF8E1F7A)
 
     val ChipBg = Color(0xFFFFFFFF)
     val ChipText = Color(0xFF152033)

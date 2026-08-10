@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -1099,6 +1100,8 @@ fun PasportSettingsButton(
     recordCount: Int,
     onPick: () -> Unit,
     onReload: () -> Unit,
+    onExportCsv: () -> Unit,
+    exportMessage: String? = null,
     modifier: Modifier = Modifier,
 ) {
     var open by remember { mutableStateOf(false) }
@@ -1141,6 +1144,27 @@ fun PasportSettingsButton(
                     color = MereniColors.TextMuted,
                     fontSize = 13.sp,
                 )
+                if (exportMessage != null) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(exportMessage, color = MereniColors.Kolej, fontSize = 12.sp)
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                TextButton(
+                    onClick = onExportCsv,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                ) {
+                    Text(
+                        "Exportovat CSV…",
+                        color = MereniColors.Accent,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp,
+                    )
+                }
+                Text(
+                    "Ulož do Download, Documents nebo OneDrive (systémový výběr).",
+                    color = MereniColors.TextMuted,
+                    fontSize = 11.sp,
+                )
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
                     "Pasport",
@@ -1158,13 +1182,19 @@ fun PasportSettingsButton(
                     },
                     fontSize = 13.sp,
                 )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    "Vybrat SQLite otevře systémový dialog — včetně OneDrive, pokud je nainstalovaný.",
+                    color = MereniColors.TextMuted,
+                    fontSize = 11.sp,
+                )
                 Spacer(modifier = Modifier.height(14.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(onClick = {
                         onPick()
                         open = false
                     }) {
-                        Text("Vybrat SQLite", color = MereniColors.Accent, fontWeight = FontWeight.SemiBold)
+                        Text("Vybrat SQLite…", color = MereniColors.Accent, fontWeight = FontWeight.SemiBold)
                     }
                     TextButton(onClick = {
                         onReload()

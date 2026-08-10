@@ -1,11 +1,10 @@
-# Měření v0.20.0
+# Měření v0.22.0
 
 ## Aktualizace
 ```bash
-adb install -r artifacts/mereni-v0.20.0-debug.apk
+adb install -r artifacts/mereni-v0.22.0-debug.apk
 ```
 
-## UI v0.20.0
-- 2. vyhledávač: malinová barva (ne korálová — moc podobná spojkám)
-- Vyhledávání názvů stanic vráceno na stav před v0.19
-- Zachováno: zašednutí kolejí/výhybek per vyhledávač
+## UI v0.22.0
+- SAF: **Exportovat CSV…** do Download / Documents / OneDrive (systémový dialog)
+- Nastavení: nápověda, že Vybrat SQLite umí i OneDrive
