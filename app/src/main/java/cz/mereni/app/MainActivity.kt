@@ -1,8 +1,7 @@
 package cz.mereni.app
 
 import android.Manifest
-import android.content.ClipDescription
-import android.content.ClipboardManager
+import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -61,6 +60,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import cz.mereni.app.data.MeasurementStore
+import cz.mereni.app.data.OneDriveGraph
 import cz.mereni.app.data.PasportKey
 import cz.mereni.app.data.PasportKind
 import cz.mereni.app.data.PasportLoadResult
@@ -77,7 +77,6 @@ import cz.mereni.app.ui.FieldPanel
 import cz.mereni.app.ui.MereniColors
 import cz.mereni.app.ui.PasportSettingsButton
 import cz.mereni.app.ui.StationSearchPicker
-import java.nio.charset.Charset
 import java.util.Calendar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -323,6 +322,16 @@ fun MereniApp(
     var customDialogFor by remember { mutableStateOf<ActiveField?>(null) }
     var noteFocused by remember { mutableStateOf(false) }
     var exportMessage by remember { mutableStateOf<String?>(null) }
+    val oneDriveGraph = remember(context) { OneDriveGraph(context) }
+    var graphClientId by remember { mutableStateOf(oneDriveGraph.clientId) }
+    var graphPath by remember { mutableStateOf(oneDriveGraph.filePath) }
+    var graphAccount by remember { mutableStateOf<String?>(null) }
+    var graphBusy by remember { mutableStateOf(false) }
+    val activity = context as? Activity
+
+    LaunchedEffect(graphClientId) {
+        graphAccount = runCatching { oneDriveGraph.signedInAccount() }.getOrNull()
+    }
 
     LaunchedEffect(externalStatusMessage, initialCount) {
         if (externalStatusMessage != null) exportMessage = externalStatusMessage
@@ -490,32 +499,6 @@ fun MereniApp(
         importCsvFromBytes(bytes.getOrThrow(), "Files")
     }
 
-    fun importCsvFromClipboard() {
-        val cm = context.getSystemService(ClipboardManager::class.java)
-        val clip = cm?.primaryClip
-        if (clip == null || clip.itemCount == 0) {
-            exportMessage = "Schránka je prázdná"
-            return
-        }
-        val item = clip.getItemAt(0)
-        val text = item.coerceToText(context)?.toString()?.trim().orEmpty()
-        if (text.isNotEmpty()) {
-            importCsvFromBytes(text.toByteArray(Charset.forName("UTF-8")), "schránka")
-            return
-        }
-        // Některé appky dají do schránky URI souboru místo textu
-        val uri = item.uri
-        if (uri != null) {
-            importCsvFromUri(uri)
-            return
-        }
-        val desc = clip.description
-        exportMessage = if (desc?.hasMimeType(ClipDescription.MIMETYPE_TEXT_PLAIN) == true) {
-            "Schránka neobsahuje text CSV"
-        } else {
-            "Ve schránce není text — v OneDrive/Excelu označ CSV a Kopírovat"
-        }
-    }
 
     val importCsv = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
@@ -647,17 +630,74 @@ fun MereniApp(
                             )
                         )
                     },
-                    onImportCsvClipboard = {
-                        exportMessage = null
-                        importCsvFromClipboard()
+                    graphClientId = graphClientId,
+                    onGraphClientIdChange = {
+                        graphClientId = it
+                        oneDriveGraph.clientId = it
                     },
-                    onImportCsvText = { text ->
-                        exportMessage = null
-                        val t = text.trim()
-                        if (t.isEmpty()) {
-                            exportMessage = "Vložený text je prázdný"
+                    graphPath = graphPath,
+                    onGraphPathChange = {
+                        graphPath = it
+                        oneDriveGraph.filePath = it
+                    },
+                    graphAccount = graphAccount,
+                    graphBusy = graphBusy,
+                    onGraphSignIn = {
+                        val act = activity
+                        if (act == null) {
+                            exportMessage = "Activity nedostupná"
                         } else {
-                            importCsvFromBytes(t.toByteArray(Charset.forName("UTF-8")), "vložený text")
+                            graphBusy = true
+                            exportMessage = null
+                            scope.launch {
+                                runCatching { oneDriveGraph.signIn(act) }
+                                    .onSuccess {
+                                        graphAccount = it
+                                        exportMessage = "Přihlášeno: $it"
+                                    }
+                                    .onFailure { e ->
+                                        exportMessage = e.message ?: "Přihlášení selhalo"
+                                    }
+                                graphBusy = false
+                            }
+                        }
+                    },
+                    onGraphSignOut = {
+                        graphBusy = true
+                        scope.launch {
+                            runCatching { oneDriveGraph.signOut() }
+                                .onSuccess {
+                                    graphAccount = null
+                                    exportMessage = "Odhlášeno"
+                                }
+                                .onFailure { e ->
+                                    exportMessage = e.message ?: "Odhlášení selhalo"
+                                }
+                            graphBusy = false
+                        }
+                    },
+                    onGraphImport = {
+                        val act = activity
+                        if (act == null) {
+                            exportMessage = "Activity nedostupná"
+                        } else {
+                            graphBusy = true
+                            exportMessage = "Stahuji z OneDrive (Graph)…"
+                            scope.launch {
+                                runCatching {
+                                    val bytes = oneDriveGraph.downloadMereniCsv(act)
+                                    onImportBytes(bytes)
+                                }.onSuccess { n ->
+                                    recordCount = n
+                                    graphAccount =
+                                        runCatching { oneDriveGraph.signedInAccount() }.getOrNull()
+                                    exportMessage = "CSV z OneDrive · $n záznamů"
+                                    refreshUsedLabels()
+                                }.onFailure { e ->
+                                    exportMessage = e.message ?: "Graph import selhal"
+                                }
+                                graphBusy = false
+                            }
                         }
                     },
                     onShareCsv = {
