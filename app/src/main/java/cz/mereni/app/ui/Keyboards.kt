@@ -1141,7 +1141,7 @@ fun PasportSettingsButton(
                 ExportModeOption(
                     selected = exportMode == OneDriveExportMode.DAILY,
                     title = "1 · Každý den jeden záznam",
-                    detail = "Soubor YYMMDD_MD1.xlsx · po ANO se místní vymaže",
+                    detail = "Soubory YYMMDD_N_MD1.xlsx (N=1,2,…) · po ANO se místní vymaže",
                     onClick = { onExportModeChange(OneDriveExportMode.DAILY) },
                 )
                 Spacer(modifier = Modifier.height(6.dp))

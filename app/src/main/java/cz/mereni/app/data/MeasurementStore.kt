@@ -8,7 +8,7 @@ import java.util.Locale
 
 /** Jak se jmenuje / chová soubor při Uložit na OneDrive. */
 enum class OneDriveExportMode {
-    /** Každý den jeden soubor `YYMMDD_MD1.xlsx`; po potvrzení se lokál vymaže. */
+    /** Denní dávky `YYMMDD_N_MD1.xlsx` (N = 1,2,3… ten den); po ANO se lokál vymaže. */
     DAILY,
 
     /** Stále `mereni_MD1.xlsx` — přenahrává se; lokál se hromadí a nemaže. */
@@ -19,7 +19,7 @@ enum class OneDriveExportMode {
  * Excel úložiště měření (.xlsx), 4 sloupce.
  *
  * Export na OneDrive přes sdílení. Režim v nastavení:
- * - [OneDriveExportMode.DAILY] — denní soubor, po ANO lokál pryč
+ * - [OneDriveExportMode.DAILY] — `YYMMDD_N_MD1.xlsx`, po ANO lokál pryč
  * - [OneDriveExportMode.REPLACE] — jeden přenahrávající soubor, lokál zůstává
  */
 class MeasurementStore(context: Context) {
@@ -118,11 +118,17 @@ class MeasurementStore(context: Context) {
 
     /**
      * Připraví soubor ke sdílení podle [exportMode].
+     * DAILY: `YYMMDD_N_MD1.xlsx` — N roste s každým Uložit na OneDrive ten den.
      */
     fun prepareExportFile(): File {
         ensureReady()
         val name = when (exportMode) {
-            OneDriveExportMode.DAILY -> "${DAY_FILE_FMT.format(Date())}_MD1.xlsx"
+            OneDriveExportMode.DAILY -> {
+                val day = DAY_FILE_FMT.format(Date())
+                val n = prefs.getInt(KEY_DAY_COUNT_PREFIX + day, 0) + 1
+                prefs.edit().putInt(KEY_DAY_COUNT_PREFIX + day, n).apply()
+                "${day}_${n}_MD1.xlsx"
+            }
             OneDriveExportMode.REPLACE -> EXPORT_REPLACE_NAME
         }
         val dest = File(docsDir, name)
@@ -203,6 +209,7 @@ class MeasurementStore(context: Context) {
         private const val KEY_SYNCED = "synced_onedrive"
         private const val KEY_PENDING_CONFIRM = "pending_onedrive_confirm"
         private const val KEY_EXPORT_MODE = "onedrive_export_mode"
+        private const val KEY_DAY_COUNT_PREFIX = "export_count_"
         private val DAY_FILE_FMT = SimpleDateFormat("yyMMdd", Locale.US)
         private val DATE_DISPLAY_FMT = SimpleDateFormat("d.M.yyyy", Locale("cs", "CZ"))
 
