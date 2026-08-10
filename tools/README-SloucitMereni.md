@@ -1,17 +1,26 @@
 # VBA: sloučení `*_MD1.xlsx`
 
-## Německý Excel — jak nahrát
+## Výstup = stejný vzhled jako appka
+
+```
+10.8.2026                 ← datum (modré, jen sloupec A)
+                          ← prázdný řádek
+Název stanice             ← stanice (oranžové, jen A)
+koleje | výhybky | čas | poznámka   ← data A–D
+                          ← prázdný řádek
+Další stanice
+…
+```
+
+List se jmenuje **Mereni**, 4 sloupce A–D.  
+**Není** to plochá tabulka s Datum/Stanice ve sloupcích.
+
+## Německý Excel — nahrát makro
 
 1. **Alt+F11**
-2. **Datei → Datei importieren…** → `SloucitMereni.bas`  
-   (ne Ctrl+V celého souboru — řádek `Attribute VB_Name` pak hlásí Syntaxfehler)
-3. Uprav `SOURCE_FOLDER` v makru
-4. **Alt+F8** → `SloucitVsechnaMereni` → **Ausführen**
+2. Starý modul: pravý klik → **Entfernen**
+3. **Datei → Datei importieren…** → `SloucitMereni.bas`
+4. Uprav `SOURCE_FOLDER`
+5. **Alt+F8** → `SloucitVsechnaMereni` → **Ausführen**
 
-## Výstupní sloupce (= appka)
-
-| A | B | C | D | E | F |
-|---|---|---|---|---|---|
-| Datum | Stanice | Koleje | Výhybky | Čas | Poznámka |
-
-Odpovídá Excelu z appky: A koleje/spojky, B výhybky od–do, C čas, D poznámka + datum/stanice z bloků.
+Výsledek: `Souhrn_mereni.xlsx` ve stejné složce.

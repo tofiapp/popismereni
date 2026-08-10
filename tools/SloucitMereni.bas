@@ -1,25 +1,25 @@
 Attribute VB_Name = "SloucitMereni"
 Option Explicit
 
-' Slouci vsechny soubory *_MD1.xlsx z lokalni OneDrive slozky do Souhrn_mereni.xlsx
-' Sloupce = vzhled appky Mereni:
-'   Datum | Stanice | Koleje | Vyhybky | Cas | Poznamka
+' Slouci vsechny *_MD1.xlsx do jednoho sesitu se STEJNYM vzhledem jako appka:
 '
-' Jak nahrat (nemecky Excel):
-'   Alt+F11 -> Datei -> Datei importieren... -> tento .bas
-'   (NE Ctrl+V celeho souboru vcetne Attribute radku)
-' Uprav SOURCE_FOLDER, pak Alt+F8 -> SloucitVsechnaMereni -> Ausfuhren
+'   10.8.2026                          <- datum (modre, jen A)
+'                                      <- prazdny radek
+'   Nazev stanice                      <- stanice (oranzove, jen A)
+'   koleje | vyhybky | cas | poznamka  <- data (4 sloupce A-D, na stred)
+'                                      <- prazdny radek
+'   Dalsi stanice
+'   ...
 '
-' Role radku (stejne jako appka):
-'   modry A  = datum   (styl DATE, #BBDEFB)
-'   oranzovy A = stanice (styl STATION, #FFE0B2)
-'   ostatni neprazdne = data (Koleje, Vyhybky, Cas, Poznamka)
+' Neni to plocha tabulka Datum|Stanice|... — bloky jsou "vyse" jako v appce.
+'
+' Nemecky Excel: Alt+F11 -> Datei -> Datei importieren... -> tento .bas
+' Uprav SOURCE_FOLDER, Alt+F8 -> SloucitVsechnaMereni -> Ausfuhren
 
 Public Sub SloucitVsechnaMereni()
     Const SOURCE_FOLDER As String = "C:\Users\hrubesk\OneDrive - Správa železnic\MD1_rozdeleno"
     Const FILE_PATTERN As String = "*_MD1.xlsx"
 
-    ' Barvy vyplne z SimpleXlsx (RGB -> VBA Color = R + G*256 + B*65536)
     Const COLOR_DATE As Long = 16506555      ' #BBDEFB
     Const COLOR_STATION As Long = 11723007   ' #FFE0B2
 
@@ -37,41 +37,38 @@ Public Sub SloucitVsechnaMereni()
     Dim wsOut As Worksheet
     Set wbOut = Workbooks.Add
     Set wsOut = wbOut.Sheets(1)
-    wsOut.Name = "Souhrn"
+    wsOut.Name = "Mereni"
 
-    ' Stejne poradi / vyznam jako v appce (pole1, pole2, cas, poznamka)
-    wsOut.Range("A1").Value = "Datum"
-    wsOut.Range("B1").Value = "Stanice"
-    wsOut.Range("C1").Value = "Koleje"
-    wsOut.Range("D1").Value = "Výhybky"
-    wsOut.Range("E1").Value = "Čas"
-    wsOut.Range("F1").Value = "Poznámka"
-    wsOut.Range("A1:F1").Font.Bold = True
+    ' Stejne sirky sloupcu jako SimpleXlsx v appce
+    wsOut.Columns("A").ColumnWidth = 32
+    wsOut.Columns("B").ColumnWidth = 18
+    wsOut.Columns("C").ColumnWidth = 14
+    wsOut.Columns("D").ColumnWidth = 36
 
     Dim outRow As Long
-    outRow = 2
+    outRow = 1
 
     Application.ScreenUpdating = False
     Application.DisplayAlerts = False
 
-    Dim fileName As String
+    Dim fileNames() As String
+    Dim fileCount As Long
+    fileCount = CollectSortedFiles(srcPath, FILE_PATTERN, fileNames)
+
     Dim filesProcessed As Long
     Dim filesSkipped As Long
-    Dim rowsWritten As Long
+    Dim i As Long
     filesProcessed = 0
     filesSkipped = 0
-    rowsWritten = 0
 
-    fileName = Dir(srcPath & FILE_PATTERN)
-
-    Do While fileName <> ""
+    For i = 1 To fileCount
         Dim wbIn As Workbook
         Dim ok As Boolean
         ok = True
         Set wbIn = Nothing
         On Error Resume Next
         Set wbIn = Workbooks.Open( _
-            fileName:=srcPath & fileName, _
+            fileName:=srcPath & fileNames(i), _
             ReadOnly:=True, _
             UpdateLinks:=0, _
             IgnoreReadOnlyRecommended:=True)
@@ -82,23 +79,17 @@ Public Sub SloucitVsechnaMereni()
             filesSkipped = filesSkipped + 1
         Else
             Dim wsIn As Worksheet
-            Set wsIn = Nothing
-            Dim ws As Worksheet
-            For Each ws In wbIn.Worksheets
-                If StrComp(ws.Name, "Mereni", vbTextCompare) = 0 Then
-                    Set wsIn = ws
-                    Exit For
-                End If
-            Next ws
-            If wsIn Is Nothing Then Set wsIn = wbIn.Worksheets(1)
+            Set wsIn = FindMereniSheet(wbIn)
 
             Dim lastRow As Long
             lastRow = wsIn.Cells(wsIn.Rows.Count, "A").End(xlUp).Row
 
             Dim currentDate As String
-            Dim currentStation As String
+            Dim lastWrittenStation As String
+            Dim wroteSomethingFromFile As Boolean
             currentDate = ""
-            currentStation = ""
+            lastWrittenStation = ""
+            wroteSomethingFromFile = False
 
             Dim r As Long
             Dim a As String, b As String, c As String, d As String
@@ -112,8 +103,7 @@ Public Sub SloucitVsechnaMereni()
                 d = CellText(wsIn.Cells(r, 4))
 
                 If a = "" And b = "" And c = "" And d = "" Then
-                    ' prazdny oddelovac mezi stanicemi
-                    GoTo NextRow
+                    GoTo NextSourceRow
                 End If
 
                 fillColor = -1
@@ -127,34 +117,63 @@ Public Sub SloucitVsechnaMereni()
 
                 Select Case role
                     Case "DATE"
-                        currentDate = a
+                        ' Novy den / novy soubor — datum "nahore" jako v appce
+                        If a <> currentDate Then
+                            If outRow > 1 Then
+                                outRow = outRow + 1 ' oddelovac mezi dny
+                            End If
+                            WriteDateRow wsOut, outRow, a, COLOR_DATE
+                            outRow = outRow + 1
+                            currentDate = a
+                            lastWrittenStation = ""
+                            wroteSomethingFromFile = True
+                        End If
+
                     Case "STATION"
-                        currentStation = a
+                        If currentDate = "" Then
+                            ' Soubor bez data — dopln z nazvu YYMMDD_MD1.xlsx pokud jde
+                            guessed = DateFromFileName(fileNames(i))
+                            If guessed <> "" Then
+                                If outRow > 1 Then outRow = outRow + 1
+                                WriteDateRow wsOut, outRow, guessed, COLOR_DATE
+                                outRow = outRow + 1
+                                currentDate = guessed
+                            End If
+                        End If
+                        If a <> lastWrittenStation Then
+                            outRow = outRow + 1 ' prazdny radek pred stanici
+                            WriteStationRow wsOut, outRow, a, COLOR_STATION
+                            outRow = outRow + 1
+                            lastWrittenStation = a
+                            wroteSomethingFromFile = True
+                        End If
+
                     Case Else
-                        ' DATA — A=Koleje, B=Vyhybky, C=Cas, D=Poznamka
-                        wsOut.Cells(outRow, 1).Value = currentDate
-                        wsOut.Cells(outRow, 2).Value = currentStation
-                        wsOut.Cells(outRow, 3).Value = a
-                        wsOut.Cells(outRow, 4).Value = b
-                        wsOut.Cells(outRow, 5).Value = c
-                        wsOut.Cells(outRow, 6).Value = d
+                        ' DATA — 4 sloupce jako appka (bez Datum/Stanice ve sloupcich)
+                        If currentDate = "" Then
+                            guessed = DateFromFileName(fileNames(i))
+                            If guessed <> "" Then
+                                If outRow > 1 Then outRow = outRow + 1
+                                WriteDateRow wsOut, outRow, guessed, COLOR_DATE
+                                outRow = outRow + 1
+                                currentDate = guessed
+                            End If
+                        End If
+                        WriteDataRow wsOut, outRow, a, b, c, d
                         outRow = outRow + 1
-                        rowsWritten = rowsWritten + 1
+                        wroteSomethingFromFile = True
                 End Select
-NextRow:
+NextSourceRow:
             Next r
 
             wbIn.Close SaveChanges:=False
-            filesProcessed = filesProcessed + 1
+            If wroteSomethingFromFile Then
+                filesProcessed = filesProcessed + 1
+            Else
+                filesSkipped = filesSkipped + 1
+            End If
         End If
-
-        fileName = Dir()
-    Loop
-
-    If outRow > 2 Then
-        wsOut.Range("A1:F1").AutoFilter
-    End If
-    wsOut.Columns("A:F").AutoFit
+    Next i
 
     Application.DisplayAlerts = True
     Application.ScreenUpdating = True
@@ -169,9 +188,125 @@ NextRow:
     MsgBox "Hotovo." & vbCrLf & _
            "Zpracovano souboru: " & filesProcessed & vbCrLf & _
            "Preskoceno: " & filesSkipped & vbCrLf & _
-           "Radku dat: " & rowsWritten & vbCrLf & _
-           "Ulozeno: " & outPath, vbInformation
+           "Ulozeno: " & outPath & vbCrLf & vbCrLf & _
+           "Vzhled = appka: datum / stanice vyse, data A-D pod nimi.", vbInformation
 End Sub
+
+Private Sub WriteDateRow(ByVal ws As Worksheet, ByVal row As Long, ByVal txt As String, ByVal fillColor As Long)
+    With ws.Cells(row, 1)
+        .Value = txt
+        .Font.Bold = True
+        .Font.Size = 16
+        .HorizontalAlignment = xlLeft
+        .VerticalAlignment = xlCenter
+        .Interior.Color = fillColor
+    End With
+    ws.Rows(row).RowHeight = 24
+End Sub
+
+Private Sub WriteStationRow(ByVal ws As Worksheet, ByVal row As Long, ByVal txt As String, ByVal fillColor As Long)
+    With ws.Cells(row, 1)
+        .Value = txt
+        .Font.Bold = True
+        .Font.Size = 16
+        .HorizontalAlignment = xlLeft
+        .VerticalAlignment = xlCenter
+        .Interior.Color = fillColor
+    End With
+    ws.Rows(row).RowHeight = 24
+End Sub
+
+Private Sub WriteDataRow(ByVal ws As Worksheet, ByVal row As Long, _
+    ByVal a As String, ByVal b As String, ByVal c As String, ByVal d As String)
+    Dim col As Long
+    Dim vals As Variant
+    vals = Array(a, b, c, d)
+    For col = 1 To 4
+        With ws.Cells(row, col)
+            .Value = vals(col - 1)
+            .HorizontalAlignment = xlCenter
+            .VerticalAlignment = xlCenter
+            .Font.Size = 14
+        End With
+    Next col
+    ws.Rows(row).RowHeight = 24
+End Sub
+
+Private Function FindMereniSheet(ByVal wb As Workbook) As Worksheet
+    Dim ws As Worksheet
+    For Each ws In wb.Worksheets
+        If StrComp(ws.Name, "Mereni", vbTextCompare) = 0 Then
+            Set FindMereniSheet = ws
+            Exit Function
+        End If
+    Next ws
+    Set FindMereniSheet = wb.Worksheets(1)
+End Function
+
+Private Function CollectSortedFiles( _
+    ByVal srcPath As String, _
+    ByVal pattern As String, _
+    ByRef fileNames() As String _
+) As Long
+    Dim name As String
+    Dim n As Long
+    Dim arr() As String
+    n = 0
+    name = Dir(srcPath & pattern)
+    Do While name <> ""
+        ' nebrat pripadny souhrn, kdyby nazev sedel na pattern
+        If StrComp(name, "Souhrn_mereni.xlsx", vbTextCompare) <> 0 Then
+            n = n + 1
+            ReDim Preserve arr(1 To n)
+            arr(n) = name
+        End If
+        name = Dir()
+    Loop
+    If n = 0 Then
+        CollectSortedFiles = 0
+        Exit Function
+    End If
+    BubbleSortStrings arr
+    fileNames = arr
+    CollectSortedFiles = n
+End Function
+
+Private Sub BubbleSortStrings(ByRef arr() As String)
+    Dim i As Long, j As Long
+    Dim tmp As String
+    For i = LBound(arr) To UBound(arr) - 1
+        For j = i + 1 To UBound(arr)
+            If StrComp(arr(i), arr(j), vbTextCompare) > 0 Then
+                tmp = arr(i)
+                arr(i) = arr(j)
+                arr(j) = tmp
+            End If
+        Next j
+    Next i
+End Sub
+
+Private Function DateFromFileName(ByVal fileName As String) As String
+    ' YYMMDD_MD1.xlsx -> d.M.yyyy
+    Dim base As String
+    Dim y As Integer, m As Integer, d As Integer
+    base = fileName
+    If InStr(1, base, "_MD1", vbTextCompare) <= 6 Then
+        DateFromFileName = ""
+        Exit Function
+    End If
+    If Not Left$(base, 6) Like "######" Then
+        DateFromFileName = ""
+        Exit Function
+    End If
+    y = CInt(Left$(base, 2))
+    m = CInt(Mid$(base, 3, 2))
+    d = CInt(Mid$(base, 5, 2))
+    If m < 1 Or m > 12 Or d < 1 Or d > 31 Then
+        DateFromFileName = ""
+        Exit Function
+    End If
+    DateFromFileName = CStr(d) & "." & CStr(m) & "." & CStr(2000 + y)
+End Function
 
 Private Function CellText(ByVal cell As Range) As String
     Dim v As Variant
@@ -185,9 +320,6 @@ Private Function CellText(ByVal cell As Range) As String
     End If
 End Function
 
-' Stejna logika jako SimpleXlsx: barva A, jinak heuristika.
-' Dulezite: datovy radek muze mit jen Koleje (A) a prazdne B/C/D —
-' to NENI stanice, pokud uz mame datum a neni to oranzova stanice.
 Private Function DetectRole( _
     ByVal a As String, _
     ByVal b As String, _
@@ -198,7 +330,6 @@ Private Function DetectRole( _
     ByVal colorDate As Long, _
     ByVal colorStation As Long _
 ) As String
-
     If fillColor = colorDate Then
         DetectRole = "DATE"
         Exit Function
@@ -224,6 +355,5 @@ Private Function DetectRole( _
 End Function
 
 Private Function LooksLikeDate(ByVal s As String) As Boolean
-    ' Appka pise d.M.yyyy (cs), napr. 10.8.2026
     LooksLikeDate = (s Like "*.*.####") Or (s Like "*/*.*/####")
 End Function
