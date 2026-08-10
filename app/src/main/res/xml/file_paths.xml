@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
+    <!-- Internal app files (legacy) -->
     <files-path name="documents" path="Documents/" />
+    <!-- mereni.csv žije v getExternalFilesDir()/Documents -->
+    <external-files-path name="ext_documents" path="Documents/" />
 </paths>
