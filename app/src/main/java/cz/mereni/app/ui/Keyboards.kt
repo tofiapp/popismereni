@@ -1101,6 +1101,8 @@ fun PasportSettingsButton(
     onPick: () -> Unit,
     onPickViaApp: () -> Unit,
     onReload: () -> Unit,
+    onImportCsv: () -> Unit,
+    onImportCsvViaApp: () -> Unit,
     onShareCsv: () -> Unit,
     onSaveCsvAs: () -> Unit,
     exportMessage: String? = null,
@@ -1152,19 +1154,43 @@ fun PasportSettingsButton(
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    "Export CSV",
+                    "mereni.csv",
                     color = MereniColors.Text,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 15.sp,
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    "OneDrive neumí „Uložit jako“ v systémovém dialogu. " +
-                        "Použij Sdílet → OneDrive (musí být nainstalovaná appka a přihlášení).",
+                    "Načtení z OneDrive funguje (OpenDocument). Ukládání do OneDrive jen přes Sdílet — " +
+                        "OneDrive neumí systémové „Uložit jako“.",
                     color = MereniColors.TextMuted,
                     fontSize = 11.sp,
                 )
                 Spacer(modifier = Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(
+                        onClick = onImportCsv,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                    ) {
+                        Text(
+                            "Načíst CSV…",
+                            color = MereniColors.Accent,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp,
+                        )
+                    }
+                    TextButton(
+                        onClick = onImportCsvViaApp,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                    ) {
+                        Text(
+                            "CSV přes aplikaci…",
+                            color = MereniColors.Accent,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp,
+                        )
+                    }
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     TextButton(
                         onClick = onShareCsv,

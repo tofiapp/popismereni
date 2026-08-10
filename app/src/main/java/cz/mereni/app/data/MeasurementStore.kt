@@ -59,7 +59,7 @@ class MeasurementStore(context: Context) {
     }
 
     /**
-     * Zkopíruje aktuální [csvFile] do výstupu (např. SAF / OneDrive přes CREATE_DOCUMENT).
+     * Zkopíruje aktuální [csvFile] do výstupu (např. SAF CreateDocument / share).
      * Vrací počet zapsaných bajtů.
      */
     fun exportTo(output: java.io.OutputStream): Long {
@@ -67,6 +67,39 @@ class MeasurementStore(context: Context) {
         return csvFile.inputStream().use { input ->
             input.copyTo(output).also { output.flush() }
         }
+    }
+
+    /**
+     * Nahraje CSV ze vstupu (SAF / OneDrive OpenDocument nebo GetContent)
+     * a nahradí lokální [csvFile]. Vrací počet datových řádků.
+     */
+    fun importFrom(input: java.io.InputStream): Int {
+        val bytes = input.readBytes()
+        require(bytes.isNotEmpty()) { "Soubor je prázdný" }
+        val raw = bytes.toString(UTF8)
+        val text = raw.removePrefix(BOM)
+        val lines = text.lines().filter { it.isNotBlank() }.toMutableList()
+        require(lines.isNotEmpty()) { "CSV nemá žádné řádky" }
+        val header = lines[0].trim()
+        val looksCsv = header.contains(';') && (
+            header.contains("udu", ignoreCase = true) ||
+                header.contains("pole1", ignoreCase = true) ||
+                header == HEADER ||
+                header == HEADER_V1
+            )
+        require(looksCsv) {
+            "Neplatný mereni.csv (očekáván header se středníky, např. zapsano;udu;…)"
+        }
+        if (header != HEADER && (header == HEADER_V1 || !header.contains("poznamka"))) {
+            lines[0] = HEADER
+            for (i in 1 until lines.size) {
+                val semis = lines[i].count { it == ';' }
+                if (semis == 4) lines[i] = "${lines[i]};"
+            }
+        }
+        csvFile.writeText(BOM + lines.joinToString("\n") + "\n", UTF8)
+        ensureHeader()
+        return count()
     }
 
     /**
