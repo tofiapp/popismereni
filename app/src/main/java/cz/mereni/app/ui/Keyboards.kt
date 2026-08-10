@@ -1110,7 +1110,7 @@ fun PasportSettingsButton(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    "mereni.csv  •  $recordCount záznamů",
+                    "Excel  •  $recordCount záznamů",
                     color = MereniColors.TextMuted,
                     fontSize = 13.sp,
                 )

@@ -2,6 +2,6 @@
 <paths>
     <!-- Internal app files (legacy) -->
     <files-path name="documents" path="Documents/" />
-    <!-- mereni.csv žije v getExternalFilesDir()/Documents -->
+    <!-- Excel měření: getExternalFilesDir()/Documents (*.xlsx) -->
     <external-files-path name="ext_documents" path="Documents/" />
 </paths>
