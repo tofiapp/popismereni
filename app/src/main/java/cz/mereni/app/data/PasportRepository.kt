@@ -32,6 +32,13 @@ object PasportRepository {
     fun loadFromUri(context: Context, uri: android.net.Uri): PasportLoadResult =
         PasportSqliteLoader.loadFromUri(context, uri)
 
+    fun loadFromBytes(
+        context: Context,
+        bytes: ByteArray,
+        sourceUri: android.net.Uri? = null,
+    ): PasportLoadResult =
+        PasportSqliteLoader.loadFromBytes(context, bytes, sourceUri)
+
     fun reload(context: Context, appVersion: String): PasportLoadResult {
         val device = PasportSqliteLoader.reload(context)
         if (device.fromDeviceSqlite) return device
@@ -50,6 +57,8 @@ object PasportRepository {
     private fun loadAssetsFallback(context: Context, appVersion: String): PasportData? {
         val candidates = listOf(
             "pasport_tpi_v$appVersion.json",
+            "pasport_tpi_v0.27.0.json",
+            "pasport_tpi_v0.26.0.json",
             "pasport_tpi_v0.25.0.json",
             "pasport_tpi_v0.24.0.json",
             "pasport_tpi_v0.23.0.json",

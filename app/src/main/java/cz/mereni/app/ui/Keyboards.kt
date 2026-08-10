@@ -1099,10 +1099,12 @@ fun PasportSettingsButton(
     appVersion: String,
     recordCount: Int,
     onPick: () -> Unit,
-    onPickViaApp: () -> Unit,
+    onPickChooser: () -> Unit,
+    onPickOneDrive: (() -> Unit)?,
     onReload: () -> Unit,
     onImportCsv: () -> Unit,
-    onImportCsvViaApp: () -> Unit,
+    onImportCsvChooser: () -> Unit,
+    onImportCsvOneDrive: (() -> Unit)?,
     onShareCsv: () -> Unit,
     onSaveCsvAs: () -> Unit,
     exportMessage: String? = null,
@@ -1161,9 +1163,9 @@ fun PasportSettingsButton(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    "Načtení: OneDrive SAF někdy přístup odmítne. Spolehlivější je v OneDrive " +
-                        "Sdílet / Otevřít v → Měření, nebo stáhnout do Download. " +
-                        "Ukládání do OneDrive jen přes Sdílet (ne „Uložit jako“).",
+                    "Pozor: „Files“ a OneDrive v levém panelu Files = deny. " +
+                        "Pro OneDrive použij „Appky (ne Files)…“ a vyber OneDrive, " +
+                        "nebo „Otevřít OneDrive“ → v appce ⋮ Sdílet / Otevřít v → Měření.",
                     color = MereniColors.TextMuted,
                     fontSize = 11.sp,
                 )
@@ -1173,23 +1175,33 @@ fun PasportSettingsButton(
                         onClick = onImportCsv,
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                     ) {
+                        Text("CSV z telefonu…", color = MereniColors.TextMuted, fontSize = 13.sp)
+                    }
+                    TextButton(
+                        onClick = onImportCsvChooser,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                    ) {
                         Text(
-                            "Načíst CSV…",
+                            "Appky (ne Files)…",
                             color = MereniColors.Accent,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 13.sp,
                         )
                     }
-                    TextButton(
-                        onClick = onImportCsvViaApp,
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                    ) {
-                        Text(
-                            "CSV přes aplikaci…",
-                            color = MereniColors.Accent,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 13.sp,
-                        )
+                }
+                if (onImportCsvOneDrive != null) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TextButton(
+                            onClick = onImportCsvOneDrive,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        ) {
+                            Text(
+                                "Otevřít OneDrive…",
+                                color = MereniColors.Accent,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 13.sp,
+                            )
+                        }
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -1198,7 +1210,7 @@ fun PasportSettingsButton(
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                     ) {
                         Text(
-                            "Sdílet → OneDrive…",
+                            "Sdílet CSV…",
                             color = MereniColors.Accent,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 13.sp,
@@ -1208,11 +1220,7 @@ fun PasportSettingsButton(
                         onClick = onSaveCsvAs,
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                     ) {
-                        Text(
-                            "Uložit do Files…",
-                            color = MereniColors.TextMuted,
-                            fontSize = 13.sp,
-                        )
+                        Text("Uložit do Files…", color = MereniColors.TextMuted, fontSize = 13.sp)
                     }
                 }
                 Spacer(modifier = Modifier.height(12.dp))
@@ -1232,26 +1240,27 @@ fun PasportSettingsButton(
                     },
                     fontSize = 13.sp,
                 )
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    "Google Files = systémový dialog. OneDrive je často v levém menu ☰ " +
-                        "(ne na hlavní ploše). Nebo použij „Přes aplikaci…“.",
-                    color = MereniColors.TextMuted,
-                    fontSize = 11.sp,
-                )
                 Spacer(modifier = Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     TextButton(onClick = {
                         onPick()
                         open = false
                     }) {
-                        Text("Vybrat soubor…", color = MereniColors.Accent, fontWeight = FontWeight.SemiBold)
+                        Text("Pasport telefon…", color = MereniColors.TextMuted)
                     }
                     TextButton(onClick = {
-                        onPickViaApp()
+                        onPickChooser()
                         open = false
                     }) {
-                        Text("Přes aplikaci…", color = MereniColors.Accent, fontWeight = FontWeight.SemiBold)
+                        Text("Appky (ne Files)…", color = MereniColors.Accent, fontWeight = FontWeight.SemiBold)
+                    }
+                    if (onPickOneDrive != null) {
+                        TextButton(onClick = {
+                            onPickOneDrive()
+                            open = false
+                        }) {
+                            Text("Otevřít OneDrive…", color = MereniColors.Accent, fontWeight = FontWeight.SemiBold)
+                        }
                     }
                     TextButton(onClick = {
                         onReload()
