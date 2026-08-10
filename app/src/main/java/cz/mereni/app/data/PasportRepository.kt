@@ -57,7 +57,7 @@ object PasportRepository {
     private fun loadAssetsFallback(context: Context, appVersion: String): PasportData? {
         val candidates = listOf(
             "pasport_tpi_v$appVersion.json",
-            "pasport_tpi_v0.28.0.json
+            "pasport_tpi_v0.28.0.json",
             "pasport_tpi_v0.27.0.json",
             "pasport_tpi_v0.26.0.json",
             "pasport_tpi_v0.25.0.json",
