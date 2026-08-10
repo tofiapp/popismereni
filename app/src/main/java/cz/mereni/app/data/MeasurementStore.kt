@@ -6,11 +6,21 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+/** Jak se jmenuje / chová soubor při Uložit na OneDrive. */
+enum class OneDriveExportMode {
+    /** Každý den jeden soubor `YYMMDD_MD1.xlsx`; po potvrzení se lokál vymaže. */
+    DAILY,
+
+    /** Stále `mereni_MD1.xlsx` — přenahrává se; lokál se hromadí a nemaže. */
+    REPLACE,
+}
+
 /**
  * Excel úložiště měření (.xlsx), 4 sloupce.
  *
- * Export na OneDrive jen zkopíruje soubor; smazání lokálu až po potvrzení
- * po návratu do aplikace.
+ * Export na OneDrive přes sdílení. Režim v nastavení:
+ * - [OneDriveExportMode.DAILY] — denní soubor, po ANO lokál pryč
+ * - [OneDriveExportMode.REPLACE] — jeden přenahrávající soubor, lokál zůstává
  */
 class MeasurementStore(context: Context) {
 
@@ -25,6 +35,15 @@ class MeasurementStore(context: Context) {
     var lastExportFile: File? = null
         private set
 
+    var exportMode: OneDriveExportMode
+        get() = when (prefs.getString(KEY_EXPORT_MODE, OneDriveExportMode.REPLACE.name)) {
+            OneDriveExportMode.DAILY.name -> OneDriveExportMode.DAILY
+            else -> OneDriveExportMode.REPLACE
+        }
+        set(value) {
+            prefs.edit().putString(KEY_EXPORT_MODE, value.name).apply()
+        }
+
     fun ensureReady() {
         File(docsDir, "mereni.csv").takeIf { it.exists() }?.delete()
         if (!workingFile.exists()) {
@@ -34,11 +53,9 @@ class MeasurementStore(context: Context) {
         }
     }
 
-    /** Počet datových záznamů (bez data / stanic / mezer). */
     fun count(): Int =
         SimpleXlsx.read(workingFile).count { it.role == SimpleXlsx.Role.DATA && hasMeasurement(it) }
 
-    /** Číslo u tlačítka — 0 po vyčištění / na zeleném, jinak počet záznamů. */
     fun dayRecordNumber(): Int = count()
 
     fun append(
@@ -55,7 +72,6 @@ class MeasurementStore(context: Context) {
 
         val name = stationName.trim().ifBlank { stationUdu.trim() }
         val lastStation = rows.lastOrNull { it.role == SimpleXlsx.Role.STATION }?.a?.trim()
-        // Nová stanice i návrat k dřívější → znovu název (+ mezera), pak záznamy pod ním
         if (name.isNotEmpty() && lastStation != name) {
             rows += SimpleXlsx.Row(role = SimpleXlsx.Role.BLANK)
             rows += SimpleXlsx.Row(a = name, role = SimpleXlsx.Role.STATION)
@@ -75,10 +91,6 @@ class MeasurementStore(context: Context) {
             .apply()
     }
 
-    /**
-     * Popisky už uložené pro stanici — zvlášť koleje/spojky (sloupec A)
-     * a výhybky od–do (sloupec B), ať se navzájem neblokují.
-     */
     fun usedLabelsForStation(stationName: String): Pair<Set<String>, Set<String>> {
         val want = stationName.trim()
         if (want.isEmpty()) return emptySet<String>() to emptySet()
@@ -91,7 +103,6 @@ class MeasurementStore(context: Context) {
                 SimpleXlsx.Role.STATION -> active = row.a.trim() == want
                 SimpleXlsx.Role.DATA -> if (active) {
                     row.a.split(',').map { it.trim() }.filter { it.isNotEmpty() }.forEach { pole1.add(it) }
-                    // "1 - 2" i "1-2" → samostatné popisky výhybek
                     row.b.split(Regex("""\s*-\s*""")).map { it.trim() }
                         .filter { it.isNotEmpty() }.forEach { pole2.add(it) }
                 }
@@ -106,15 +117,14 @@ class MeasurementStore(context: Context) {
     fun isPendingOneDriveConfirm(): Boolean = prefs.getBoolean(KEY_PENDING_CONFIRM, false)
 
     /**
-     * Připraví `YYMMDD_N_MD1.xlsx` ke sdílení.
-     * Lokální soubor **nesmaže** — čeká se na potvrzení po návratu.
+     * Připraví soubor ke sdílení podle [exportMode].
      */
     fun prepareExportFile(): File {
         ensureReady()
-        val day = DAY_FILE_FMT.format(Date())
-        val n = prefs.getInt(KEY_DAY_EXPORT_PREFIX + day, 0) + 1
-        prefs.edit().putInt(KEY_DAY_EXPORT_PREFIX + day, n).apply()
-        val name = "${day}_${n}_MD1.xlsx"
+        val name = when (exportMode) {
+            OneDriveExportMode.DAILY -> "${DAY_FILE_FMT.format(Date())}_MD1.xlsx"
+            OneDriveExportMode.REPLACE -> EXPORT_REPLACE_NAME
+        }
         val dest = File(docsDir, name)
         val rows = SimpleXlsx.read(workingFile).toMutableList()
         ensureDateRowIn(rows)
@@ -128,19 +138,32 @@ class MeasurementStore(context: Context) {
         return dest
     }
 
-    /** ✕ — uživatel není jistý; záznamy zůstávají, tlačítko zůstane červené. */
     fun cancelPendingOneDriveConfirm() {
         prefs.edit().putBoolean(KEY_PENDING_CONFIRM, false).apply()
     }
 
-    /** ANO — smazat lokál, zelené tlačítko, číslo 0. */
+    /**
+     * ANO po sdílení.
+     * DAILY → smaže lokál (nový den / nová dávka).
+     * REPLACE → lokál zůstává, jen zelená.
+     */
     fun confirmOneDriveSavedAndClear() {
-        resetWorkingFile()
-        prefs.edit()
-            .putBoolean(KEY_SYNCED, true)
-            .putBoolean(KEY_PENDING_CONFIRM, false)
-            .remove(KEY_LAST_STATION_UDU)
-            .apply()
+        when (exportMode) {
+            OneDriveExportMode.DAILY -> {
+                resetWorkingFile()
+                prefs.edit()
+                    .putBoolean(KEY_SYNCED, true)
+                    .putBoolean(KEY_PENDING_CONFIRM, false)
+                    .remove(KEY_LAST_STATION_UDU)
+                    .apply()
+            }
+            OneDriveExportMode.REPLACE -> {
+                prefs.edit()
+                    .putBoolean(KEY_SYNCED, true)
+                    .putBoolean(KEY_PENDING_CONFIRM, false)
+                    .apply()
+            }
+        }
     }
 
     private fun resetWorkingFile() {
@@ -175,10 +198,11 @@ class MeasurementStore(context: Context) {
     companion object {
         private const val PREFS = "measurement_xlsx"
         private const val WORKING_NAME = "mereni_working.xlsx"
-        private const val KEY_DAY_EXPORT_PREFIX = "export_count_"
+        const val EXPORT_REPLACE_NAME = "mereni_MD1.xlsx"
         private const val KEY_LAST_STATION_UDU = "last_station_udu"
         private const val KEY_SYNCED = "synced_onedrive"
         private const val KEY_PENDING_CONFIRM = "pending_onedrive_confirm"
+        private const val KEY_EXPORT_MODE = "onedrive_export_mode"
         private val DAY_FILE_FMT = SimpleDateFormat("yyMMdd", Locale.US)
         private val DATE_DISPLAY_FMT = SimpleDateFormat("d.M.yyyy", Locale("cs", "CZ"))
 
