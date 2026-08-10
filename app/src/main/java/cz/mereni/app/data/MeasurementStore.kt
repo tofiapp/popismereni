@@ -55,6 +55,7 @@ class MeasurementStore(context: Context) {
 
         val name = stationName.trim().ifBlank { stationUdu.trim() }
         val lastStation = rows.lastOrNull { it.role == SimpleXlsx.Role.STATION }?.a?.trim()
+        // Nová stanice i návrat k dřívější → znovu název (+ mezera), pak záznamy pod ním
         if (name.isNotEmpty() && lastStation != name) {
             rows += SimpleXlsx.Row(role = SimpleXlsx.Role.BLANK)
             rows += SimpleXlsx.Row(a = name, role = SimpleXlsx.Role.STATION)

@@ -8,7 +8,8 @@ import java.util.zip.ZipOutputStream
 
 /**
  * Minimální XLSX (4 sloupce) se styly: datum, stanice, data.
- * Širší sloupce + větší písmo.
+ * Role se při čtení bere ze stylu buňky (s="…"), ať řádek jen s "4"
+ * neskončí jako název stanice.
  */
 object SimpleXlsx {
     enum class Role { DATE, BLANK, STATION, DATA }
@@ -60,7 +61,6 @@ object SimpleXlsx {
         sb.append(
             """<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">""",
         )
-        // Širší sloupce (Excel width units)
         sb.append("<cols>")
         sb.append("""<col min="1" max="1" width="32" customWidth="1"/>""")
         sb.append("""<col min="2" max="2" width="28" customWidth="1"/>""")
@@ -83,10 +83,17 @@ object SimpleXlsx {
         return sb.toString()
     }
 
+    /** 0 = data (centrovaná čísla), 1 = datum, 2 = stanice (popisky vlevo). */
     private fun styleIndex(role: Role): Int = when (role) {
         Role.DATE -> 1
         Role.STATION -> 2
         Role.BLANK, Role.DATA -> 0
+    }
+
+    private fun roleFromStyle(style: Int?): Role = when (style) {
+        1 -> Role.DATE
+        2 -> Role.STATION
+        else -> Role.DATA
     }
 
     private fun cellXml(ref: String, value: String, style: Int): String {
@@ -119,13 +126,18 @@ object SimpleXlsx {
             RegexOption.DOT_MATCHES_ALL,
         )
         val refRegex = Regex("""\br="([A-Z]+)\d+"""")
+        val styleRegex = Regex("""\bs="(\d+)"""")
         for (rowMatch in rowRegex.findAll(xml)) {
             val cells = mutableMapOf<String, String>()
+            var rowStyle: Int? = null
             for (cellMatch in cellRegex.findAll(rowMatch.groupValues[1])) {
                 val attrs = cellMatch.groupValues[1].ifBlank { cellMatch.groupValues[3] }
                 val text = xmlUnescape(cellMatch.groupValues[2])
                 val ref = refRegex.find(attrs)?.groupValues?.get(1) ?: continue
                 cells[ref] = text
+                if (rowStyle == null) {
+                    styleRegex.find(attrs)?.groupValues?.get(1)?.toIntOrNull()?.let { rowStyle = it }
+                }
             }
             val a = cells["A"].orEmpty()
             val b = cells["B"].orEmpty()
@@ -133,15 +145,14 @@ object SimpleXlsx {
             val d = cells["D"].orEmpty()
             val role = when {
                 a.isBlank() && b.isBlank() && c.isBlank() && d.isBlank() -> Role.BLANK
+                // Nové soubory: role ze stylu (data s="0" i když je jen sloupec A)
+                rowStyle != null -> roleFromStyle(rowStyle)
+                // Staré soubory bez s="…": jen A = datum/stanice
                 a.isNotBlank() && b.isBlank() && c.isBlank() && d.isBlank() ->
                     if (rows.isEmpty()) Role.DATE else Role.STATION
                 else -> Role.DATA
             }
             rows += Row(a, b, c, d, role)
-        }
-        // První neprázdný „jen A“ po datu = stanice; nuceně DATE na index 0 pokud sedí
-        if (rows.isNotEmpty() && rows[0].role == Role.STATION) {
-            rows[0] = rows[0].copy(role = Role.DATE)
         }
         return rows
     }
@@ -181,7 +192,11 @@ object SimpleXlsx {
   </sheets>
 </workbook>"""
 
-    /** 0 = data (velké písmo), 1 = datum (modré), 2 = stanice (oranžové). */
+    /**
+     * 0 = data — velké písmo, zarovnání na střed (čísla kolejí/spojek/výhybek)
+     * 1 = datum — modré, vlevo (popisek)
+     * 2 = stanice — oranžové, vlevo (popisek)
+     */
     private const val STYLES = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
   <fonts count="3">
@@ -198,9 +213,15 @@ object SimpleXlsx {
   <borders count="1"><border/></borders>
   <cellStyleXfs count="1"><xf/></cellStyleXfs>
   <cellXfs count="3">
-    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
-    <xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/>
-    <xf numFmtId="0" fontId="2" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1"/>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">
+      <alignment horizontal="center" vertical="center"/>
+    </xf>
+    <xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1">
+      <alignment horizontal="left" vertical="center"/>
+    </xf>
+    <xf numFmtId="0" fontId="2" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1">
+      <alignment horizontal="left" vertical="center"/>
+    </xf>
   </cellXfs>
 </styleSheet>"""
 }
