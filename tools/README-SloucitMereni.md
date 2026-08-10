@@ -1,23 +1,22 @@
 # VBA: sloučení `*_MD1.xlsx`
 
-## Výstup = stejný vzhled jako appka
+## Co se změnilo
+- **Jeden soubor** `Souhrn_mereni.xlsm` — při každém běhu se **přepíše list Mereni**, nevzniká nový Book.
+- Oprava **Laufzeitfehler 1004** u `SaveAs` (OneDrive) — otevře existující soubor a volá `.Save`.
+- **Tlačítko** na listu `Start`.
 
-```
-10.8.2026                 ← datum (modré, jen sloupec A)
-                          ← prázdný řádek
-Název stanice             ← stanice (oranžové, jen A)
-koleje | výhybky | čas | poznámka   ← data A–D
-```
+## Jednorázové nastavení (německý Excel)
 
-List **Mereni**, 4 sloupce A–D.  
-Bere `YYMMDD_N_MD1.xlsx` (víc dávek za den) i `mereni_MD1.xlsx`.
+1. Stáhni `SloucitMereni.bas` z repa.
+2. **Alt+F11** → starý modul **Entfernen**.
+3. **Datei → Datei importieren…** → nový `.bas`.
+4. **Alt+F8** → `VytvoritTlacitko` → **Ausführen**  
+   (vytvoří `Souhrn_mereni.xlsm` ve složce OneDrive + tlačítko).
+5. Pokud Excel hlásí makra: **Inhalt aktivieren**.
 
-## Německý Excel — nahrát makro
+## Pak už jen
+Otevři `Souhrn_mereni.xlsm` → klikni **Sloucit mereni**.
 
-1. **Alt+F11**
-2. Starý modul: pravý klik → **Entfernen**
-3. **Datei → Datei importieren…** → `SloucitMereni.bas`
-4. Uprav `SOURCE_FOLDER` (v kódu přes `ChrW` / cestu z Exploreru)
-5. **Alt+F8** → `SloucitVsechnaMereni` → **Ausführen**
-
-Výsledek: `Souhrn_mereni.xlsx` ve stejné složce.
+## Výstup (list Mereni)
+Stejný vzhled jako appka: datum / stanice nahoře, data A–D pod nimi.  
+Zdroje: `YYMMDD_N_MD1.xlsx` i `mereni_MD1.xlsx`.

@@ -1,46 +1,104 @@
 Attribute VB_Name = "SloucitMereni"
 Option Explicit
 
-' Merge all *_MD1.xlsx into one workbook with SAME layout as the Android app:
+' ONE summary workbook in the OneDrive folder:
+'   Souhrn_mereni.xlsm  (same file every run - overwritten, not a new Book)
 '
-'   10.8.2026                    <- date (blue, column A only)
-'                                <- blank row
-'   Station name                 <- station (orange, column A only)
-'   koleje | vyhybky | cas | poznamka   <- data A-D
+' Layout of sheet "Mereni" = Android app:
+'   date (blue) / station (orange) / data A-D
 '
-' Matches YYMMDD_N_MD1.xlsx (N = batch that day) and mereni_MD1.xlsx.
-' German Excel:
-'   Alt+F11 -> Datei -> Datei importieren... -> this .bas
-'   Then Alt+F8 -> SloucitVsechnaMereni -> Ausfuhren
+' Sources: YYMMDD_N_MD1.xlsx and mereni_MD1.xlsx
 '
-' IMPORTANT: set SOURCE_FOLDER below (copy path from Explorer address bar).
+' Setup (German Excel), once:
+'   1) Alt+F11 -> Datei -> Datei importieren... -> this .bas
+'   2) Alt+F8 -> VytvoritTlacitko -> Ausfuhren
+'      -> creates/opens Souhrn_mereni.xlsm with a big button
+'   3) Later: just click the button (no Alt+F8)
 
+Private Function SourceFolder() As String
+    ' Path via ChrW = ASCII-safe .bas (Sprava zeleznic)
+    SourceFolder = "C:\Users\hrubesk\OneDrive - Spr" & ChrW(225) & "va " & _
+                   ChrW(382) & "eleznic\MD1_rozdeleno"
+End Function
+
+Private Function SourcePath() As String
+    Dim p As String
+    p = SourceFolder()
+    If Right$(p, 1) <> "\" Then p = p & "\"
+    SourcePath = p
+End Function
+
+Private Function SouhrnPath() As String
+    SouhrnPath = SourcePath() & "Souhrn_mereni.xlsm"
+End Function
+
+' --- run once: make the button workbook ---
+Public Sub VytvoritTlacitko()
+    Dim src As String
+    src = SourcePath()
+    If Dir(src, vbDirectory) = "" Then
+        MsgBox "Folder not found:" & vbCrLf & src, vbCritical
+        Exit Sub
+    End If
+
+    Dim wb As Workbook
+    Set wb = OpenOrCreateSouhrn()
+
+    Dim wsBtn As Worksheet
+    Set wsBtn = EnsureSheet(wb, "Start")
+    wsBtn.Move Before:=wb.Sheets(1)
+
+    wsBtn.Cells.Clear
+    wsBtn.Range("A1").Value = "Mereni - slouceni OneDrive"
+    wsBtn.Range("A1").Font.Size = 18
+    wsBtn.Range("A1").Font.Bold = True
+    wsBtn.Range("A3").Value = "Klikni tlacitko nize. Vysledek je list Mereni ve STEJNEM souboru."
+    wsBtn.Range("A4").Value = "Soubor: " & SouhrnPath()
+    wsBtn.Columns("A").ColumnWidth = 80
+
+    ' remove old buttons
+    Dim shp As Shape
+    On Error Resume Next
+    For Each shp In wsBtn.Shapes
+        shp.Delete
+    Next shp
+    On Error GoTo 0
+
+    Dim btn As Button
+    Set btn = wsBtn.Buttons.Add(Left:=20, Top:=100, Width:=260, Height:=50)
+    btn.OnAction = "'" & wb.Name & "'!SloucitVsechnaMereni"
+    btn.Characters.Text = "Sloucit mereni"
+    btn.Font.Size = 16
+    btn.Font.Bold = True
+
+    Call EnsureSheet(wb, "Mereni")
+    Call SaveSouhrn(wb)
+
+    MsgBox "Hotovo. Ulozene:" & vbCrLf & SouhrnPath() & vbCrLf & vbCrLf & _
+           "Priste otevri tento soubor a klikni tlacitko.", vbInformation
+End Sub
+
+' --- main: refresh list Mereni inside the SAME Souhrn file ---
 Public Sub SloucitVsechnaMereni()
-    ' Paste your OneDrive folder path here (from Explorer).
-    ' Example with Czech chars via ChrW so this .bas stays ASCII-safe:
-    Dim SOURCE_FOLDER As String
-    SOURCE_FOLDER = "C:\Users\hrubesk\OneDrive - Spr" & ChrW(225) & "va " & _
-                    ChrW(382) & "eleznic\MD1_rozdeleno"
-
     Const FILE_PATTERN As String = "*_MD1.xlsx"
     Const COLOR_DATE As Long = 16506555
     Const COLOR_STATION As Long = 11723007
 
     Dim srcPath As String
-    srcPath = SOURCE_FOLDER
-    If Right$(srcPath, 1) <> "\" Then srcPath = srcPath & "\"
+    srcPath = SourcePath()
 
     If Dir(srcPath, vbDirectory) = "" Then
         MsgBox "Folder not found:" & vbCrLf & srcPath & vbCrLf & _
-               "Edit SOURCE_FOLDER in the macro.", vbCritical
+               "Edit SourceFolder() in the macro.", vbCritical
         Exit Sub
     End If
 
     Dim wbOut As Workbook
     Dim wsOut As Worksheet
-    Set wbOut = Workbooks.Add
-    Set wsOut = wbOut.Sheets(1)
-    wsOut.Name = "Mereni"
+    Set wbOut = OpenOrCreateSouhrn()
+    Set wsOut = EnsureSheet(wbOut, "Mereni")
+
+    wsOut.Cells.Clear
     wsOut.Columns("A").ColumnWidth = 32
     wsOut.Columns("B").ColumnWidth = 18
     wsOut.Columns("C").ColumnWidth = 14
@@ -51,6 +109,7 @@ Public Sub SloucitVsechnaMereni()
 
     Application.ScreenUpdating = False
     Application.DisplayAlerts = False
+    Application.StatusBar = "Sloucit mereni..."
 
     Dim files As Collection
     Set files = ListSortedFiles(srcPath, FILE_PATTERN)
@@ -169,21 +228,113 @@ NextSrcRow:
 NextFile:
     Next i
 
+    Call SaveSouhrn(wbOut)
+
+    Application.StatusBar = False
     Application.DisplayAlerts = True
     Application.ScreenUpdating = True
 
-    Dim outPath As String
-    outPath = srcPath & "Souhrn_mereni.xlsx"
     On Error Resume Next
-    Kill outPath
+    wbOut.Sheets("Mereni").Activate
     On Error GoTo 0
-    wbOut.SaveAs Filename:=outPath, FileFormat:=xlOpenXMLWorkbook
 
-    MsgBox "Done." & vbCrLf & _
-           "Files OK: " & filesProcessed & vbCrLf & _
-           "Skipped: " & filesSkipped & vbCrLf & _
-           "Saved: " & outPath, vbInformation
+    MsgBox "Hotovo - jeden soubor Souhrn_mereni.xlsm." & vbCrLf & _
+           "Zdroju OK: " & filesProcessed & vbCrLf & _
+           "Preskoceno: " & filesSkipped & vbCrLf & _
+           "Ulozeno: " & SouhrnPath(), vbInformation
 End Sub
+
+' Open existing Souhrn_mereni.xlsm / .xlsx, or create once.
+Private Function OpenOrCreateSouhrn() As Workbook
+    Dim pathXlsm As String
+    Dim pathXlsx As String
+    Dim wb As Workbook
+
+    pathXlsm = SouhrnPath()
+    pathXlsx = SourcePath() & "Souhrn_mereni.xlsx"
+
+    Set wb = WorkbookByFullName(pathXlsm)
+    If Not wb Is Nothing Then
+        Set OpenOrCreateSouhrn = wb
+        Exit Function
+    End If
+
+    Set wb = WorkbookByFullName(pathXlsx)
+    If Not wb Is Nothing Then
+        Set OpenOrCreateSouhrn = wb
+        Exit Function
+    End If
+
+    If Dir(pathXlsm) <> "" Then
+        Set OpenOrCreateSouhrn = Workbooks.Open(Filename:=pathXlsm, UpdateLinks:=0)
+        Exit Function
+    End If
+
+    If Dir(pathXlsx) <> "" Then
+        Set wb = Workbooks.Open(Filename:=pathXlsx, UpdateLinks:=0)
+        ' migrate to xlsm once (macros + button need it)
+        Application.DisplayAlerts = False
+        On Error Resume Next
+        wb.SaveAs Filename:=pathXlsm, FileFormat:=52
+        On Error GoTo 0
+        Application.DisplayAlerts = True
+        Set OpenOrCreateSouhrn = wb
+        Exit Function
+    End If
+
+    Set wb = Workbooks.Add
+    Application.DisplayAlerts = False
+    On Error Resume Next
+    wb.SaveAs Filename:=pathXlsm, FileFormat:=52
+    If Err.Number <> 0 Then
+        Err.Clear
+        ' OneDrive sometimes blocks xlsm -> fall back xlsx (button still works if macros in this wb)
+        wb.SaveAs Filename:=pathXlsx, FileFormat:=51
+    End If
+    On Error GoTo 0
+    Application.DisplayAlerts = True
+    Set OpenOrCreateSouhrn = wb
+End Function
+
+Private Sub SaveSouhrn(ByVal wb As Workbook)
+    Application.DisplayAlerts = False
+    On Error Resume Next
+    wb.Save
+    If Err.Number <> 0 Then
+        Err.Clear
+        ' retry SaveAs to known path (OneDrive lock workaround)
+        If LCase$(Right$(wb.FullName, 5)) = ".xlsm" Or InStr(1, wb.Name, ".xlsm", vbTextCompare) > 0 Then
+            wb.SaveAs Filename:=SouhrnPath(), FileFormat:=52
+        Else
+            wb.SaveAs Filename:=SourcePath() & "Souhrn_mereni.xlsx", FileFormat:=51
+        End If
+    End If
+    On Error GoTo 0
+    Application.DisplayAlerts = True
+End Sub
+
+Private Function WorkbookByFullName(ByVal fullPath As String) As Workbook
+    Dim wb As Workbook
+    For Each wb In Application.Workbooks
+        If StrComp(wb.FullName, fullPath, vbTextCompare) = 0 Then
+            Set WorkbookByFullName = wb
+            Exit Function
+        End If
+    Next wb
+    Set WorkbookByFullName = Nothing
+End Function
+
+Private Function EnsureSheet(ByVal wb As Workbook, ByVal sheetName As String) As Worksheet
+    Dim ws As Worksheet
+    On Error Resume Next
+    Set ws = wb.Worksheets(sheetName)
+    On Error GoTo 0
+    If ws Is Nothing Then
+        Set ws = wb.Worksheets.Add(After:=wb.Sheets(wb.Sheets.Count))
+        ws.Name = sheetName
+    End If
+    Set EnsureSheet = ws
+End Function
 
 Private Function ListSortedFiles(ByVal srcPath As String, ByVal pattern As String) As Collection
     Dim col As Collection
@@ -198,7 +349,8 @@ Private Function ListSortedFiles(ByVal srcPath As String, ByVal pattern As Strin
     n = 0
     name = Dir(srcPath & pattern)
     Do While name <> ""
-        If StrComp(name, "Souhrn_mereni.xlsx", vbTextCompare) <> 0 Then
+        If StrComp(name, "Souhrn_mereni.xlsx", vbTextCompare) <> 0 And _
+           StrComp(name, "Souhrn_mereni.xlsm", vbTextCompare) <> 0 Then
             n = n + 1
             ReDim Preserve arr(1 To n)
             arr(n) = name
@@ -276,7 +428,6 @@ Private Sub WriteDataRow(ByVal ws As Worksheet, ByVal row As Long, ByVal a As St
 End Sub
 
 Private Function DateFromFileName(ByVal fileName As String) As String
-    ' YYMMDD_N_MD1.xlsx or legacy YYMMDD_MD1.xlsx -> d.M.yyyy
     Dim y As Integer
     Dim m As Integer
     Dim d As Integer
@@ -289,7 +440,6 @@ Private Function DateFromFileName(ByVal fileName As String) As String
         DateFromFileName = ""
         Exit Function
     End If
-
     If InStr(1, fileName, "_MD1", vbTextCompare) = 0 Then
         DateFromFileName = ""
         Exit Function
