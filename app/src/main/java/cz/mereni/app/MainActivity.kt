@@ -61,6 +61,7 @@ import cz.mereni.app.data.GetContentChooser
 import cz.mereni.app.data.MeasurementStore
 import cz.mereni.app.data.OpenOneDriveDocument
 import cz.mereni.app.data.isOneDriveInstalled
+import cz.mereni.app.data.launchOneDriveApp
 import cz.mereni.app.data.PasportKey
 import cz.mereni.app.data.PasportKind
 import cz.mereni.app.data.PasportLoadResult
@@ -290,7 +291,8 @@ fun MereniApp(
     onKeysForStation: suspend (Station?, List<PasportKey>) -> List<PasportKey>,
 ) {
     val context = LocalContext.current
-    val oneDriveOk = remember(context) { OpenOneDriveDocument.canResolve(context) }
+    val oneDriveInstalled = remember(context) { isOneDriveInstalled(context) }
+    val oneDrivePickOk = remember(context) { OpenOneDriveDocument.canResolve(context) }
     val scope = rememberCoroutineScope()
     val pasport = load.data
     var activeField by remember { mutableStateOf(ActiveField.POLE1) }
@@ -614,8 +616,17 @@ fun MereniApp(
                         )
                     },
                     onPickChooser = { pickPasportChooser.launch("*/*") },
-                    onPickOneDrive = if (oneDriveOk) {
-                        { pickPasportOneDrive.launch("*/*") }
+                    onPickOneDrive = if (oneDriveInstalled) {
+                        {
+                            when {
+                                oneDrivePickOk -> pickPasportOneDrive.launch("*/*")
+                                launchOneDriveApp(context) ->
+                                    exportMessage =
+                                        "V OneDrive: soubor → ⋮ → Sdílet / Otevřít v → Měření"
+                                else ->
+                                    exportMessage = "OneDrive nejde spustit"
+                            }
+                        }
                     } else null,
                     onReload = {
                         pasportLoading = true
@@ -638,10 +649,17 @@ fun MereniApp(
                         exportMessage = null
                         importCsvChooser.launch("*/*")
                     },
-                    onImportCsvOneDrive = if (oneDriveOk) {
+                    onImportCsvOneDrive = if (oneDriveInstalled) {
                         {
                             exportMessage = null
-                            importCsvOneDrive.launch("*/*")
+                            when {
+                                oneDrivePickOk -> importCsvOneDrive.launch("*/*")
+                                launchOneDriveApp(context) ->
+                                    exportMessage =
+                                        "V OneDrive: mereni.csv → ⋮ → Sdílet / Otevřít v → Měření"
+                                else ->
+                                    exportMessage = "OneDrive nejde spustit"
+                            }
                         }
                     } else null,
                     onShareCsv = {
