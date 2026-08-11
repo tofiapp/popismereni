@@ -1,19 +1,18 @@
-# Laufzeitfehler 52 (Dateiname falsch)
+# Chyba 52 znovu / háčky v cestě
 
-Obvykle: soubor je otevřený přes **https:// SharePoint/OneDrive v prohlížeči**.  
-VBA `Dir` umí jen **lokální** cestu (`C:\Users\...\OneDrive - ...\`).
+Makro už **nepoužívá `Dir`** (ten padá na `Správa železnic` i na `https://`).  
+Používá **FileSystemObject**.
 
-## Oprav
-1. Zavři Excel.
-2. Otevři **Průzkumník Windows** → synchronizovaná OneDrive složka s měřením (zelená fajfka).
-3. Dvojklik na `Souhrn_mereni.xlsm` (ne „Open in browser“).
-4. **Inhalt aktivieren**.
-5. Alt+F8 → `Mereni_Nastavit` (jednou) nebo tlačítko **Sloucit ted**.
+## Teď
+1. Stáhni nový `.bas`  
+   https://raw.githubusercontent.com/tofiapp/popismereni/cursor/update-and-ui-tweaks-3a97/tools/SloucitMereni.bas
+2. Nový sešit → import `.bas`
+3. Alt+F8 → **`Mereni_Nastavit`** → ulož `.xlsm` do OneDrive složky **přes Explorer**
+4. Když něco nefunguje: Alt+F8 → **`Mereni_Diagnostika`**  
+   - uvidíš `Path` / `FullName` / kolik `*_MD1.xlsx` FSO vidí  
+   - když `FullName` začíná `https://` → otevři soubor z Průzkumníka, ne z webu
 
-## Nastavení od nuly
-1. Nový sešit → import `.bas`
-2. Alt+F8 → **`Mereni_Nastavit`** → uložit jako `.xlsm` do lokální OneDrive složky
-3. Zavřít ostatní sešity
-
-## Download
-https://raw.githubusercontent.com/tofiapp/popismereni/cursor/update-and-ui-tweaks-3a97/tools/SloucitMereni.bas
+## Ručně spouštěj jen
+- `Mereni_Nastavit` — jednou
+- `SloucitVsechnaMereni` / tlačítko — sloučit
+- `Mereni_Diagnostika` — když chyba
