@@ -348,10 +348,10 @@ def read_xlsx(path: Path) -> List[Row]:
         raise OSError(f"Soubor není platné xlsx/zip (zámek Excel/OneDrive?): {path}") from exc
 
 
-def backup_summary_before_write(path: Path) -> None:
-    """Záloha do Zalohy/ — ne *.xlsx.bak vedle souhrnu (vypadalo jako nesloučená kopie)."""
+def backup_summary_before_write(path: Path) -> Optional[Path]:
+    """Záloha do Zalohy/. Vrátí cestu k záloze (obnova při chybě zápisu)."""
     if not path.is_file():
-        return
+        return None
     bak_dir = path.parent / BACKUP_FOLDER_NAME
     bak_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -361,7 +361,7 @@ def backup_summary_before_write(path: Path) -> None:
         print(f"Záloha: {bak}")
     except OSError as exc:
         print(f"  ! Záloha se nepodařila: {exc}")
-        return
+        return None
     pattern = f"{path.stem}_*.xlsx"
     old = sorted(bak_dir.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
     for p in old[BACKUP_KEEP:]:
@@ -369,6 +369,38 @@ def backup_summary_before_write(path: Path) -> None:
             p.unlink()
         except OSError:
             pass
+    return bak
+
+
+def xlsx_looks_valid(path: Path) -> bool:
+    if not path.is_file() or path.stat().st_size < 64:
+        return False
+    try:
+        with path.open("rb") as fh:
+            if fh.read(2) != b"PK":
+                return False
+        with zipfile.ZipFile(path) as zf:
+            names = [n.replace("\\", "/").lower() for n in zf.namelist()]
+            return any(
+                n.startswith("xl/worksheets/sheet") and n.endswith(".xml") for n in names
+            )
+    except (OSError, zipfile.BadZipFile):
+        return False
+
+
+def restore_summary_from_backup(path: Path, bak: Optional[Path]) -> bool:
+    if bak is None or not bak.is_file():
+        return False
+    try:
+        shutil.copy2(bak, path)
+        print(
+            "Obnoven souhrn z této zálohy (zápis selhal, OneDrive nedostane starou verzi z cloudu):\n"
+            f"  {bak}"
+        )
+        return True
+    except OSError as exc:
+        print(f"  ! Obnova ze zálohy selhala: {exc}")
+        return False
 
 
 def remove_orphan_merge_junk(summary_path: Path) -> None:
@@ -464,7 +496,7 @@ def sheet_xml(rows: Iterable[Row]) -> str:
 
 def write_xlsx(path: Path, rows: List[Row]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    backup_summary_before_write(path)
+    bak = backup_summary_before_write(path)
     bat = path.parent / UPDATE_BAT_NAME
     tmp = path.parent / f".sloucit_tmp_{os.getpid()}_{int(time.time())}.xlsx"
     try:
@@ -476,8 +508,19 @@ def write_xlsx(path: Path, rows: List[Row]) -> None:
             zf.writestr("xl/styles.xml", STYLES)
             zf.writestr("xl/worksheets/sheet1.xml", sheet_xml(rows))
             zf.writestr("xl/worksheets/_rels/sheet1.xml.rels", sheet_rels_xml(bat))
-        # overwrite na místě — bez delete cíle (OneDrive conflict kopie)
+        if not xlsx_looks_valid(tmp):
+            raise OSError("Dočasný soubor po zápisu není platné xlsx.")
+        # overwrite na místě — NIKDY nemazat cíl před úspěchem
         shutil.copy2(tmp, path)
+        if not xlsx_looks_valid(path):
+            restore_summary_from_backup(path, bak)
+            raise OSError(
+                f"Po zápisu soubor není platné xlsx — obnoveno ze zálohy: {path}"
+            )
+    except Exception:
+        if bak is not None and not xlsx_looks_valid(path):
+            restore_summary_from_backup(path, bak)
+        raise
     finally:
         try:
             if tmp.is_file():

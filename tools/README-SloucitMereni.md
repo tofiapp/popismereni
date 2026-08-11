@@ -55,3 +55,5 @@ Jen **dva** skripty: `SloucitMereni.bat` + `sloucit_mereni.ps1`.
 - Banner musí být `verze 2026-08-11r`
 
 Verze: **2026-08-11r**
+
+Při chybě zápisu skript **nesmaže** souhrn (dřív OneDrive vrátil starou verzi z cloudu). Neplatný zápis se vrátí ze `Zalohy/` z tohoto běhu.
