@@ -1,5 +1,5 @@
 ﻿#Requires -Version 5.1
-# sloucit_mereni.ps1 — verze 2026-08-11m
+# sloucit_mereni.ps1 — verze 2026-08-11n
 # ASCII-only source (Windows PowerShell 5.1). Czech names via [char] codes.
 # Layout:
 #   Popis_mereni_MD1/
@@ -348,24 +348,21 @@ function Read-XlsxRows([string]$path) {
     }
     $len = (Get-Item -LiteralPath $path).Length
     if ($len -lt 64) {
-        Write-Host ("  ! Soubor je moc maly ({0} B) — OneDrive asi nestahl obsah." -f $len)
-        return [object[]]@()
+        throw ("Soubor je moc maly ({0} B) — OneDrive asi nestahl obsah: {1}" -f $len, $path)
     }
     $fs = [System.IO.File]::OpenRead($path)
     try {
         $b0 = $fs.ReadByte(); $b1 = $fs.ReadByte()
     } finally { $fs.Dispose() }
     if ($b0 -ne 0x50 -or $b1 -ne 0x4B) {
-        Write-Host ("  ! Soubor neni platne xlsx/zip (chybi PK). OneDrive online-only?" -f $path)
-        return [object[]]@()
+        throw ("Soubor neni platne xlsx/zip (chybi PK). OneDrive online-only?: {0}" -f $path)
     }
 
     $zip = $null
     try {
         $zip = [System.IO.Compression.ZipFile]::OpenRead($path)
     } catch {
-        Write-Host ("  ! Nelze otevrit zip: {0}" -f $_.Exception.Message)
-        return [object[]]@()
+        throw ("Nelze otevrit xlsx ke cteni (zamek Excel/OneDrive?): {0}" -f $_.Exception.Message)
     }
 
     $xml = ""
@@ -382,8 +379,7 @@ function Read-XlsxRows([string]$path) {
                 Select-Object -First 1
         }
         if (-not $entry) {
-            Write-Host "  ! V xlsx chybi sheet XML"
-            return [object[]]@()
+            throw ("V xlsx chybi sheet XML: {0}" -f $path)
         }
         $xml = Read-ZipEntryText $entry
     }
@@ -427,6 +423,10 @@ function Read-XlsxRows([string]$path) {
             $role = "BLANK"
         }
         elseif ((Test-IsUpdateText $a) -or ($null -ne $styleA -and $styleA -eq $STYLE_UPDATED)) {
+            $role = "UPDATED"
+        }
+        elseif (($b -eq $BUTTON_LABEL) -and (-not ($c -or $d))) {
+            # samotne tlacitko / zbytek radku aktualizace
             $role = "UPDATED"
         }
         elseif ($b -or $c -or $d) {
@@ -605,11 +605,25 @@ function Write-ZipEntry([System.IO.Compression.ZipArchive]$zip, [string]$name, [
     try { $sw.Write($body) } finally { $sw.Dispose() }
 }
 
+function Backup-SummaryBeforeWrite([string]$path) {
+    # Pred prepisem souhrnu zaloha .bak (obnova pri omylu / rozbitej merge)
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return }
+    $bak = $path + ".bak"
+    try {
+        Copy-Item -LiteralPath $path -Destination $bak -Force
+        Write-Host ("Zaloha pred zapisem: {0}" -f $bak)
+    } catch {
+        Write-Host ("  ! Zaloha .bak se nepodarila: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+    }
+}
+
 function Write-Xlsx([string]$path, $rows) {
     $dir = Split-Path -Parent $path
     if ($dir -and -not (Test-Path -LiteralPath $dir)) {
         New-Item -ItemType Directory -Path $dir -Force | Out-Null
     }
+
+    Backup-SummaryBeforeWrite $path
 
     $batPath = Ensure-BatBesideSummary $path
     $sheetRels = Get-SheetRelsXml $batPath
@@ -691,7 +705,7 @@ function Resolve-Layout([string]$folderPath) {
 
 # ---- main ----
 try {
-    Write-Host "sloucit_mereni.ps1 verze 2026-08-11m"
+    Write-Host "sloucit_mereni.ps1 verze 2026-08-11n"
     if (-not (Test-Path -LiteralPath $Folder)) {
         Write-Host "Slozka neexistuje:"
         Write-Host "  $Folder"
@@ -769,6 +783,8 @@ try {
         Write-Host "To neni chyba — nove denni soubory z appky dej do Dny/."
         if ((Test-Path -LiteralPath $outPath -PathType Leaf) -and ((Get-Item -LiteralPath $outPath).Length -gt 64)) {
             try {
+                Close-WorkbookIfOpen $outPath | Out-Null
+                Start-Sleep -Milliseconds 400
                 $existingOnly = @(Read-XlsxRows $outPath)
                 $keep = New-Object System.Collections.Generic.List[object]
                 $skipHead = $true
@@ -780,6 +796,9 @@ try {
                         $skipHead = $false
                     }
                     [void]$keep.Add($row)
+                }
+                if ($keep.Count -eq 0 -and ((Get-Item -LiteralPath $outPath).Length -gt 2500)) {
+                    throw "Souhrn se nacetl jako prazdny — neprepisuji (zavrete Excel / Keep on this device)."
                 }
                 $stampedOnly = Add-UpdateStamp -Rows $keep.ToArray()
                 Write-Xlsx $outPath $stampedOnly
@@ -802,8 +821,15 @@ try {
     $ok = 0
     $skipped = 0
 
-    # Existujici souhrn = zaklad (nove denni soubory se pripoji)
+    # Existujici souhrn = zaklad (nove denni soubory se pripoji).
+    # Nikdy nezacinat od nuly, kdyz souhrn na disku je, ale nacteni selhalo —
+    # to by cele soubor "sloucilo" = prepise.
     if ((Test-Path -LiteralPath $outPath -PathType Leaf) -and ((Get-Item -LiteralPath $outPath).Length -gt 64)) {
+        $summarySize = (Get-Item -LiteralPath $outPath).Length
+        # Excel musi byt zavreny PRED ctenim — jinak Open XML vrati prazdne/rozbite
+        # radky a skript pak "slouceni" prepise cely soubor (0 existujicich radku).
+        Close-WorkbookIfOpen $outPath | Out-Null
+        Start-Sleep -Milliseconds 400
         try {
             $existing = @(Read-XlsxRows $outPath)
             $skipHead = $true
@@ -818,12 +844,18 @@ try {
                 if ($row.Role -eq "DATE" -and $row.A) { $currentDate = $row.A; $lastStation = "" }
                 elseif ($row.Role -eq "STATION" -and $row.A) { $lastStation = $row.A }
             }
+            if ($mergeRows.Count -eq 0 -and $summarySize -gt 2500) {
+                throw ("Souhrn ma {0} B, ale nacetlo se 0 datovych radku. Soubor je pravdepodobne stale zamceny nebo poskozeny." -f $summarySize)
+            }
             Write-Host ("Nacten existujici souhrn: {0} radku" -f $mergeRows.Count)
         } catch {
-            Write-Host ("  ! Souhrn nejde nacist, vytvorim novy: {0}" -f $_.Exception.Message)
-            $mergeRows.Clear()
-            $currentDate = ""
-            $lastStation = ""
+            Write-Host ""
+            Write-Host "CHYBA: Nelze bezpecne nacist existujici souhrn." -ForegroundColor Red
+            Write-Host ("  {0}" -f $_.Exception.Message) -ForegroundColor Red
+            Write-Host "  Soubor NEBUDE prepsan. Zavrete Excel a spuste znovu." -ForegroundColor Yellow
+            Write-Host "  Zaloha (pokud uz existuje): soubor.xlsx.bak" -ForegroundColor Yellow
+            Write-Host ""
+            throw ("Abort: refuse overwrite of summary that failed to load.")
         }
     }
 
