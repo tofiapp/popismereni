@@ -1,21 +1,28 @@
-# Měření v0.44.0
+# Měření v0.45.0
 
 ## Aktualizace
 ```bash
-adb install -r artifacts/mereni-v0.44.0-debug.apk
+adb install -r artifacts/mereni-v0.45.0-debug.apk
 ```
 
 ## OneDrive (sdílení Intent)
 **Uložit na OneDrive** otevře sdílení (OneDrive / Files).
 
-Soubor je vždy `YYMMDD_N_MD1.xlsx` (N = 1, 2, 3… ten den). Po ANO se místní záznamy vymažou.
-Graph/MSAL už není.
+Denní soubor: `YYMMDD_N_MD1.xlsx` (N = 1, 2, 3… ten den). Po ANO se místní záznamy vymažou.
+
+### Struktura složek
+```
+Popis_měření_MD1/
+  Popis_měření_MD1.xlsx      ← souhrn (skript)
+  MD1_popis_dny/
+    YYMMDD_N_MD1.xlsx       ← sem ukládej z appky
+```
 
 ## Sloučení denních souborů na PC
 
 Nic se neinstaluje (Windows PowerShell):
 
-1. Zkopíruj `tools\SloucitMereni.bat` a `tools\sloucit_mereni.ps1` do složky s `*_MD1.xlsx`
-2. Dvojklik na bat → vznikne `Souhrn_mereni.xlsx`
+1. Zkopíruj `tools\SloucitMereni.bat` a `tools\sloucit_mereni.ps1` do `Popis_měření_MD1`
+2. Dvojklik na bat → vznikne `Popis_měření_MD1.xlsx`
 
 Podrobnosti: [`tools/README-SloucitMereni.md`](tools/README-SloucitMereni.md).

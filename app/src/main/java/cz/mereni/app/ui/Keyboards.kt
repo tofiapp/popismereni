@@ -1131,7 +1131,8 @@ fun PasportSettingsButton(
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     "Sdílením Intent (OneDrive / Files).\n" +
-                        "Soubor YYMMDD_N_MD1.xlsx (N = 1, 2, 3… ten den).\n" +
+                        "Ulož YYMMDD_N_MD1.xlsx do:\n" +
+                        "Popis_měření_MD1 / MD1_popis_dny\n" +
                         "Po ANO se místní záznamy vymažou.",
                     color = MereniColors.TextMuted,
                     fontSize = 12.sp,

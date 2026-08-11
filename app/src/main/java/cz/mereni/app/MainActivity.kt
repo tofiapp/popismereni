@@ -953,7 +953,8 @@ fun MereniApp(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "Soubor YYMMDD_N_MD1.xlsx ulož do OneDrive\n" +
+                        "Soubor YYMMDD_N_MD1.xlsx ulož do\n" +
+                            "Popis_měření_MD1 / MD1_popis_dny\n" +
                             "(N = pořadí dávky ten den: 1, 2, 3…).\n\n" +
                             "✕ — tlačítko zůstane červené.\n" +
                             "ANO — vymazat místní záznamy (zelená).",

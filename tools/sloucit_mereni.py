@@ -127,6 +127,19 @@ SI_RE = re.compile(r"<si\b[^>]*>(.*?)</si>", re.DOTALL | re.IGNORECASE)
 DATE_NAME_RE = re.compile(r"^(\d{6})(?:_\d+)?_MD1\.xlsx$", re.IGNORECASE)
 LOOKS_LIKE_DATE_RE = re.compile(r"^\d{1,2}[./]\d{1,2}[./]\d{4}$")
 
+# OneDrive layout:
+#   Popis_měření_MD1/
+#     Popis_měření_MD1.xlsx          ← souhrn
+#     MD1_popis_dny/
+#       YYMMDD_N_MD1.xlsx            ← denní dávky z appky
+MAIN_FOLDER_NAME = "Popis_měření_MD1"
+DAYS_SUBFOLDER_NAME = "MD1_popis_dny"
+SUMMARY_XLSX_NAME = "Popis_měření_MD1.xlsx"
+SUMMARY_EXCLUDE = {
+    SUMMARY_XLSX_NAME.lower(),
+    "souhrn_mereni.xlsx",
+}
+
 
 def xml_unescape(s: str) -> str:
     return (
@@ -323,10 +336,28 @@ def list_md1_files(folder: Path) -> List[Path]:
         if p.is_file()
         and p.suffix.lower() == ".xlsx"
         and p.name.lower().endswith("_md1.xlsx")
-        and p.name.lower() != "souhrn_mereni.xlsx"
+        and p.name.lower() not in SUMMARY_EXCLUDE
         and not p.name.startswith("~$")
     ]
     return sorted(files, key=lambda p: p.name.lower())
+
+
+def resolve_layout(folder: Path) -> Tuple[Path, Path]:
+    """
+    Vrátí (složka_s_denními, cesta_k_souhrnu).
+
+    1) Popis_měření_MD1/  → čte MD1_popis_dny/, píše Popis_měření_MD1.xlsx
+    2) …/MD1_popis_dny/   → čte tu, píše do rodiče Popis_měření_MD1.xlsx
+    3) jinak              → čte folder, píše folder/Popis_měření_MD1.xlsx
+    """
+    folder = folder.resolve()
+    days_sub = folder / DAYS_SUBFOLDER_NAME
+    if days_sub.is_dir():
+        return days_sub, folder / SUMMARY_XLSX_NAME
+    if folder.name == DAYS_SUBFOLDER_NAME:
+        parent = folder.parent
+        return folder, parent / SUMMARY_XLSX_NAME
+    return folder, folder / SUMMARY_XLSX_NAME
 
 
 def merge_folder(folder: Path, verbose: bool = True) -> Tuple[List[Row], int, int]:
@@ -397,19 +428,22 @@ def merge_folder(folder: Path, verbose: bool = True) -> Tuple[List[Row], int, in
 
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Sloučí *_MD1.xlsx do Souhrn_mereni.xlsx (bez VBA / Excelu)."
+        description=(
+            f"Sloučí *_MD1.xlsx do {SUMMARY_XLSX_NAME} "
+            f"(složka {MAIN_FOLDER_NAME}/{DAYS_SUBFOLDER_NAME}/)."
+        )
     )
     parser.add_argument(
         "folder",
         nargs="?",
         default=".",
-        help="Složka s denními soubory (výchozí: aktuální)",
+        help=f"Hlavní složka {MAIN_FOLDER_NAME} nebo přímo {DAYS_SUBFOLDER_NAME}",
     )
     parser.add_argument(
         "-o",
         "--output",
-        default="Souhrn_mereni.xlsx",
-        help="Jméno výstupního souboru (ve složce, výchozí Souhrn_mereni.xlsx)",
+        default="",
+        help=f"Volitelná cesta/jméno souhrnu (výchozí {SUMMARY_XLSX_NAME})",
     )
     args = parser.parse_args(argv)
 
@@ -418,23 +452,38 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"Složka neexistuje: {folder}", file=sys.stderr)
         return 2
 
-    files = list_md1_files(folder)
-    if not files:
-        print(f"Ve složce nejsou žádné *_MD1.xlsx:\n  {folder}", file=sys.stderr)
-        return 1
+    source, default_out = resolve_layout(folder)
+    out_path = Path(args.output).expanduser() if args.output else default_out
+    if not out_path.is_absolute():
+        # -o jen jméno → vedle souhrnu ve výchozí hlavní složce
+        out_path = default_out.parent / out_path.name
+    out_path = out_path.resolve()
 
-    rows, ok, skipped = merge_folder(folder)
-    data_out = sum(1 for r in rows if r.role == Role.DATA)
-    if data_out == 0:
+    files = list_md1_files(source)
+    if not files:
+        print(f"Ve složce nejsou žádné *_MD1.xlsx:\n  {source}", file=sys.stderr)
         print(
-            "CHYBA: do souhrnu se nedostala žádná data.\n"
-            "Zkontroluj, že ve složce jsou originální soubory z appky (*_MD1.xlsx),\n"
-            "ne jen prázdný Souhrn_mereni.xlsx.",
+            f"Očekávaná struktura:\n"
+            f"  {MAIN_FOLDER_NAME}/\n"
+            f"    {SUMMARY_XLSX_NAME}\n"
+            f"    {DAYS_SUBFOLDER_NAME}/\n"
+            f"      YYMMDD_N_MD1.xlsx",
             file=sys.stderr,
         )
         return 1
 
-    out_path = folder / args.output
+    print(f"Denní soubory: {source}")
+    print(f"Souhrn:        {out_path}")
+    rows, ok, skipped = merge_folder(source)
+    data_out = sum(1 for r in rows if r.role == Role.DATA)
+    if data_out == 0:
+        print(
+            "CHYBA: do souhrnu se nedostala žádná data.\n"
+            f"Zkontroluj originální soubory z appky v {DAYS_SUBFOLDER_NAME}/.",
+            file=sys.stderr,
+        )
+        return 1
+
     write_xlsx(out_path, rows)
 
     print(f"Soubory OK: {ok}")

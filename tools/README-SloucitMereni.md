@@ -1,29 +1,36 @@
-# Sloučení denních `*_MD1.xlsx` (bez instalace)
+# Sloučení denních souborů (bez instalace)
 
-Appka ukládá dávky `YYMMDD_N_MD1.xlsx`. Na PC je sloučíš do jednoho
-`Souhrn_mereni.xlsx` — **Windows PowerShell, nic se neinstaluje**.
+## Struktura na OneDrive
+
+```
+Popis_měření_MD1/
+  Popis_měření_MD1.xlsx      ← souhrn (vytvoří skript)
+  MD1_popis_dny/
+    260811_1_MD1.xlsx       ← denní dávky z appky
+    260811_2_MD1.xlsx
+    …
+```
+
+Appka ukládá `YYMMDD_N_MD1.xlsx` → ty ukládej do **`MD1_popis_dny`**.  
+Souhrn má stejné jméno jako hlavní složka: **`Popis_měření_MD1.xlsx`**.
 
 ## Rychle (Windows)
 
-1. Stáhni / synchronizuj složku s denními soubory z OneDrive.
-2. Zkopíruj sem z repa `SloucitMereni.bat` + `sloucit_mereni.ps1`  
-   (oba soubory musí být ve stejné složce).
-3. **Dvojklik** na `SloucitMereni.bat`,  
-   nebo **přetáhni složku** s `*_MD1.xlsx` na bat.
-4. Otevři vzniklé `Souhrn_mereni.xlsx` v Excelu.
+1. V OneDrive vytvoř složku `Popis_měření_MD1` a v ní podsložku `MD1_popis_dny`.
+2. Denní soubory z appky dávej do `MD1_popis_dny`.
+3. Zkopíruj sem `SloucitMereni.bat` + `sloucit_mereni.ps1` (do `Popis_měření_MD1`).
+4. Dvojklik na bat (nebo přetáhni složku `Popis_měření_MD1` na bat).
+5. Otevři `Popis_měření_MD1.xlsx`.
 
 V okně bat uvidíš u každého souboru počet načtených řádků.
 Když je u všech **0 datových**, skript souhrn nevytvoří a napíše chybu.
-
-**Tip:** Ber soubory přímo z OneDrive / z appky. Když je Excel otevře a znovu
-uloží, formát se změní — nová verze skriptu to umí, ale originál z appky je jistější.
 
 Nepotřebuješ Python, VBA ani admin práva — PowerShell je součást Windows.
 
 ## Ručně v PowerShellu
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\sloucit_mereni.ps1 -Folder "C:\Users\...\OneDrive\MD1_rozdeleno"
+powershell -NoProfile -ExecutionPolicy Bypass -File .\sloucit_mereni.ps1 -Folder "C:\Users\...\OneDrive\Popis_měření_MD1"
 ```
 
 ## Výstup = stejný vzhled jako appka
@@ -34,10 +41,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\sloucit_mereni.ps1 -Folder
 Název stanice             ← stanice (oranžové, jen A)
 koleje | výhybky | čas | poznámka   ← data A–D
 ```
-
-List **Mereni**, 4 sloupce A–D.  
-Bere `YYMMDD_N_MD1.xlsx` (víc dávek za den) i starší `*_MD1.xlsx`.  
-`Souhrn_mereni.xlsx` se při dalším běhu přepíše.
 
 ## Zálohy v repu
 
