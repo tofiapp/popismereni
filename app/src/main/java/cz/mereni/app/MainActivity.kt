@@ -1049,8 +1049,8 @@ fun MereniApp(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "V share sheetu vyber OneDrive (ne Files)\n" +
-                            "a ulož do ${MeasurementStore.DNY_HINT_PATH}\n" +
+                        "V share sheetu: OneDrive (uložit) nebo Edge (otevřít v prohlížeči).\n" +
+                            "Ne Files. Ulož do ${MeasurementStore.DNY_HINT_PATH}\n" +
                             "(YYMMDD_N_MD1.xlsx)\n\n" +
                             "✕ — tlačítko zůstane červené.\n" +
                             "ANO — vymazat místní záznamy (zelená).",
