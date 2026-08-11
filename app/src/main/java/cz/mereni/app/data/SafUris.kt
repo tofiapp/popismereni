@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import java.io.FileInputStream
 import java.io.FileNotFoundException
+import java.io.FileOutputStream
 
 /** Pomocníci pro SAF / OneDrive URI. */
 object SafUris {
@@ -28,6 +29,24 @@ object SafUris {
         } catch (_: SecurityException) {
             // Provider nepodporuje persist — OK u jednorázového čtení
         } catch (_: Exception) {
+        }
+    }
+
+    /**
+     * Pokus o persist čtení+zápis (složka Dny). U OneDrive často failne —
+     * volající musí umět spadnout na CreateDocument.
+     * @return true pokud se grant povedl (nebo už existuje)
+     */
+    fun takePersistableReadWrite(resolver: ContentResolver, uri: Uri): Boolean {
+        val flags =
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        return try {
+            resolver.takePersistableUriPermission(uri, flags)
+            true
+        } catch (_: SecurityException) {
+            false
+        } catch (_: Exception) {
+            false
         }
     }
 
@@ -71,6 +90,64 @@ object SafUris {
             }
         }
         throw IllegalStateException(denyMessage(uri), last)
+    }
+
+    /**
+     * Zapíše bajty **hned na volajícím vlákně** (Activity Result / Main).
+     * Stejně jako u čtení — odklad na IO u OneDrive často deny.
+     */
+    fun writeAllBytes(resolver: ContentResolver, uri: Uri, bytes: ByteArray) {
+        if (uri.scheme == ContentResolver.SCHEME_FILE) {
+            throw IllegalStateException(denyMessage(uri))
+        }
+        var last: Exception? = null
+        val writers: List<() -> Boolean> = listOf(
+            {
+                resolver.openOutputStream(uri, "wt")?.use { out ->
+                    out.write(bytes)
+                    out.flush()
+                    true
+                } ?: false
+            },
+            {
+                resolver.openOutputStream(uri)?.use { out ->
+                    out.write(bytes)
+                    out.flush()
+                    true
+                } ?: false
+            },
+            {
+                resolver.openFileDescriptor(uri, "wt")?.use { pfd ->
+                    FileOutputStream(pfd.fileDescriptor).use { out ->
+                        out.write(bytes)
+                        out.flush()
+                    }
+                    true
+                } ?: false
+            },
+        )
+        for (write in writers) {
+            try {
+                if (write()) return
+            } catch (e: SecurityException) {
+                last = e
+            } catch (e: FileNotFoundException) {
+                last = e
+            } catch (e: IllegalArgumentException) {
+                last = e
+            } catch (e: Exception) {
+                last = e
+            }
+        }
+        throw IllegalStateException(
+            if (isOneDrive(uri)) {
+                "OneDrive nepustil zápis. Zkus znovu vybrat složku Dny " +
+                    "(⚙ → Vybrat složku Dny), ideálně přes OneDrive appku, ne Google Files."
+            } else {
+                "Nelze uložit soubor (chybí oprávnění)."
+            },
+            last,
+        )
     }
 
     fun denyMessage(uri: Uri): String =

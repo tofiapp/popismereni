@@ -1,6 +1,8 @@
 package cz.mereni.app.data
 
 import android.content.Context
+import android.net.Uri
+import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -9,9 +11,9 @@ import java.util.Locale
 /**
  * Excel úložiště měření (.xlsx), 4 sloupce.
  *
- * Export na OneDrive přes sdílení: vždy `YYMMDD_N_MD1.xlsx`
- * (N = 1, 2, 3… ten den) do složky
- * `Popis_měření_MD1/Dny/`. Po ANO se lokál vymaže.
+ * Export na OneDrive: `YYMMDD_N_MD1.xlsx` do složky
+ * `Popis_měření_MD1/Dny/` (SAF CreateDocument / zapamatovaný tree URI).
+ * Po ANO se lokál vymaže.
  */
 class MeasurementStore(context: Context) {
 
@@ -98,8 +100,45 @@ class MeasurementStore(context: Context) {
 
     fun isPendingOneDriveConfirm(): Boolean = prefs.getBoolean(KEY_PENDING_CONFIRM, false)
 
+    fun getDnyTreeUri(): Uri? =
+        prefs.getString(KEY_DNY_TREE_URI, null)?.takeIf { it.isNotBlank() }?.let(Uri::parse)
+
+    fun getDnyFolderLabel(): String =
+        prefs.getString(KEY_DNY_FOLDER_LABEL, null)?.takeIf { it.isNotBlank() } ?: ""
+
+    fun getLastSaveUri(): Uri? =
+        prefs.getString(KEY_LAST_SAVE_URI, null)?.takeIf { it.isNotBlank() }?.let(Uri::parse)
+
+    /** Po úspěšném CreateDocument — příště otevře picker blízko stejné složky. */
+    fun rememberLastSaveUri(uri: Uri) {
+        prefs.edit().putString(KEY_LAST_SAVE_URI, uri.toString()).apply()
+    }
+
     /**
-     * Připraví soubor ke sdílení: `YYMMDD_N_MD1.xlsx` —
+     * Zapamatuje tree URI složky Dny (po OpenDocumentTree).
+     * @return false pokud persist grant selhal (typicky OneDrive)
+     */
+    fun setDnyTreeFolder(uri: Uri, displayName: String, persisted: Boolean): Boolean {
+        prefs.edit()
+            .putString(KEY_DNY_TREE_URI, uri.toString())
+            .putString(KEY_DNY_FOLDER_LABEL, displayName.ifBlank { "Dny" })
+            .putBoolean(KEY_DNY_TREE_PERSISTED, persisted)
+            .apply()
+        return persisted
+    }
+
+    fun clearDnyTreeFolder() {
+        prefs.edit()
+            .remove(KEY_DNY_TREE_URI)
+            .remove(KEY_DNY_FOLDER_LABEL)
+            .remove(KEY_DNY_TREE_PERSISTED)
+            .apply()
+    }
+
+    fun hasDnyTreeFolder(): Boolean = getDnyTreeUri() != null
+
+    /**
+     * Připraví soubor k uložení: `YYMMDD_N_MD1.xlsx` —
      * N roste s každým Uložit na OneDrive ten den.
      */
     fun prepareExportFile(): File {
@@ -121,11 +160,38 @@ class MeasurementStore(context: Context) {
         return dest
     }
 
+    /** Zapíše připravený export do cílového SAF URI (CreateDocument výsledek). */
+    fun writeExportToUri(uri: Uri, file: File = lastExportFile ?: error("Chybí export")) {
+        val bytes = file.readBytes()
+        SafUris.writeAllBytes(appContext.contentResolver, uri, bytes)
+        rememberLastSaveUri(uri)
+    }
+
+    /**
+     * Pokus o zápis přímo do zapamatované složky Dny (bez pickeru).
+     * @return true při úspěchu
+     */
+    fun tryWriteExportToDnyFolder(file: File? = null): Boolean {
+        val target = file ?: lastExportFile ?: return false
+        val tree = getDnyTreeUri() ?: return false
+        return try {
+            val dir = DocumentFile.fromTreeUri(appContext, tree) ?: return false
+            if (!dir.canWrite()) return false
+            // Stejný název — přepsat pokud už existuje
+            dir.findFile(target.name)?.delete()
+            val created = dir.createFile(MIME_XLSX, target.name) ?: return false
+            writeExportToUri(created.uri, target)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     fun cancelPendingOneDriveConfirm() {
         prefs.edit().putBoolean(KEY_PENDING_CONFIRM, false).apply()
     }
 
-    /** ANO po sdílení — smaže lokál (nová dávka). */
+    /** ANO po uložení — smaže lokál (nová dávka). */
     fun confirmOneDriveSavedAndClear() {
         resetWorkingFile()
         prefs.edit()
@@ -171,10 +237,16 @@ class MeasurementStore(context: Context) {
         private const val KEY_SYNCED = "synced_onedrive"
         private const val KEY_PENDING_CONFIRM = "pending_onedrive_confirm"
         private const val KEY_DAY_COUNT_PREFIX = "export_count_"
+        private const val KEY_DNY_TREE_URI = "dny_tree_uri"
+        private const val KEY_DNY_FOLDER_LABEL = "dny_folder_label"
+        private const val KEY_DNY_TREE_PERSISTED = "dny_tree_persisted"
+        private const val KEY_LAST_SAVE_URI = "last_save_uri"
         private val DAY_FILE_FMT = SimpleDateFormat("yyMMdd", Locale.US)
         private val DATE_DISPLAY_FMT = SimpleDateFormat("d.M.yyyy", Locale("cs", "CZ"))
 
         const val MIME_XLSX =
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+        const val DNY_HINT_PATH = "Popis_měření_MD1 / Dny"
     }
 }

@@ -18,7 +18,7 @@ Po úspěchu je přesune do **`Dny/sloučeno/`**, do 1. řádku souhrnu napíše
 ## Rychle (Windows)
 
 1. V OneDrive: `Popis_měření_MD1/Dny/`
-2. Nové `YYMMDD_N_MD1.xlsx` z appky dej do `Dny/`
+2. V appce ⚙ → **Vybrat složku Dny…** (jednou), pak **Uložit na OneDrive**
 3. Zkopíruj sem `SloucitMereni.bat` + `sloucit_mereni.ps1` (do `Popis_měření_MD1`)
 4. Dvojklik na bat
 
