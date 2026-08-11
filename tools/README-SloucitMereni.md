@@ -20,7 +20,8 @@ Souhrn: **`Popis_měření_MD1.xlsx`** (stejné jméno jako hlavní složka).
 1. V OneDrive složka `Popis_měření_MD1` (+ volitelně `MD1_popis_dny`).
 2. Denní `YYMMDD_N_MD1.xlsx` z appky dej do hlavní složky nebo do `MD1_popis_dny`.
 3. Zkopíruj sem `SloucitMereni.bat` + `sloucit_mereni.ps1`.
-4. Dvojklik na bat → vznikne `Popis_měření_MD1.xlsx`.
+4. Dvojklik na bat → vznikne `Popis_měření_MD1.xlsx` a **otevře se v Excelu**.
+5. V černém okně stiskni libovolnou klávesu pro zavření.
 
 Nepotřebuješ Python, VBA ani admin práva — PowerShell je součást Windows.
 

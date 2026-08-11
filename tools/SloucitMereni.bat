@@ -23,6 +23,9 @@ if not "%ERR%"=="0" (
   echo.
   echo Chyba %ERR%. Zkus:
   echo   powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT%" -Folder "%TARGET%"
+) else (
+  echo.
+  echo Excel by se mel otevrit sam. Stiskni klavesu pro zavreni tohoto okna.
 )
 
 echo.
