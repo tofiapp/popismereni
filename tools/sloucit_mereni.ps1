@@ -1,5 +1,5 @@
 ﻿#Requires -Version 5.1
-# sloucit_mereni.ps1 — verze 2026-08-11f
+# sloucit_mereni.ps1 — verze 2026-08-11g
 # ASCII-only source (Windows PowerShell 5.1). Czech names via [char] codes.
 # Layout:
 #   Popis_mereni_MD1/
@@ -78,12 +78,44 @@ $STYLE_BUTTON = 5
 $BUTTON_LABEL = "Aktualizovat"
 $UPDATE_BAT_NAME = "SloucitMereni.bat"
 
-$SHEET_RELS = @"
+function Get-FileUri([string]$path) {
+    # Absolutni file:///... — relativni .bat na OneDrive Excel otevira jako https → 404 v prohlizeci
+    $full = [System.IO.Path]::GetFullPath($path)
+    return ([uri]$full).AbsoluteUri
+}
+
+function Get-SheetRelsXml([string]$batPath) {
+    $target = Escape-Xml (Get-FileUri $batPath)
+    return @"
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="SloucitMereni.bat" TargetMode="External"/>
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="$target" TargetMode="External"/>
 </Relationships>
 "@
+}
+
+function Resolve-UpdateBatPath([string]$summaryPath) {
+    $dir = Split-Path -Parent $summaryPath
+    $nextToSummary = Join-Path $dir $UPDATE_BAT_NAME
+    if (Test-Path -LiteralPath $nextToSummary -PathType Leaf) { return $nextToSummary }
+    # bat vedle tohoto ps1 (tools/) — zkus zkopirovat k souhrnu
+    $here = $PSScriptRoot
+    if (-not $here) { $here = Split-Path -Parent $MyInvocation.MyCommand.Path }
+    $fromTools = Join-Path $here $UPDATE_BAT_NAME
+    if (Test-Path -LiteralPath $fromTools -PathType Leaf) {
+        try {
+            Copy-Item -LiteralPath $fromTools -Destination $nextToSummary -Force
+            $ps1Src = Join-Path $here "sloucit_mereni.ps1"
+            $ps1Dst = Join-Path $dir "sloucit_mereni.ps1"
+            if ((Test-Path -LiteralPath $ps1Src) -and -not (Test-Path -LiteralPath $ps1Dst)) {
+                Copy-Item -LiteralPath $ps1Src -Destination $ps1Dst -Force
+            }
+            Write-Host ("Zkopirovano {0} vedle souhrnu (pro tlacitko Aktualizovat)." -f $UPDATE_BAT_NAME)
+            return $nextToSummary
+        } catch { }
+    }
+    return $nextToSummary
+}
 
 $STYLES = @"
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -447,7 +479,7 @@ function Get-SheetXml($rows) {
             "STATION" { [void]$sb.Append((Get-CellXml ("A$r") $row.A $STYLE_STATION)) }
             "UPDATED" {
                 [void]$sb.Append((Get-CellXml ("A$r") $row.A $STYLE_UPDATED))
-                # Modre "tlacitko" — hyperlink na SloucitMereni.bat (bez VBA)
+                # Modre "tlacitko" — file:/// hyperlink na lokalni SloucitMereni.bat (bez VBA; ne https)
                 [void]$sb.Append((Get-CellXml ("B$r") $BUTTON_LABEL $STYLE_BUTTON))
                 if ($buttonRow -eq 0) { $buttonRow = $r }
             }
@@ -532,6 +564,8 @@ function Write-Xlsx([string]$path, $rows) {
     # Kratka pauza po Close, aby Windows uvolnil zamek
     Start-Sleep -Milliseconds 400
     if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
+    $batPath = Resolve-UpdateBatPath $path
+    $sheetRels = Get-SheetRelsXml $batPath
     $zip = [System.IO.Compression.ZipFile]::Open($path, [System.IO.Compression.ZipArchiveMode]::Create)
     try {
         Write-ZipEntry $zip "[Content_Types].xml" $CONTENT_TYPES
@@ -540,7 +574,7 @@ function Write-Xlsx([string]$path, $rows) {
         Write-ZipEntry $zip "xl/_rels/workbook.xml.rels" $RELS_WB
         Write-ZipEntry $zip "xl/styles.xml" $STYLES
         Write-ZipEntry $zip "xl/worksheets/sheet1.xml" (Get-SheetXml $rows)
-        Write-ZipEntry $zip "xl/worksheets/_rels/sheet1.xml.rels" $SHEET_RELS
+        Write-ZipEntry $zip "xl/worksheets/_rels/sheet1.xml.rels" $sheetRels
     }
     finally { $zip.Dispose() }
 }
@@ -584,7 +618,7 @@ function Resolve-Layout([string]$folderPath) {
 
 # ---- main ----
 try {
-    Write-Host "sloucit_mereni.ps1 verze 2026-08-11f"
+    Write-Host "sloucit_mereni.ps1 verze 2026-08-11g"
     if (-not (Test-Path -LiteralPath $Folder)) {
         Write-Host "Slozka neexistuje:"
         Write-Host "  $Folder"
