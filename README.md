@@ -13,11 +13,9 @@ Graph/MSAL už není.
 
 ## Sloučení denních souborů na PC
 
-Bez VBA (makra firemní Excel často blokuje):
+Nic se neinstaluje (Windows PowerShell):
 
-```bat
-tools\SloucitMereni.bat
-```
+1. Zkopíruj `tools\SloucitMereni.bat` a `tools\sloucit_mereni.ps1` do složky s `*_MD1.xlsx`
+2. Dvojklik na bat → vznikne `Souhrn_mereni.xlsx`
 
-nebo `python tools/sloucit_mereni.py "C:\cesta\ke\složce"`.  
-Výsledek: `Souhrn_mereni.xlsx`. Podrobnosti v [`tools/README-SloucitMereni.md`](tools/README-SloucitMereni.md).
+Podrobnosti: [`tools/README-SloucitMereni.md`](tools/README-SloucitMereni.md).
