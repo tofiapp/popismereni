@@ -170,10 +170,17 @@ End Function
 Private Function SourceFolder() As String
     Dim p As String
     p = ThisWorkbook.Path
-    If Len(p) = 0 Then
+
+    ' Opened from browser / SharePoint URL -> Dir() throws error 52
+    If Len(p) = 0 Or IsWebPath(p) Or IsWebPath(ThisWorkbook.FullName) Then
         SourceFolder = ""
         Exit Function
     End If
+
+    p = Replace(p, "/", "\")
+    Do While Right$(p, 1) = "\"
+        p = Left$(p, Len(p) - 1)
+    Loop
     SourceFolder = p
 End Function
 
@@ -184,9 +191,63 @@ Private Function SourcePath() As String
         SourcePath = ""
         Exit Function
     End If
-    If Right$(p, 1) <> "\" Then p = p & "\"
-    SourcePath = p
+    SourcePath = p & "\"
 End Function
+
+Private Function IsWebPath(ByVal p As String) As Boolean
+    Dim t As String
+    t = LCase$(Trim$(p))
+    If Len(t) = 0 Then
+        IsWebPath = False
+        Exit Function
+    End If
+    IsWebPath = (Left$(t, 7) = "http://") Or (Left$(t, 8) = "https://") Or _
+                (InStr(t, "://") > 0) Or (InStr(t, "sharepoint.com") > 0)
+End Function
+
+Private Function FolderExistsLocal(ByVal folderPath As String) As Boolean
+    On Error Resume Next
+    FolderExistsLocal = ((GetAttr(folderPath) And vbDirectory) = vbDirectory)
+    If Err.Number <> 0 Then
+        Err.Clear
+        FolderExistsLocal = False
+    End If
+    On Error GoTo 0
+End Function
+
+' Dir() on bad/URL path = runtime 52 - always wrap
+Private Function SafeDir(ByVal pathOrPattern As String) As String
+    On Error Resume Next
+    SafeDir = Dir(pathOrPattern)
+    If Err.Number <> 0 Then
+        Err.Clear
+        SafeDir = ""
+    End If
+    On Error GoTo 0
+End Function
+
+Private Function SafeDirNext() As String
+    On Error Resume Next
+    SafeDirNext = Dir()
+    If Err.Number <> 0 Then
+        Err.Clear
+        SafeDirNext = ""
+    End If
+    On Error GoTo 0
+End Function
+
+Private Sub ExplainBadPath(ByVal silent As Boolean)
+    If silent Then
+        Application.StatusBar = "Mereni: otevri soubor z lokalni OneDrive slozky (ne z prohlizece)"
+        Exit Sub
+    End If
+    MsgBox "Cesta k souboru neni lokalni disk (casto https:// SharePoint)." & vbCrLf & vbCrLf & _
+           "Oprav:" & vbCrLf & _
+           "1) Ve Windows Exploreru otevri synchronizovanou OneDrive slozku" & vbCrLf & _
+           "2) Dvojklik na Souhrn_mereni.xlsm (ne Open in Browser)" & vbCrLf & _
+           "3) Inhalt aktivieren / povolit makra" & vbCrLf & vbCrLf & _
+           "Aktualni FullName:" & vbCrLf & ThisWorkbook.FullName, vbCritical
+End Sub
 
 ' Called by OnTime - silent refresh only when folder content changed
 Public Sub CheckFolderAndRefresh()
@@ -222,16 +283,18 @@ Private Sub SloucitCore(ByVal silent As Boolean)
     If gBusy Then Exit Sub
     gBusy = True
 
+    On Error GoTo Fail
+
     Dim srcPath As String
     srcPath = SourcePath()
     If Len(srcPath) = 0 Then
-        If Not silent Then MsgBox "Nejdrive uloz Souhrn_mereni.xlsm do slozky s merenim.", vbExclamation
+        Call ExplainBadPath(silent)
         gBusy = False
         Exit Sub
     End If
 
-    If Dir(srcPath, vbDirectory) = "" Then
-        If Not silent Then MsgBox "Slozka nenalezena:" & vbCrLf & srcPath, vbCritical
+    If Not FolderExistsLocal(SourceFolder()) Then
+        If Not silent Then MsgBox "Slozka nenalezena:" & vbCrLf & SourceFolder(), vbCritical
         gBusy = False
         Exit Sub
     End If
