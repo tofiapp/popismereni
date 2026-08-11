@@ -1,5 +1,5 @@
 ﻿#Requires -Version 5.1
-# sloucit_mereni.ps1 — verze 2026-08-11p
+# sloucit_mereni.ps1 — verze 2026-08-11q
 # ASCII-only source (Windows PowerShell 5.1). Czech names via [char] codes.
 # Layout:
 #   Popis_mereni_MD1/
@@ -721,8 +721,8 @@ function Write-ZipEntry([System.IO.Compression.ZipArchive]$zip, [string]$name, [
 }
 
 function Backup-SummaryBeforeWrite([string]$path) {
-    # Zaloha do Zalohy/ (NE vedle souhrnu jako .xlsx.bak — to vypadalo jako "nesloucená kopie")
-    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return }
+    # Zaloha do Zalohy/ — vraci cestu k zaloze (pro obnovu pri chybe zapisu)
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $null }
     $dir = Split-Path -Parent $path
     $bakDir = Join-Path $dir $BACKUP_FOLDER_NAME
     if (-not (Test-Path -LiteralPath $bakDir)) {
@@ -736,9 +736,8 @@ function Backup-SummaryBeforeWrite([string]$path) {
         Write-Host ("Zaloha: {0}" -f $bak)
     } catch {
         Write-Host ("  ! Zaloha se nepodarila: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
-        return
+        return $null
     }
-    # Nech jen poslednich N zaloh
     try {
         $old = @(Get-ChildItem -LiteralPath $bakDir -File -Filter ($leaf + "_*.xlsx") |
             Sort-Object LastWriteTime -Descending |
@@ -747,6 +746,43 @@ function Backup-SummaryBeforeWrite([string]$path) {
             try { Remove-Item -LiteralPath $o.FullName -Force -ErrorAction SilentlyContinue } catch { }
         }
     } catch { }
+    return $bak
+}
+
+function Test-XlsxLooksValid([string]$path) {
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $false }
+    try {
+        if ((Get-Item -LiteralPath $path).Length -lt 64) { return $false }
+        $fs = [System.IO.File]::OpenRead($path)
+        try {
+            $b0 = $fs.ReadByte(); $b1 = $fs.ReadByte()
+        } finally { $fs.Dispose() }
+        if ($b0 -ne 0x50 -or $b1 -ne 0x4B) { return $false }
+        $zip = [System.IO.Compression.ZipFile]::OpenRead($path)
+        try {
+            foreach ($e in $zip.Entries) {
+                $n = $e.FullName.Replace('\', '/').ToLowerInvariant()
+                if ($n -like 'xl/worksheets/sheet*.xml') { return $true }
+            }
+            return $false
+        } finally { $zip.Dispose() }
+    } catch {
+        return $false
+    }
+}
+
+function Restore-SummaryFromBackup([string]$path, [string]$bak) {
+    if ([string]::IsNullOrWhiteSpace($bak)) { return $false }
+    if (-not (Test-Path -LiteralPath $bak -PathType Leaf)) { return $false }
+    try {
+        Close-WorkbookIfOpen $path | Out-Null
+        [System.IO.File]::Copy($bak, $path, $true)
+        Write-Host ("Obnoven souhrn z teto zalohy (zapis selhal, OneDrive nedostane starou verzi z cloudu):`n  {0}" -f $bak) -ForegroundColor Yellow
+        return $true
+    } catch {
+        Write-Host ("  ! Obnova ze zalohy selhala: {0}" -f $_.Exception.Message) -ForegroundColor Red
+        return $false
+    }
 }
 
 function Remove-OrphanMergeJunk([string]$summaryPath) {
@@ -780,62 +816,66 @@ function Write-Xlsx([string]$path, $rows) {
 
     Close-WorkbookIfOpen $path | Out-Null
     Start-Sleep -Milliseconds 300
-    Backup-SummaryBeforeWrite $path
+    $bak = Backup-SummaryBeforeWrite $path
 
     $batPath = Ensure-BatBesideSummary $path
     $sheetRels = Get-SheetRelsXml $batPath
 
-    # Docasny soubor mimo OneDrive root kdyz jde — stejne ve stejne slozce, ale
-    # CIL NEMAZEME (delete+create dela OneDrive conflict kopie).
+    # Docasny soubor → overwrite ciloveho. NIKDY nemazat souhrn pred uspechem
+    # (smazani + chyba = OneDrive vrati starou verzi z cloudu).
     $tmp = Join-Path $dir (".sloucit_tmp_" + [guid]::NewGuid().ToString("N") + ".xlsx")
     if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
 
-    $zip = [System.IO.Compression.ZipFile]::Open($tmp, [System.IO.Compression.ZipArchiveMode]::Create)
     try {
-        Write-ZipEntry $zip "[Content_Types].xml" $CONTENT_TYPES
-        Write-ZipEntry $zip "_rels/.rels" $RELS_ROOT
-        Write-ZipEntry $zip "xl/workbook.xml" $WORKBOOK
-        Write-ZipEntry $zip "xl/_rels/workbook.xml.rels" $RELS_WB
-        Write-ZipEntry $zip "xl/styles.xml" $STYLES
-        Write-ZipEntry $zip "xl/worksheets/sheet1.xml" (Get-SheetXml $rows)
-        Write-ZipEntry $zip "xl/worksheets/_rels/sheet1.xml.rels" $sheetRels
-    }
-    finally { $zip.Dispose() }
-
-    # 1) Preferuj overwrite na miste (zachova OneDrive identitu souboru)
-    $ok = $false
-    for ($i = 0; $i -lt 10; $i++) {
+        $zip = [System.IO.Compression.ZipFile]::Open($tmp, [System.IO.Compression.ZipArchiveMode]::Create)
         try {
-            Close-WorkbookIfOpen $path | Out-Null
-            [System.IO.File]::Copy($tmp, $path, $true)
-            $ok = $true
-            break
-        } catch {
-            Start-Sleep -Milliseconds (350 + ($i * 200))
+            Write-ZipEntry $zip "[Content_Types].xml" $CONTENT_TYPES
+            Write-ZipEntry $zip "_rels/.rels" $RELS_ROOT
+            Write-ZipEntry $zip "xl/workbook.xml" $WORKBOOK
+            Write-ZipEntry $zip "xl/_rels/workbook.xml.rels" $RELS_WB
+            Write-ZipEntry $zip "xl/styles.xml" $STYLES
+            Write-ZipEntry $zip "xl/worksheets/sheet1.xml" (Get-SheetXml $rows)
+            Write-ZipEntry $zip "xl/worksheets/_rels/sheet1.xml.rels" $sheetRels
         }
-    }
+        finally { $zip.Dispose() }
 
-    # 2) Fallback: smaz + rename (stary zpusob)
-    if (-not $ok) {
-        if (-not (Remove-LockedFile $path)) {
-            try { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue } catch { }
-            throw ("Souhrn je zamceny (Excel nebo OneDrive):`n  {0}`nZavri soubor v Excelu a spust znovu (nebo pockej na sync)." -f $path)
+        if (-not (Test-XlsxLooksValid $tmp)) {
+            throw "Docasny soubor po zapisu neni platne xlsx."
         }
-        for ($i = 0; $i -lt 8; $i++) {
+
+        $ok = $false
+        $lastErr = ""
+        for ($i = 0; $i -lt 12; $i++) {
             try {
-                Move-Item -LiteralPath $tmp -Destination $path -Force -ErrorAction Stop
-                $ok = $true
-                break
-            } catch {
                 Close-WorkbookIfOpen $path | Out-Null
-                Start-Sleep -Milliseconds (400 + ($i * 200))
+                [System.IO.File]::Copy($tmp, $path, $true)
+                Start-Sleep -Milliseconds 200
+                if (Test-XlsxLooksValid $path) {
+                    $ok = $true
+                    break
+                }
+                $lastErr = "po Copy soubor neni platne xlsx (OneDrive sync?)"
+                if ($bak) { [void](Restore-SummaryFromBackup $path $bak) }
+            } catch {
+                $lastErr = $_.Exception.Message
+                Start-Sleep -Milliseconds (350 + ($i * 200))
             }
         }
-    }
 
-    try { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue } catch { }
-    if (-not $ok) {
-        throw ("Nepodarilo se nahradit souhrn (zamek):`n  {0}" -f $path)
+        if (-not $ok) {
+            if ($bak) { [void](Restore-SummaryFromBackup $path $bak) }
+            throw ("Nepodarilo se ulozit souhrn — puvodni soubor zustava (nebo je obnoven ze zalohy).`n  {0}`n  {1}`nZavri Excel, pockej na sync OneDrive, spust znovu." -f $path, $lastErr)
+        }
+    }
+    catch {
+        # Pojistka: pokud cil zmizel / je rozbity, vrat zalohu z tohoto behu
+        if ($bak -and -not (Test-XlsxLooksValid $path)) {
+            [void](Restore-SummaryFromBackup $path $bak)
+        }
+        throw
+    }
+    finally {
+        try { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue } catch { }
     }
 }
 
@@ -879,7 +919,7 @@ function Resolve-Layout([string]$folderPath) {
 # ---- main ----
 $script:MergeLock = $null
 try {
-    Write-Host "sloucit_mereni.ps1 verze 2026-08-11p"
+    Write-Host "sloucit_mereni.ps1 verze 2026-08-11q"
     if (-not (Test-Path -LiteralPath $Folder)) {
         Write-Host "Slozka neexistuje:"
         Write-Host "  $Folder"
