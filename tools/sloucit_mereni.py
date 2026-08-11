@@ -21,12 +21,18 @@ import os
 import re
 import shutil
 import sys
+import time
 import zipfile
+from datetime import datetime
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Iterable, List, Optional, Tuple
 from xml.sax.saxutils import escape as xml_escape
+
+
+MERGE_LOCK_NAME = ".sloucit_mereni.lock"
+MERGE_LOCK_STALE_MINUTES = 45
 
 
 class Role(Enum):
@@ -241,8 +247,6 @@ def is_update_text(text: str) -> bool:
 
 
 def make_update_row() -> Row:
-    from datetime import datetime
-
     stamp = datetime.now().strftime("%d.%m.%Y %H:%M")
     return Row(a=f"{UPDATE_PREFIX} {stamp}", role=Role.UPDATED)
 
@@ -498,6 +502,18 @@ def resolve_layout(folder: Path) -> Tuple[Path, Path]:
     return folder, summary
 
 
+def time_to_minutes(text: str) -> int:
+    """HH:MM / H:MM / HH.MM → minuty od půlnoci, jinak -1."""
+    t = (text or "").strip()
+    m = re.match(r"^(\d{1,2})[:.](\d{2})$", t)
+    if not m:
+        return -1
+    hh, mm = int(m.group(1)), int(m.group(2))
+    if hh > 23 or mm > 59:
+        return -1
+    return hh * 60 + mm
+
+
 def merge_folder(
     folder: Path,
     verbose: bool = True,
@@ -506,12 +522,23 @@ def merge_folder(
     out: List[Row] = strip_update_rows(list(base_rows or []))
     current_date = ""
     last_station = ""
+    last_time_min = -1
+    data_under_station = False
     for row in out:
         if row.role == Role.DATE and row.a:
             current_date = row.a
             last_station = ""
+            last_time_min = -1
+            data_under_station = False
         elif row.role == Role.STATION and row.a:
             last_station = row.a
+            last_time_min = -1
+            data_under_station = False
+        elif row.role == Role.DATA:
+            data_under_station = True
+            tm = time_to_minutes(row.c)
+            if tm >= 0:
+                last_time_min = tm
     ok = 0
     skipped = 0
     processed: List[Path] = []
@@ -542,6 +569,8 @@ def merge_folder(
                     out.append(Row(a=row.a, role=Role.DATE))
                     current_date = row.a
                     last_station = ""
+                    last_time_min = -1
+                    data_under_station = False
                     wrote = True
                 continue
 
@@ -552,10 +581,19 @@ def merge_folder(
                     out.append(Row(a=file_date_guess, role=Role.DATE))
                     current_date = file_date_guess
                     last_station = ""
-                if row.a != last_station:
+                    last_time_min = -1
+                    data_under_station = False
+                # Stanice může být v jednom dni víckrát (Nymburk → Poděbrady → Nymburk).
+                same_name = row.a == last_station
+                consecutive_dup = same_name and not data_under_station
+                if not consecutive_dup:
+                    if same_name and data_under_station and verbose:
+                        print(f"    nová návštěva stanice: {row.a}")
                     out.append(Row(role=Role.BLANK))
                     out.append(Row(a=row.a, role=Role.STATION))
                     last_station = row.a
+                    last_time_min = -1
+                    data_under_station = False
                     wrote = True
                 continue
 
@@ -566,7 +604,30 @@ def merge_folder(
                 out.append(Row(a=file_date_guess, role=Role.DATE))
                 current_date = file_date_guess
                 last_station = ""
+                last_time_min = -1
+                data_under_station = False
+
+            tm = time_to_minutes(row.c)
+            if (
+                last_station
+                and data_under_station
+                and tm >= 0
+                and last_time_min >= 0
+                and tm < (last_time_min - 15)
+            ):
+                if verbose:
+                    print(
+                        f"    čas skáče zpět ({row.c}) u {last_station} — nová návštěva"
+                    )
+                out.append(Row(role=Role.BLANK))
+                out.append(Row(a=last_station, role=Role.STATION))
+                last_time_min = -1
+                data_under_station = False
+
             out.append(Row(a=row.a, b=row.b, c=row.c, d=row.d, role=Role.DATA))
+            data_under_station = True
+            if tm >= 0:
+                last_time_min = tm
             wrote = True
 
         if wrote:
@@ -594,6 +655,75 @@ def archive_merged_files(files: List[Path], summary_path: Path) -> Path:
                 n += 1
         src.rename(dest)
     return archive
+
+
+class MergeLock:
+    """Souborový zámek — dva uživatelé nesmí spustit Aktualizovat najednou."""
+
+    def __init__(self, summary_path: Path) -> None:
+        self.path = summary_path.parent / MERGE_LOCK_NAME
+        self._fh = None
+
+    def acquire(self) -> None:
+        who = os.environ.get("USERNAME") or os.environ.get("USER") or "unknown"
+        host = os.environ.get("COMPUTERNAME") or os.environ.get("HOSTNAME") or ""
+        if host:
+            who = f"{who}@{host}"
+        body = (
+            f"user={who}\n"
+            f"started={datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"pid={os.getpid()}\n"
+        ).encode("utf-8")
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        for _ in range(3):
+            if self.path.is_file():
+                age_min = (time.time() - self.path.stat().st_mtime) / 60.0
+                info_user = "?"
+                try:
+                    raw = self.path.read_text(encoding="utf-8", errors="replace")
+                    for line in raw.splitlines():
+                        if line.startswith("user="):
+                            info_user = line[5:].strip()
+                except OSError:
+                    pass
+                if age_min >= MERGE_LOCK_STALE_MINUTES:
+                    print(
+                        f"Starý zámek ({MERGE_LOCK_STALE_MINUTES} min+) od {info_user} — přebírám."
+                    )
+                    try:
+                        self.path.unlink()
+                    except OSError:
+                        pass
+                else:
+                    print("Aktualizace už běží u jiného uživatele — zkus to za chvíli.")
+                    print(f"  Zámek: {self.path}")
+                    print(f"  Uživatel: {info_user}")
+                    raise RuntimeError("merge lock held by another user")
+            try:
+                fd = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_RDWR)
+                self._fh = os.fdopen(fd, "r+b")
+                self._fh.write(body)
+                self._fh.flush()
+                print(f"Zámek aktualizace: {self.path} ({who})")
+                return
+            except FileExistsError:
+                time.sleep(0.4)
+            except OSError:
+                time.sleep(0.4)
+        raise RuntimeError("cannot acquire merge lock")
+
+    def release(self) -> None:
+        if self._fh is not None:
+            try:
+                self._fh.close()
+            except OSError:
+                pass
+            self._fh = None
+        if self.path.is_file():
+            try:
+                self.path.unlink()
+            except OSError as exc:
+                print(f"  ! Zámek se nepodařilo smazat: {exc}")
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -629,7 +759,18 @@ def main(argv: Optional[List[str]] = None) -> int:
         out_path = default_out.parent / out_path.name
     out_path = out_path.resolve()
 
-    files = list_md1_files(source)
+    lock = MergeLock(out_path)
+    try:
+        lock.acquire()
+        return _main_locked(source, out_path, list_md1_files(source))
+    except RuntimeError as exc:
+        print(f"CHYBA: {exc}", file=sys.stderr)
+        return 4
+    finally:
+        lock.release()
+
+
+def _main_locked(source: Path, out_path: Path, files: List[Path]) -> int:
     if not files:
         print(f"Není nic nového ke sloučení (žádné *_MD1.xlsx v {source}).")
         print("To není chyba — nové denní soubory z appky dej do Dny/.")

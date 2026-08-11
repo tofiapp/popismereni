@@ -1,5 +1,5 @@
 ﻿#Requires -Version 5.1
-# sloucit_mereni.ps1 — verze 2026-08-11n
+# sloucit_mereni.ps1 — verze 2026-08-11o
 # ASCII-only source (Windows PowerShell 5.1). Czech names via [char] codes.
 # Layout:
 #   Popis_mereni_MD1/
@@ -28,6 +28,8 @@ $cCaron = [char]0x010D
 $ARCHIVE_FOLDER_NAME = "slou" + $cCaron + "eno"
 $MAIN_FOLDER_ASCII = "Popis_mereni_MD1"
 $SUMMARY_ASCII = "Popis_mereni_MD1.xlsx"
+$MERGE_LOCK_NAME = ".sloucit_mereni.lock"
+$MERGE_LOCK_STALE_MINUTES = 45
 
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -263,6 +265,117 @@ function Add-UpdateStampToList {
 
 function Test-LooksLikeDate([string]$s) {
     return $s -match '^\d{1,2}[./]\d{1,2}[./]\d{4}$'
+}
+
+function ConvertTo-TimeMinutes([string]$s) {
+    # "HH:MM" / "H:MM" / "HH.MM" → minuty od pulnoci, jinak -1
+    if ([string]::IsNullOrWhiteSpace($s)) { return -1 }
+    $t = $s.Trim()
+    $m = [regex]::Match($t, '^(\d{1,2})[:.](\d{2})$')
+    if (-not $m.Success) { return -1 }
+    $hh = [int]$m.Groups[1].Value
+    $mm = [int]$m.Groups[2].Value
+    if ($hh -gt 23 -or $mm -gt 59) { return -1 }
+    return ($hh * 60 + $mm)
+}
+
+function Get-MergeLockPath([string]$summaryPath) {
+    $dir = Split-Path -Parent $summaryPath
+    if ([string]::IsNullOrWhiteSpace($dir)) { $dir = "." }
+    return (Join-Path $dir $MERGE_LOCK_NAME)
+}
+
+function Read-MergeLockInfo([string]$lockPath) {
+    if (-not (Test-Path -LiteralPath $lockPath -PathType Leaf)) { return $null }
+    try {
+        $raw = Get-Content -LiteralPath $lockPath -Raw -ErrorAction Stop
+    } catch {
+        return @{ User = "?"; Started = "?"; Raw = "" }
+    }
+    $user = "?"
+    $started = "?"
+    foreach ($line in ($raw -split "`r?`n")) {
+        if ($line -match '^user=(.*)$') { $user = $Matches[1].Trim() }
+        if ($line -match '^started=(.*)$') { $started = $Matches[1].Trim() }
+    }
+    return @{ User = $user; Started = $started; Raw = $raw }
+}
+
+function Test-MergeLockStale([string]$lockPath) {
+    try {
+        $age = (Get-Date) - (Get-Item -LiteralPath $lockPath).LastWriteTime
+        return ($age.TotalMinutes -ge $MERGE_LOCK_STALE_MINUTES)
+    } catch {
+        return $true
+    }
+}
+
+function Acquire-MergeLock([string]$summaryPath) {
+    $lockPath = Get-MergeLockPath $summaryPath
+    $dir = Split-Path -Parent $lockPath
+    if ($dir -and -not (Test-Path -LiteralPath $dir)) {
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    }
+
+    $who = $env:USERNAME
+    if ([string]::IsNullOrWhiteSpace($who)) { $who = "unknown" }
+    $hostName = $env:COMPUTERNAME
+    if (-not [string]::IsNullOrWhiteSpace($hostName)) { $who = "$who@$hostName" }
+    $started = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $body = @"
+user=$who
+started=$started
+pid=$PID
+"@
+
+    for ($attempt = 0; $attempt -lt 3; $attempt++) {
+        if (Test-Path -LiteralPath $lockPath -PathType Leaf) {
+            $info = Read-MergeLockInfo $lockPath
+            if (Test-MergeLockStale $lockPath) {
+                Write-Host ("Stary zamek ({0} min+) od {1} — prebiram." -f $MERGE_LOCK_STALE_MINUTES, $info.User) -ForegroundColor Yellow
+                try { Remove-Item -LiteralPath $lockPath -Force -ErrorAction Stop } catch { }
+            }
+            else {
+                Write-Host ""
+                Write-Host "Aktualizace uz bezi u jineho uzivatele — zkus to za chvili." -ForegroundColor Red
+                Write-Host ("  Zamek: {0}" -f $lockPath)
+                Write-Host ("  Uzivatel: {0}" -f $info.User)
+                Write-Host ("  Od: {0}" -f $info.Started)
+                Write-Host ("  (po {0} min se zamek povazuje za stary)" -f $MERGE_LOCK_STALE_MINUTES)
+                Write-Host ""
+                throw "Abort: merge lock held by another user."
+            }
+        }
+        try {
+            # CreateNew = exclusivne; druhy proces na stejnem PC = chyba
+            $fs = [System.IO.File]::Open(
+                $lockPath,
+                [System.IO.FileMode]::CreateNew,
+                [System.IO.FileAccess]::ReadWrite,
+                [System.IO.FileShare]::Read
+            )
+            $bytes = [System.Text.Encoding]::UTF8.GetBytes($body)
+            $fs.Write($bytes, 0, $bytes.Length)
+            $fs.Flush()
+            Write-Host ("Zamek aktualizace: {0} ({1})" -f $lockPath, $who)
+            return @{ Path = $lockPath; Stream = $fs }
+        } catch {
+            Start-Sleep -Milliseconds 400
+        }
+    }
+    throw "Abort: cannot acquire merge lock."
+}
+
+function Release-MergeLock($lock) {
+    if ($null -eq $lock) { return }
+    try {
+        if ($null -ne $lock.Stream) { $lock.Stream.Dispose() }
+    } catch { }
+    if ($lock.Path -and (Test-Path -LiteralPath $lock.Path)) {
+        try { Remove-Item -LiteralPath $lock.Path -Force -ErrorAction Stop } catch {
+            Write-Host ("  ! Zamek se nepodarilo smazat: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+        }
+    }
 }
 
 function Get-DateFromFileName([string]$name) {
@@ -704,8 +817,9 @@ function Resolve-Layout([string]$folderPath) {
 }
 
 # ---- main ----
+$script:MergeLock = $null
 try {
-    Write-Host "sloucit_mereni.ps1 verze 2026-08-11n"
+    Write-Host "sloucit_mereni.ps1 verze 2026-08-11o"
     if (-not (Test-Path -LiteralPath $Folder)) {
         Write-Host "Slozka neexistuje:"
         Write-Host "  $Folder"
@@ -777,6 +891,8 @@ try {
     Write-Host ("Souhrn:                 {0}" -f $outPath)
     Write-Host ("Nalezeno YYMMDD_*_MD1.xlsx: {0}" -f $files.Count)
 
+    $script:MergeLock = Acquire-MergeLock $outPath
+
     if ($files.Count -eq 0) {
         Write-Host ""
         Write-Host "Neni nic noveho ke slouceni (zadne YYMMDD_*_MD1.xlsx v Dny/)."
@@ -818,6 +934,8 @@ try {
     $processed = New-Object System.Collections.Generic.List[object]
     $currentDate = ""
     $lastStation = ""
+    $lastTimeMin = -1
+    $dataUnderStation = $false
     $ok = 0
     $skipped = 0
 
@@ -841,8 +959,22 @@ try {
                     $skipHead = $false
                 }
                 [void]$mergeRows.Add($row)
-                if ($row.Role -eq "DATE" -and $row.A) { $currentDate = $row.A; $lastStation = "" }
-                elseif ($row.Role -eq "STATION" -and $row.A) { $lastStation = $row.A }
+                if ($row.Role -eq "DATE" -and $row.A) {
+                    $currentDate = $row.A
+                    $lastStation = ""
+                    $lastTimeMin = -1
+                    $dataUnderStation = $false
+                }
+                elseif ($row.Role -eq "STATION" -and $row.A) {
+                    $lastStation = $row.A
+                    $lastTimeMin = -1
+                    $dataUnderStation = $false
+                }
+                elseif ($row.Role -eq "DATA") {
+                    $dataUnderStation = $true
+                    $tm = ConvertTo-TimeMinutes ([string]$row.C)
+                    if ($tm -ge 0) { $lastTimeMin = $tm }
+                }
             }
             if ($mergeRows.Count -eq 0 -and $summarySize -gt 2500) {
                 throw ("Souhrn ma {0} B, ale nacetlo se 0 datovych radku. Soubor je pravdepodobne stale zamceny nebo poskozeny." -f $summarySize)
@@ -882,6 +1014,8 @@ try {
                     [void]$mergeRows.Add((New-Row "DATE" $row.A))
                     $currentDate = $row.A
                     $lastStation = ""
+                    $lastTimeMin = -1
+                    $dataUnderStation = $false
                     $wrote = $true
                 }
                 continue
@@ -893,11 +1027,23 @@ try {
                     [void]$mergeRows.Add((New-Row "DATE" $guess))
                     $currentDate = $guess
                     $lastStation = ""
+                    $lastTimeMin = -1
+                    $dataUnderStation = $false
                 }
-                if ($row.A -ne $lastStation) {
+                # Stanice muze byt v jednom dni vicokrat (Nymburk → Podebrady → Nymburk).
+                # Explicitni radek STATION z appky = nova navsteva — nepreskakovat
+                # jen proto, ze lastStation ma stejne jmeno (typicky po predchozim souboru).
+                $sameName = ($row.A -eq $lastStation)
+                $consecutiveDup = $sameName -and (-not $dataUnderStation)
+                if (-not $consecutiveDup) {
+                    if ($sameName -and $dataUnderStation) {
+                        Write-Host ("    nova navsteva stanice: {0}" -f $row.A)
+                    }
                     [void]$mergeRows.Add((New-Row "BLANK"))
                     [void]$mergeRows.Add((New-Row "STATION" $row.A))
                     $lastStation = $row.A
+                    $lastTimeMin = -1
+                    $dataUnderStation = $false
                     $wrote = $true
                 }
                 continue
@@ -908,8 +1054,24 @@ try {
                 [void]$mergeRows.Add((New-Row "DATE" $guess))
                 $currentDate = $guess
                 $lastStation = ""
+                $lastTimeMin = -1
+                $dataUnderStation = $false
             }
+
+            # Cas (sloupec C): skok zpet v case u stejne stanice = nova navsteva
+            # (kdyz v dennim souboru chybi druhy radek STATION).
+            $tm = ConvertTo-TimeMinutes ([string]$row.C)
+            if ($lastStation -and $dataUnderStation -and $tm -ge 0 -and $lastTimeMin -ge 0 -and $tm -lt ($lastTimeMin - 15)) {
+                Write-Host ("    cas skoci zpet ({0} → {1}) u {2} — nova navsteva" -f $row.C, $lastTimeMin, $lastStation)
+                [void]$mergeRows.Add((New-Row "BLANK"))
+                [void]$mergeRows.Add((New-Row "STATION" $lastStation))
+                $lastTimeMin = -1
+                $dataUnderStation = $false
+            }
+
             [void]$mergeRows.Add((New-Row "DATA" $row.A $row.B $row.C $row.D))
+            $dataUnderStation = $true
+            if ($tm -ge 0) { $lastTimeMin = $tm }
             $wrote = $true
         }
 
@@ -983,4 +1145,8 @@ catch {
     Write-Host $_.Exception.Message
     Write-Host $_.ScriptStackTrace
     exit 99
+}
+finally {
+    Release-MergeLock $script:MergeLock
+    $script:MergeLock = $null
 }
