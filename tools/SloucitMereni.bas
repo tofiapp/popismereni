@@ -460,23 +460,41 @@ NextFile:
     End If
 
     gBusy = False
+    Exit Sub
+
+Fail:
+    Application.DisplayAlerts = True
+    Application.ScreenUpdating = True
+    Application.StatusBar = False
+    gBusy = False
+    If Not silent Then
+        MsgBox "Chyba " & Err.Number & ": " & Err.Description & vbCrLf & vbCrLf & _
+               "FullName: " & ThisWorkbook.FullName & vbCrLf & _
+               "Pokud je to https://... otevri soubor z Exploreru (lokalni OneDrive).", vbCritical
+    End If
 End Sub
 
 Private Function FolderFingerprint(ByVal srcPath As String) As String
     Dim name As String
     Dim sig As String
     Dim full As String
+    Dim fd As Variant
+    Dim fl As Variant
     sig = ""
-    name = Dir(srcPath & FILE_PATTERN)
+    name = SafeDir(srcPath & FILE_PATTERN)
     Do While name <> ""
         If StrComp(name, "Souhrn_mereni.xlsx", vbTextCompare) <> 0 And _
            StrComp(name, "Souhrn_mereni.xlsm", vbTextCompare) <> 0 Then
             full = srcPath & name
+            fd = ""
+            fl = ""
             On Error Resume Next
-            sig = sig & name & "|" & CStr(FileDateTime(full)) & "|" & CStr(FileLen(full)) & ";"
+            fd = FileDateTime(full)
+            fl = FileLen(full)
             On Error GoTo 0
+            sig = sig & name & "|" & CStr(fd) & "|" & CStr(fl) & ";"
         End If
-        name = Dir()
+        name = SafeDirNext()
     Loop
     FolderFingerprint = sig
 End Function
@@ -527,7 +545,7 @@ Private Function ListSortedFiles(ByVal srcPath As String, ByVal pattern As Strin
 
     Set col = New Collection
     n = 0
-    name = Dir(srcPath & pattern)
+    name = SafeDir(srcPath & pattern)
     Do While name <> ""
         If StrComp(name, "Souhrn_mereni.xlsx", vbTextCompare) <> 0 And _
            StrComp(name, "Souhrn_mereni.xlsm", vbTextCompare) <> 0 Then
@@ -535,7 +553,7 @@ Private Function ListSortedFiles(ByVal srcPath As String, ByVal pattern As Strin
             ReDim Preserve arr(1 To n)
             arr(n) = name
         End If
-        name = Dir()
+        name = SafeDirNext()
     Loop
 
     If n = 0 Then
