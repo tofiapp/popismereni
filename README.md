@@ -1,13 +1,14 @@
-# Měření v0.46.0
+# Měření v0.47.0
 
 ## Aktualizace
 ```bash
-adb install -r artifacts/mereni-v0.46.0-debug.apk
+adb install -r artifacts/mereni-v0.47.0-debug.apk
 ```
 
-## OneDrive / Dny
-1. ⚙ → **Vybrat složku Dny…** (OneDrive → `Popis_měření_MD1` → `Dny`)
-2. **Uložit na OneDrive** uloží `YYMMDD_N_MD1.xlsx` přímo sem (nebo otevře Uložit jako… s předvyplněným názvem)
-3. Po **ANO** se místní záznamy vymažou
+## OneDrive (pracovní profil)
+Tlačítko **Uložit na OneDrive** sdílí přímo do appky OneDrive (ne přes Google Files).
+Na work profilu Files často OneDrive schová / hlásí zákaz osobního úložiště — sdílení to obejde.
 
-Sloučení na PC: `tools/SloucitMereni.bat`
+Cíl: `Popis_měření_MD1 / Dny` · soubor `YYMMDD_N_MD1.xlsx`
+
+⚙ → volitelně „Uložit jako… (Files/SAF)“ jen když Files OneDrive dovolí.

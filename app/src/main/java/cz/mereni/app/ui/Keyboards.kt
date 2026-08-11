@@ -1075,6 +1075,7 @@ fun PasportSettingsButton(
     onPickDnyFolder: () -> Unit = {},
     onClearDnyFolder: () -> Unit = {},
     onShareFallback: () -> Unit = {},
+    onSaveViaSaf: () -> Unit = {},
     exportMessage: String? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -1134,47 +1135,52 @@ fun PasportSettingsButton(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    "Uloží YYMMDD_N_MD1.xlsx do\n" +
-                        "Popis_měření_MD1 / Dny\n\n" +
-                        "1) Jednou vyber složku Dny níže.\n" +
-                        "2) Příště „Uložit na OneDrive“ uloží rovnou sem\n" +
-                        "   (nebo otevře Uložit jako… s předvyplněným názvem).\n" +
+                    "Tlačítko nahoře sdílí přímo do appky OneDrive\n" +
+                        "(obejde Google Files / pracovní profil).\n\n" +
+                        "Cíl: Popis_měření_MD1 / Dny\n" +
+                        "Soubor: YYMMDD_N_MD1.xlsx\n\n" +
+                        "Když Files hlásí „administrátor nepovoluje…“\n" +
+                        "nebo OneDrive v seznamu není — použij sdílení,\n" +
+                        "ne Uložit jako…\n\n" +
                         "Po ANO se místní záznamy vymažou.",
                     color = MereniColors.TextMuted,
                     fontSize = 12.sp,
                 )
                 Spacer(modifier = Modifier.height(6.dp))
+                TextButton(onClick = {
+                    onShareFallback()
+                    open = false
+                }) {
+                    Text("Sdílet do OneDrive…", color = MereniColors.Accent, fontWeight = FontWeight.SemiBold)
+                }
+                TextButton(onClick = {
+                    onSaveViaSaf()
+                    open = false
+                }) {
+                    Text("Uložit jako… (Files/SAF)", color = MereniColors.TextMuted, fontSize = 12.sp)
+                }
+                Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     if (dnyFolderLabel.isNotBlank()) {
                         "Složka Dny: $dnyFolderLabel"
                     } else {
-                        "Složka Dny: zatím nevybrána"
+                        "Složka Dny (volitelné, na work profilu často nejde)"
                     },
-                    color = if (dnyFolderLabel.isNotBlank()) MereniColors.Kolej else MereniColors.Danger,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    color = if (dnyFolderLabel.isNotBlank()) MereniColors.Kolej else MereniColors.TextMuted,
+                    fontSize = 12.sp,
                 )
-                Spacer(modifier = Modifier.height(6.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     TextButton(onClick = {
                         onPickDnyFolder()
                         open = false
                     }) {
-                        Text("Vybrat složku Dny…", color = MereniColors.Accent, fontWeight = FontWeight.SemiBold)
+                        Text("Vybrat složku Dny…", color = MereniColors.TextMuted, fontSize = 12.sp)
                     }
                     if (dnyFolderLabel.isNotBlank()) {
-                        TextButton(onClick = {
-                            onClearDnyFolder()
-                        }) {
-                            Text("Zrušit", color = MereniColors.TextMuted)
+                        TextButton(onClick = { onClearDnyFolder() }) {
+                            Text("Zrušit", color = MereniColors.TextMuted, fontSize = 12.sp)
                         }
                     }
-                }
-                TextButton(onClick = {
-                    onShareFallback()
-                    open = false
-                }) {
-                    Text("Sdílet (záloha)…", color = MereniColors.TextMuted, fontSize = 12.sp)
                 }
 
                 Spacer(modifier = Modifier.height(14.dp))

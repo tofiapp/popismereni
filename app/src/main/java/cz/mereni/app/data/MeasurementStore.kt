@@ -12,8 +12,8 @@ import java.util.Locale
  * Excel úložiště měření (.xlsx), 4 sloupce.
  *
  * Export na OneDrive: `YYMMDD_N_MD1.xlsx` do složky
- * `Popis_měření_MD1/Dny/` (SAF CreateDocument / zapamatovaný tree URI).
- * Po ANO se lokál vymaže.
+ * `Popis_měření_MD1/Dny/` (primárně sdílení do appky OneDrive;
+ * volitelně SAF CreateDocument / tree URI).
  */
 class MeasurementStore(context: Context) {
 
