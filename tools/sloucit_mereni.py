@@ -33,6 +33,7 @@ class Role(Enum):
     BLANK = "BLANK"
     STATION = "STATION"
     DATA = "DATA"
+    UPDATED = "UPDATED"  # radek 1: Naposledy aktualizovano
 
 
 @dataclass
@@ -50,6 +51,8 @@ class Row:
 STYLE_DATE = 1
 STYLE_STATION = 2
 STYLE_DATA_CENTER = 3
+STYLE_UPDATED = 4
+UPDATE_PREFIX = "Naposledy aktualizováno:"
 
 CONTENT_TYPES = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -81,22 +84,24 @@ WORKBOOK = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 STYLES = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <fonts count="3">
+  <fonts count="4">
     <font><sz val="14"/><color theme="1"/><name val="Calibri"/><family val="2"/></font>
     <font><sz val="16"/><b/><color theme="1"/><name val="Calibri"/><family val="2"/></font>
     <font><sz val="16"/><b/><color theme="1"/><name val="Calibri"/><family val="2"/></font>
+    <font><sz val="12"/><i/><color theme="1"/><name val="Calibri"/><family val="2"/></font>
   </fonts>
-  <fills count="4">
+  <fills count="5">
     <fill><patternFill patternType="none"/></fill>
     <fill><patternFill patternType="gray125"/></fill>
     <fill><patternFill patternType="solid"><fgColor rgb="FFBBDEFB"/></patternFill></fill>
     <fill><patternFill patternType="solid"><fgColor rgb="FFFFE0B2"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFE8F5E9"/></patternFill></fill>
   </fills>
   <borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
   <cellStyleXfs count="1">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>
   </cellStyleXfs>
-  <cellXfs count="4">
+  <cellXfs count="5">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
     <xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1">
       <alignment horizontal="left" vertical="center"/>
@@ -106,6 +111,9 @@ STYLES = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     </xf>
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">
       <alignment horizontal="center" vertical="center"/>
+    </xf>
+    <xf numFmtId="0" fontId="3" fillId="4" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1">
+      <alignment horizontal="left" vertical="center"/>
     </xf>
   </cellXfs>
   <cellStyles count="1">
@@ -196,7 +204,40 @@ def role_from_style(style: Optional[int]) -> Role:
         return Role.DATE
     if style == STYLE_STATION:
         return Role.STATION
+    if style == STYLE_UPDATED:
+        return Role.UPDATED
     return Role.DATA
+
+
+def is_update_text(text: str) -> bool:
+    return text.strip().lower().startswith(UPDATE_PREFIX.lower())
+
+
+def make_update_row() -> Row:
+    from datetime import datetime
+
+    stamp = datetime.now().strftime("%d.%m.%Y %H:%M")
+    return Row(a=f"{UPDATE_PREFIX} {stamp}", role=Role.UPDATED)
+
+
+def strip_update_rows(rows: List[Row]) -> List[Row]:
+    """Odstraní horní řádek(y) 'Naposledy aktualizováno' (+ volitelný blank pod nimi)."""
+    out = list(rows)
+    while out and (
+        out[0].role == Role.UPDATED
+        or is_update_text(out[0].a)
+    ):
+        out.pop(0)
+        if out and out[0].role == Role.BLANK:
+            out.pop(0)
+    return out
+
+
+def with_update_stamp(rows: List[Row]) -> List[Row]:
+    body = strip_update_rows(rows)
+    stamped = [make_update_row(), Row(role=Role.BLANK)]
+    stamped.extend(body)
+    return stamped
 
 
 def parse_sheet(xml: str, shared: Optional[List[str]] = None) -> List[Row]:
@@ -223,6 +264,8 @@ def parse_sheet(xml: str, shared: Optional[List[str]] = None) -> List[Row]:
         d = cells.get("D", "")
         if not (a or b or c or d):
             role = Role.BLANK
+        elif is_update_text(a) or style_a == STYLE_UPDATED:
+            role = Role.UPDATED
         elif b or c or d:
             role = Role.DATA
         elif style_a == STYLE_DATE:
@@ -279,6 +322,8 @@ def style_index(role: Role) -> int:
         return STYLE_DATE
     if role == Role.STATION:
         return STYLE_STATION
+    if role == Role.UPDATED:
+        return STYLE_UPDATED
     return STYLE_DATA_CENTER
 
 
@@ -300,7 +345,7 @@ def sheet_xml(rows: Iterable[Row]) -> str:
         parts.append(f'<row r="{r}" ht="{ht}" customHeight="1">')
         if row.role == Role.BLANK:
             pass
-        elif row.role in (Role.DATE, Role.STATION):
+        elif row.role in (Role.DATE, Role.STATION, Role.UPDATED):
             parts.append(cell_xml(f"A{r}", row.a, style_index(row.role)))
         else:
             parts.append(cell_xml(f"A{r}", row.a, STYLE_DATA_CENTER))
@@ -393,7 +438,7 @@ def merge_folder(
     verbose: bool = True,
     base_rows: Optional[List[Row]] = None,
 ) -> Tuple[List[Row], int, int, List[Path]]:
-    out: List[Row] = list(base_rows or [])
+    out: List[Row] = strip_update_rows(list(base_rows or []))
     current_date = ""
     last_station = ""
     for row in out:
@@ -537,7 +582,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     print(f"Souhrn:        {out_path}")
     base_rows: List[Row] = []
     if out_path.is_file() and out_path.stat().st_size > 64:
-        base_rows = read_xlsx(out_path)
+        base_rows = strip_update_rows(read_xlsx(out_path))
         if base_rows:
             print(f"Načten existující souhrn: {len(base_rows)} řádků")
     rows, ok, skipped, processed = merge_folder(source, base_rows=base_rows)
@@ -550,7 +595,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
         return 1
 
+    rows = with_update_stamp(rows)
     write_xlsx(out_path, rows)
+    print(f"Aktualizace: {rows[0].a}")
 
     print(f"Soubory OK: {ok}")
     print(f"Přeskočeno: {skipped}")

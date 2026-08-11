@@ -34,6 +34,8 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 $STYLE_DATE = 1
 $STYLE_STATION = 2
 $STYLE_DATA = 3
+$STYLE_UPDATED = 4
+$UPDATE_PREFIX = "Naposledy aktualizovano:"
 
 $CONTENT_TYPES = @"
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -74,22 +76,24 @@ $WORKBOOK = @"
 $STYLES = @"
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <fonts count="3">
+  <fonts count="4">
     <font><sz val="14"/><color theme="1"/><name val="Calibri"/><family val="2"/></font>
     <font><sz val="16"/><b/><color theme="1"/><name val="Calibri"/><family val="2"/></font>
     <font><sz val="16"/><b/><color theme="1"/><name val="Calibri"/><family val="2"/></font>
+    <font><sz val="12"/><i/><color theme="1"/><name val="Calibri"/><family val="2"/></font>
   </fonts>
-  <fills count="4">
+  <fills count="5">
     <fill><patternFill patternType="none"/></fill>
     <fill><patternFill patternType="gray125"/></fill>
     <fill><patternFill patternType="solid"><fgColor rgb="FFBBDEFB"/></patternFill></fill>
     <fill><patternFill patternType="solid"><fgColor rgb="FFFFE0B2"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFE8F5E9"/></patternFill></fill>
   </fills>
   <borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
   <cellStyleXfs count="1">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>
   </cellStyleXfs>
-  <cellXfs count="4">
+  <cellXfs count="5">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
     <xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1">
       <alignment horizontal="left" vertical="center"/>
@@ -99,6 +103,9 @@ $STYLES = @"
     </xf>
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">
       <alignment horizontal="center" vertical="center"/>
+    </xf>
+    <xf numFmtId="0" fontId="3" fillId="4" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1">
+      <alignment horizontal="left" vertical="center"/>
     </xf>
   </cellXfs>
   <cellStyles count="1">
@@ -116,6 +123,42 @@ function Escape-Xml([string]$s) {
     if ([string]::IsNullOrEmpty($s)) { return "" }
     $t = $s.Replace("`r", " ").Replace("`n", " ")
     return [System.Security.SecurityElement]::Escape($t)
+}
+
+
+function Test-IsUpdateText([string]$s) {
+    if ([string]::IsNullOrEmpty($s)) { return $false }
+    $t = $s.Trim().ToLowerInvariant()
+    return ($t.StartsWith("naposledy aktualizov"))
+}
+
+function New-UpdateRow {
+    $stamp = Get-Date -Format "dd.MM.yyyy HH:mm"
+    # "Naposledy aktualizováno:" — á = U+00E1
+    $prefix = "Naposledy aktualizov" + [char]0x00E1 + "no:"
+    return (New-Row "UPDATED" ("{0} {1}" -f $prefix, $stamp))
+}
+
+function Strip-UpdateRows($rows) {
+    $list = New-Object System.Collections.Generic.List[object]
+    foreach ($r in @($rows)) { [void]$list.Add($r) }
+    while ($list.Count -gt 0) {
+        $first = $list[0]
+        $isUpd = ($first.Role -eq "UPDATED") -or (Test-IsUpdateText $first.A)
+        if (-not $isUpd) { break }
+        $list.RemoveAt(0)
+        if ($list.Count -gt 0 -and $list[0].Role -eq "BLANK") { $list.RemoveAt(0) }
+    }
+    return ,$list.ToArray()
+}
+
+function Add-UpdateStamp($rows) {
+    $body = @(Strip-UpdateRows $rows)
+    $list = New-Object System.Collections.Generic.List[object]
+    [void]$list.Add((New-UpdateRow))
+    [void]$list.Add((New-Row "BLANK"))
+    foreach ($r in $body) { [void]$list.Add($r) }
+    return ,$list.ToArray()
 }
 
 function New-Row([string]$Role, [string]$A = "", [string]$B = "", [string]$C = "", [string]$D = "") {
@@ -287,8 +330,10 @@ function Read-XlsxRows([string]$path) {
         if (-not ($a -or $b -or $c -or $d)) {
             $role = "BLANK"
         }
+        elseif ((Test-IsUpdateText $a) -or ($null -ne $styleA -and $styleA -eq $STYLE_UPDATED)) {
+            $role = "UPDATED"
+        }
         elseif ($b -or $c -or $d) {
-            # Jakykoli B/C/D = mereni (nezavisle na stylu Excelu)
             $role = "DATA"
         }
         elseif ($null -ne $styleA -and $styleA -eq $STYLE_DATE) { $role = "DATE" }
@@ -342,6 +387,7 @@ function Get-SheetXml($rows) {
             "BLANK" { }
             "DATE" { [void]$sb.Append((Get-CellXml ("A$r") $row.A $STYLE_DATE)) }
             "STATION" { [void]$sb.Append((Get-CellXml ("A$r") $row.A $STYLE_STATION)) }
+            "UPDATED" { [void]$sb.Append((Get-CellXml ("A$r") $row.A $STYLE_UPDATED)) }
             default {
                 [void]$sb.Append((Get-CellXml ("A$r") $row.A $STYLE_DATA))
                 [void]$sb.Append((Get-CellXml ("B$r") $row.B $STYLE_DATA))
@@ -516,8 +562,9 @@ try {
     # Existujici souhrn = zaklad (nove denni soubory se pripoji)
     if ((Test-Path -LiteralPath $outPath -PathType Leaf) -and ((Get-Item -LiteralPath $outPath).Length -gt 64)) {
         try {
-            $existing = @(Read-XlsxRows $outPath)
+            $existing = @(Strip-UpdateRows (Read-XlsxRows $outPath))
             foreach ($row in $existing) {
+                if ($row.Role -eq "UPDATED") { continue }
                 [void]$out.Add($row)
                 if ($row.Role -eq "DATE" -and $row.A) { $currentDate = $row.A; $lastStation = "" }
                 elseif ($row.Role -eq "STATION" -and $row.A) { $lastStation = $row.A }
@@ -602,7 +649,9 @@ try {
         exit 1
     }
 
-    Write-Xlsx $outPath $out.ToArray()
+    $stamped = @(Add-UpdateStamp $out.ToArray())
+    Write-Xlsx $outPath $stamped
+    Write-Host ("Aktualizace: {0}" -f $stamped[0].A)
 
     Write-Host ("Soubory OK: {0}" -f $ok)
     Write-Host ("Preskoceno: {0}" -f $skipped)

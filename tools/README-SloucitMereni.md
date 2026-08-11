@@ -12,7 +12,8 @@ Popis_měření_MD1/
 ```
 
 Skript bere nové soubory z **`Dny/`**.  
-Po úspěchu je přesune do **`Dny/sloučeno/`**, otevře souhrn v Excelu a zavře okno.
+Po úspěchu je přesune do **`Dny/sloučeno/`**, do 1. řádku souhrnu napíše
+**Naposledy aktualizováno: …**, otevře Excel a zavře okno.
 
 ## Rychle (Windows)
 
