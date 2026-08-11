@@ -52,7 +52,10 @@ STYLE_DATE = 1
 STYLE_STATION = 2
 STYLE_DATA_CENTER = 3
 STYLE_UPDATED = 4
+STYLE_BUTTON = 5
 UPDATE_PREFIX = "Naposledy aktualizováno:"
+BUTTON_LABEL = "Aktualizovat"
+UPDATE_BAT_NAME = "SloucitMereni.bat"
 
 CONTENT_TYPES = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -74,6 +77,11 @@ RELS_WB = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
 </Relationships>"""
 
+SHEET_RELS = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="{UPDATE_BAT_NAME}" TargetMode="External"/>
+</Relationships>"""
+
 WORKBOOK = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
@@ -84,24 +92,26 @@ WORKBOOK = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 STYLES = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <fonts count="4">
+  <fonts count="5">
     <font><sz val="14"/><color theme="1"/><name val="Calibri"/><family val="2"/></font>
     <font><sz val="16"/><b/><color theme="1"/><name val="Calibri"/><family val="2"/></font>
     <font><sz val="16"/><b/><color theme="1"/><name val="Calibri"/><family val="2"/></font>
     <font><sz val="12"/><i/><color theme="1"/><name val="Calibri"/><family val="2"/></font>
+    <font><sz val="12"/><b/><color rgb="FFFFFFFF"/><name val="Calibri"/><family val="2"/></font>
   </fonts>
-  <fills count="5">
+  <fills count="6">
     <fill><patternFill patternType="none"/></fill>
     <fill><patternFill patternType="gray125"/></fill>
     <fill><patternFill patternType="solid"><fgColor rgb="FFBBDEFB"/></patternFill></fill>
     <fill><patternFill patternType="solid"><fgColor rgb="FFFFE0B2"/></patternFill></fill>
     <fill><patternFill patternType="solid"><fgColor rgb="FFE8F5E9"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FF1565C0"/></patternFill></fill>
   </fills>
   <borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
   <cellStyleXfs count="1">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>
   </cellStyleXfs>
-  <cellXfs count="5">
+  <cellXfs count="6">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
     <xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1">
       <alignment horizontal="left" vertical="center"/>
@@ -114,6 +124,9 @@ STYLES = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     </xf>
     <xf numFmtId="0" fontId="3" fillId="4" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1">
       <alignment horizontal="left" vertical="center"/>
+    </xf>
+    <xf numFmtId="0" fontId="4" fillId="5" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1">
+      <alignment horizontal="center" vertical="center"/>
     </xf>
   </cellXfs>
   <cellStyles count="1">
@@ -330,27 +343,34 @@ def style_index(role: Role) -> int:
 def sheet_xml(rows: Iterable[Row]) -> str:
     parts = [
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
-        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">',
-        # Zmrazený 1. řádek (razítko aktualizace) zůstane viditelný při scrollování
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
+        ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">',
+        # Zmrazený 1. řádek (razítko + tlačítko) zůstane viditelný při scrollování
         '<sheetViews><sheetView workbookViewId="0">'
         '<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>'
         '<selection pane="bottomLeft" activeCell="A2" sqref="A2"/>'
         "</sheetView></sheetViews>",
         "<cols>",
-        '<col min="1" max="1" width="32" customWidth="1"/>',
-        '<col min="2" max="2" width="18" customWidth="1"/>',
+        '<col min="1" max="1" width="36" customWidth="1"/>',
+        '<col min="2" max="2" width="16" customWidth="1"/>',
         '<col min="3" max="3" width="14" customWidth="1"/>',
         '<col min="4" max="4" width="36" customWidth="1"/>',
         "</cols>",
         "<sheetData>",
     ]
+    button_row = 0
     for idx, row in enumerate(rows):
         r = idx + 1
         ht = "12" if row.role == Role.BLANK else "24"
         parts.append(f'<row r="{r}" ht="{ht}" customHeight="1">')
         if row.role == Role.BLANK:
             pass
-        elif row.role in (Role.DATE, Role.STATION, Role.UPDATED):
+        elif row.role == Role.UPDATED:
+            parts.append(cell_xml(f"A{r}", row.a, STYLE_UPDATED))
+            parts.append(cell_xml(f"B{r}", BUTTON_LABEL, STYLE_BUTTON))
+            if button_row == 0:
+                button_row = r
+        elif row.role in (Role.DATE, Role.STATION):
             parts.append(cell_xml(f"A{r}", row.a, style_index(row.role)))
         else:
             parts.append(cell_xml(f"A{r}", row.a, STYLE_DATA_CENTER))
@@ -358,7 +378,13 @@ def sheet_xml(rows: Iterable[Row]) -> str:
             parts.append(cell_xml(f"C{r}", row.c, STYLE_DATA_CENTER))
             parts.append(cell_xml(f"D{r}", row.d, STYLE_DATA_CENTER))
         parts.append("</row>")
-    parts.append("</sheetData></worksheet>")
+    parts.append("</sheetData>")
+    if button_row:
+        safe = xml_escape(BUTTON_LABEL)
+        parts.append(
+            f'<hyperlinks><hyperlink ref="B{button_row}" r:id="rId1" display="{safe}"/></hyperlinks>'
+        )
+    parts.append("</worksheet>")
     return "".join(parts)
 
 
@@ -371,6 +397,7 @@ def write_xlsx(path: Path, rows: List[Row]) -> None:
         zf.writestr("xl/_rels/workbook.xml.rels", RELS_WB)
         zf.writestr("xl/styles.xml", STYLES)
         zf.writestr("xl/worksheets/sheet1.xml", sheet_xml(rows))
+        zf.writestr("xl/worksheets/_rels/sheet1.xml.rels", SHEET_RELS)
 
 
 def date_from_filename(name: str) -> str:
