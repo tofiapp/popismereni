@@ -10,7 +10,7 @@ REM Pouziti:
 REM   1) Preetáhni slozku Popis_mereni_MD1 na tento .bat
 REM   2) Nebo bat + ps1 dej do Popis_mereni_MD1 a dej dvojklik
 REM NIC se neinstaluje — Windows PowerShell.
-REM VERZE: 2026-08-11c
+REM VERZE: 2026-08-11d
 
 setlocal
 chcp 65001 >nul
