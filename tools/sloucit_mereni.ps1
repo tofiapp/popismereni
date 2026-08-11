@@ -1,26 +1,33 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Slouci vsechny *_MD1.xlsx ve slozce do Souhrn_mereni.xlsx.
+  Slouci denni *_MD1.xlsx do Popis_mereni_MD1.xlsx.
 
 .DESCRIPTION
-  Bez instalace, bez VBA, bez Pythonu — staci Windows PowerShell.
-  Stejny vzhled jako Android appka (list Mereni, 4 sloupce).
+  Bez instalace — Windows PowerShell.
+  Struktura:
+    Popis_měření_MD1/
+      Popis_měření_MD1.xlsx
+      MD1_popis_dny/YYMMDD_N_MD1.xlsx
 
 .EXAMPLE
   .\sloucit_mereni.ps1
-  .\sloucit_mereni.ps1 -Folder "C:\Users\...\OneDrive\MD1_rozdeleno"
+  .\sloucit_mereni.ps1 -Folder "C:\Users\...\OneDrive\Popis_měření_MD1"
 #>
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
     [string]$Folder = ".",
 
-    [string]$Output = "Souhrn_mereni.xlsx"
+    [string]$Output = ""
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+$MAIN_FOLDER_NAME = "Popis_měření_MD1"
+$DAYS_SUBFOLDER_NAME = "MD1_popis_dny"
+$SUMMARY_XLSX_NAME = "Popis_měření_MD1.xlsx"
 
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -295,10 +302,35 @@ function Write-Xlsx([string]$path, $rows) {
 function Get-Md1Files([string]$dir) {
     Get-ChildItem -LiteralPath $dir -File -Filter "*_MD1.xlsx" |
         Where-Object {
-            $_.Name -notmatch '(?i)^Souhrn_mereni\.xlsx$' -and
+            $n = $_.Name.ToLowerInvariant()
+            $n -ne "popis_měření_md1.xlsx" -and
+            $n -ne "popis_mereni_md1.xlsx" -and
+            $n -ne "souhrn_mereni.xlsx" -and
             $_.Name -notlike '~$*'
         } |
         Sort-Object { $_.Name.ToLowerInvariant() }
+}
+
+function Resolve-Layout([string]$folderPath) {
+    $daysSub = Join-Path $folderPath $DAYS_SUBFOLDER_NAME
+    if (Test-Path -LiteralPath $daysSub -PathType Container) {
+        return @{
+            Source = $daysSub
+            Output = (Join-Path $folderPath $SUMMARY_XLSX_NAME)
+        }
+    }
+    $leaf = Split-Path -Leaf $folderPath
+    if ($leaf -eq $DAYS_SUBFOLDER_NAME) {
+        $parent = Split-Path -Parent $folderPath
+        return @{
+            Source = $folderPath
+            Output = (Join-Path $parent $SUMMARY_XLSX_NAME)
+        }
+    }
+    return @{
+        Source = $folderPath
+        Output = (Join-Path $folderPath $SUMMARY_XLSX_NAME)
+    }
 }
 
 # ---- main ----
@@ -308,14 +340,36 @@ if (-not (Test-Path -LiteralPath $folderPath -PathType Container)) {
     exit 2
 }
 
-$files = @(Get-Md1Files $folderPath)
-Write-Host ("Slozka: {0}" -f $folderPath)
+$layout = Resolve-Layout $folderPath
+$sourcePath = $layout.Source
+if ([string]::IsNullOrWhiteSpace($Output)) {
+    $outPath = $layout.Output
+}
+else {
+    if ([System.IO.Path]::IsPathRooted($Output)) {
+        $outPath = $Output
+    }
+    else {
+        $outPath = Join-Path (Split-Path -Parent $layout.Output) $Output
+    }
+}
+
+$files = @(Get-Md1Files $sourcePath)
+Write-Host ("Hlavni / zadana slozka: {0}" -f $folderPath)
+Write-Host ("Denni soubory:          {0}" -f $sourcePath)
+Write-Host ("Souhrn:                 {0}" -f $outPath)
 Write-Host ("Nalezeno souboru *_MD1.xlsx: {0}" -f $files.Count)
 if ($files.Count -eq 0) {
     Write-Host "Ve slozce nejsou zadne *_MD1.xlsx:"
-    Write-Host "  $folderPath"
-    Write-Host "Soubory .xlsx ve slozce:"
-    Get-ChildItem -LiteralPath $folderPath -File -Filter "*.xlsx" | ForEach-Object { Write-Host ("  - {0}" -f $_.Name) }
+    Write-Host "  $sourcePath"
+    Write-Host "Ocekavana struktura:"
+    Write-Host ("  {0}/" -f $MAIN_FOLDER_NAME)
+    Write-Host ("    {0}" -f $SUMMARY_XLSX_NAME)
+    Write-Host ("    {0}/" -f $DAYS_SUBFOLDER_NAME)
+    Write-Host "      YYMMDD_N_MD1.xlsx"
+    Write-Host "Soubory .xlsx ve zdrojove slozce:"
+    Get-ChildItem -LiteralPath $sourcePath -File -Filter "*.xlsx" -ErrorAction SilentlyContinue |
+        ForEach-Object { Write-Host ("  - {0}" -f $_.Name) }
     exit 1
 }
 
@@ -379,11 +433,10 @@ $dataOut = @($out | Where-Object { $_.Role -eq "DATA" }).Count
 if ($dataOut -eq 0) {
     Write-Host ""
     Write-Host "CHYBA: do souhrnu se nedostala zadna data."
-    Write-Host "Zkontroluj, ze ve slozce jsou originalni soubory z appky (*_MD1.xlsx)."
+    Write-Host ("Zkontroluj originalni soubory z appky v {0}/." -f $DAYS_SUBFOLDER_NAME)
     exit 1
 }
 
-$outPath = Join-Path $folderPath $Output
 Write-Xlsx $outPath $out.ToArray()
 
 Write-Host ("Soubory OK: {0}" -f $ok)
