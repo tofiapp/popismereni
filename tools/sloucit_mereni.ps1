@@ -1,5 +1,5 @@
 ﻿#Requires -Version 5.1
-# sloucit_mereni.ps1 — verze 2026-08-11d
+# sloucit_mereni.ps1 — verze 2026-08-11e
 # ASCII-only source (Windows PowerShell 5.1). Czech names via [char] codes.
 # Layout:
 #   Popis_mereni_MD1/
@@ -407,6 +407,11 @@ function Get-SheetXml($rows) {
     $sb = New-Object System.Text.StringBuilder
     [void]$sb.Append('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>')
     [void]$sb.Append('<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">')
+    # Zmrazeny 1. radek (razitko aktualizace) — zustane viditelny pri scrollovani
+    [void]$sb.Append('<sheetViews><sheetView workbookViewId="0">')
+    [void]$sb.Append('<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>')
+    [void]$sb.Append('<selection pane="bottomLeft" activeCell="A2" sqref="A2"/>')
+    [void]$sb.Append('</sheetView></sheetViews>')
     [void]$sb.Append('<cols>')
     [void]$sb.Append('<col min="1" max="1" width="32" customWidth="1"/>')
     [void]$sb.Append('<col min="2" max="2" width="18" customWidth="1"/>')
@@ -435,6 +440,25 @@ function Get-SheetXml($rows) {
     }
     [void]$sb.Append('</sheetData></worksheet>')
     return $sb.ToString()
+}
+
+function Open-SummaryExcel([string]$path) {
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        Write-Host ("Souhrn neexistuje: {0}" -f $path)
+        return
+    }
+    Write-Host ""
+    Write-Host "Oteviram Excel..."
+    try {
+        Invoke-Item -LiteralPath $path
+    } catch {
+        try {
+            Start-Process -FilePath $path
+        } catch {
+            Write-Host ("Nepodarilo se otevrit soubor: {0}" -f $_.Exception.Message)
+            Write-Host "Otevri ho rucne v Excelu."
+        }
+    }
 }
 
 function Write-ZipEntry([System.IO.Compression.ZipArchive]$zip, [string]$name, [string]$body) {
@@ -501,7 +525,7 @@ function Resolve-Layout([string]$folderPath) {
 
 # ---- main ----
 try {
-    Write-Host "sloucit_mereni.ps1 verze 2026-08-11d"
+    Write-Host "sloucit_mereni.ps1 verze 2026-08-11e"
     if (-not (Test-Path -LiteralPath $Folder)) {
         Write-Host "Slozka neexistuje:"
         Write-Host "  $Folder"
@@ -575,18 +599,34 @@ try {
 
     if ($files.Count -eq 0) {
         Write-Host ""
-        Write-Host "CHYBA: nenasel jsem denni soubory (napr. 260811_1_MD1.xlsx)."
-        Write-Host "Dej je do podslozky Dny (nebo primo do hlavni slozky)."
-        Write-Host ""
-        Write-Host "Co je ve slozce (xlsx):"
-        Get-ChildItem -LiteralPath $folderPath -File -Filter "*.xlsx" -ErrorAction SilentlyContinue |
-            ForEach-Object { Write-Host ("  - {0}" -f $_.Name) }
-        if (Test-Path -LiteralPath $daysSub) {
-            Write-Host ("Co je v {0}:" -f $DAYS_SUBFOLDER_NAME)
-            Get-ChildItem -LiteralPath $daysSub -File -ErrorAction SilentlyContinue |
-                ForEach-Object { Write-Host ("  - {0}" -f $_.Name) }
+        Write-Host "Neni nic noveho ke slouceni (zadne YYMMDD_*_MD1.xlsx v Dny/)."
+        Write-Host "To neni chyba — nove denni soubory z appky dej do Dny/."
+        if ((Test-Path -LiteralPath $outPath -PathType Leaf) -and ((Get-Item -LiteralPath $outPath).Length -gt 64)) {
+            try {
+                $existingOnly = @(Read-XlsxRows $outPath)
+                $keep = New-Object System.Collections.Generic.List[object]
+                $skipHead = $true
+                foreach ($row in $existingOnly) {
+                    if (-not (Test-IsRowObject $row)) { continue }
+                    if ($skipHead) {
+                        if (($row.Role -eq "UPDATED") -or (Test-IsUpdateText ([string]$row.A))) { continue }
+                        if ($row.Role -eq "BLANK") { continue }
+                        $skipHead = $false
+                    }
+                    [void]$keep.Add($row)
+                }
+                $stampedOnly = Add-UpdateStamp -Rows $keep.ToArray()
+                Write-Xlsx $outPath $stampedOnly
+                Write-Host ("Aktualizace: {0}" -f $stampedOnly[0].A)
+            } catch {
+                Write-Host ("Souhrn neprepisuji ({0}), jen otevru." -f $_.Exception.Message)
+            }
+            Open-SummaryExcel $outPath
         }
-        exit 1
+        else {
+            Write-Host ("Souhrn zatim neexistuje: {0}" -f $outPath)
+        }
+        exit 0
     }
 
     $mergeRows = New-Object System.Collections.Generic.List[object]
@@ -736,18 +776,7 @@ try {
     }
     Write-Host ("Presunuto do {0}/{1}: {2} souboru" -f $DAYS_SUBFOLDER_NAME, $ARCHIVE_FOLDER_NAME, $moved)
 
-    Write-Host ""
-    Write-Host "Oteviram Excel..."
-    try {
-        Invoke-Item -LiteralPath $outPath
-    } catch {
-        try {
-            Start-Process -FilePath $outPath
-        } catch {
-            Write-Host ("Nepodarilo se otevrit soubor: {0}" -f $_.Exception.Message)
-            Write-Host "Otevri ho rucne v Excelu."
-        }
-    }
+    Open-SummaryExcel $outPath
     exit 0
 }
 catch {
