@@ -3,31 +3,24 @@
 ## Struktura na OneDrive
 
 ```
-Popis_měření_MD1/
-  Popis_měření_MD1.xlsx      ← souhrn (+ tlačítko Aktualizovat v B1)
+Popis_měření_MD1/          ← nebo Popis_mereni_MD1 (bez diakritiky)
+  Popis_měření_MD1.xlsx
+  Aktualizovat.cmd         ← ASCII launcher (tlačítko v Excelu)
   SloucitMereni.bat
   sloucit_mereni.ps1
   Dny/
-    260811_1_MD1.xlsx       ← nové denní soubory z appky
+    YYMMDD_N_MD1.xlsx
     sloučeno/
-      260810_1_MD1.xlsx     ← už sloučené (přesune skript)
 ```
 
-Skript bere nové soubory z **`Dny/`**.  
-Po úspěchu je přesune do **`Dny/sloučeno/`**, do 1. řádku souhrnu napíše
-**Naposledy aktualizováno: …**, v **B1** je modré **Aktualizovat**
-(lokální odkaz `file:///…/SloucitMereni.bat`, bez VBA).
+Správný název složky je **`Popis_měření_MD1`** (nebo ASCII `Popis_mereni_MD1`).  
+Když v cestě vidíš `SprĂˇva` / `mÄ›Ĺ™enĂ­`, je to jen **špatné zobrazení kódování** — skutečná složka má háčky.
 
 ## Rychle (Windows)
 
-1. Zkopíruj `SloucitMereni.bat` + `sloucit_mereni.ps1` do `Popis_měření_MD1` (vedle souhrnu)
-2. Spusť bat jednou (zapíše tlačítko se správnou lokální cestou)
-3. Souhrn otevírej v **desktop Excelu** (ne v prohlížeči / Excel Online)
-4. Klikni **Aktualizovat** (B1) — nebo znovu dvojklik na bat
+1. Bat + ps1 dej do `Popis_měření_MD1` (vedle souhrnu)
+2. Spusť `SloucitMereni.bat` (verze **2026-08-11h**) — vytvoří `Aktualizovat.cmd` a přepíše odkaz v Excelu
+3. Souhrn otevírej v **desktop Excelu**
+4. Klikni **Aktualizovat** (B1) — odkaz na `Aktualizovat.cmd` (ASCII), ne na web
 
-Když se otevře prohlížeč s 404, máš starý odkaz (relativní → OneDrive web).  
-Znovu spusť `SloucitMereni.bat` (verze **2026-08-11g**), ať se odkaz přepíše na `file:///`.
-
-Excel může zobrazit bezpečnostní upozornění u `.bat` — potvrď.
-
-Nepotřebuješ Python, VBA ani admin práva — PowerShell je součást Windows.
+Nepotřebuješ Python, VBA ani admin práva.
