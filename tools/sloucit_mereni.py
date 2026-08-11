@@ -113,12 +113,17 @@ STYLES = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 </styleSheet>"""
 
 ROW_RE = re.compile(r"<row\b[^>]*>(.*?)</row>", re.DOTALL | re.IGNORECASE)
+# Celá buňka včetně těla — kvůli sharedStrings (<v>0</v>) i inlineStr (<t>…)
 CELL_RE = re.compile(
-    r'<c\b([^>]*)>(?:.*?<t[^>]*>(.*?)</t>.*?)?</c>|<c\b([^>]*)/>',
+    r"<c\b([^>]*?)(?:/>|>(.*?)</c>)",
     re.DOTALL | re.IGNORECASE,
 )
 REF_RE = re.compile(r'\br="([A-Z]+)\d+"', re.IGNORECASE)
 STYLE_RE = re.compile(r'\bs="(\d+)"', re.IGNORECASE)
+TYPE_RE = re.compile(r'\bt="([^"]+)"', re.IGNORECASE)
+V_RE = re.compile(r"<v[^>]*>(.*?)</v>", re.DOTALL | re.IGNORECASE)
+T_RE = re.compile(r"<t[^>]*>(.*?)</t>", re.DOTALL | re.IGNORECASE)
+SI_RE = re.compile(r"<si\b[^>]*>(.*?)</si>", re.DOTALL | re.IGNORECASE)
 DATE_NAME_RE = re.compile(r"^(\d{6})(?:_\d+)?_MD1\.xlsx$", re.IGNORECASE)
 LOOKS_LIKE_DATE_RE = re.compile(r"^\d{1,2}[./]\d{1,2}[./]\d{4}$")
 
@@ -133,6 +138,40 @@ def xml_unescape(s: str) -> str:
     )
 
 
+def parse_shared_strings(xml: str) -> List[str]:
+    out: List[str] = []
+    for m in SI_RE.finditer(xml):
+        parts = T_RE.findall(m.group(1))
+        out.append(xml_unescape("".join(parts)).strip())
+    return out
+
+
+def cell_text(attrs: str, body: str, shared: List[str]) -> str:
+    body = body or ""
+    ctype = (TYPE_RE.search(attrs).group(1).lower() if TYPE_RE.search(attrs) else "")
+    if ctype == "s":
+        vm = V_RE.search(body)
+        if not vm:
+            return ""
+        try:
+            idx = int(vm.group(1).strip())
+        except ValueError:
+            return ""
+        return shared[idx] if 0 <= idx < len(shared) else ""
+    if ctype in ("inlineStr", "str"):
+        parts = T_RE.findall(body)
+        if parts:
+            return xml_unescape("".join(parts)).strip()
+    # inlineStr bez t=, nebo číslo/text ve <v>
+    parts = T_RE.findall(body)
+    if parts:
+        return xml_unescape("".join(parts)).strip()
+    vm = V_RE.search(body)
+    if vm:
+        return xml_unescape(vm.group(1)).strip()
+    return ""
+
+
 def role_from_style(style: Optional[int]) -> Role:
     if style == STYLE_DATE:
         return Role.DATE
@@ -141,19 +180,20 @@ def role_from_style(style: Optional[int]) -> Role:
     return Role.DATA
 
 
-def parse_sheet(xml: str) -> List[Row]:
+def parse_sheet(xml: str, shared: Optional[List[str]] = None) -> List[Row]:
+    shared = shared or []
     rows: List[Row] = []
     for row_match in ROW_RE.finditer(xml):
         cells = {}
         style_a: Optional[int] = None
         for cell_match in CELL_RE.finditer(row_match.group(1)):
-            attrs = cell_match.group(1) or cell_match.group(3) or ""
-            text = xml_unescape(cell_match.group(2) or "")
+            attrs = cell_match.group(1) or ""
+            body = cell_match.group(2) or ""
             ref_m = REF_RE.search(attrs)
             if not ref_m:
                 continue
             col = ref_m.group(1).upper()
-            cells[col] = text.strip()
+            cells[col] = cell_text(attrs, body, shared)
             if col == "A":
                 sm = STYLE_RE.search(attrs)
                 if sm:
@@ -166,8 +206,13 @@ def parse_sheet(xml: str) -> List[Row]:
             role = Role.BLANK
         elif style_a is not None:
             role = role_from_style(style_a)
+            # Po uložení v Excelu se indexy stylů změní — fallback podle obsahu
             if role == Role.DATA and a and not (b or c or d):
-                role = Role.DATE if not rows else Role.STATION
+                role = (
+                    Role.DATE
+                    if (not rows or LOOKS_LIKE_DATE_RE.match(a))
+                    else Role.STATION
+                )
         elif a and not (b or c or d):
             role = Role.DATE if (not rows or LOOKS_LIKE_DATE_RE.match(a)) else Role.STATION
         else:
@@ -181,15 +226,19 @@ def read_xlsx(path: Path) -> List[Row]:
         return []
     try:
         with zipfile.ZipFile(path) as zf:
-            # Prefer sheet named via workbook; fall back to sheet1.xml
+            shared: List[str] = []
+            if "xl/sharedStrings.xml" in zf.namelist():
+                shared = parse_shared_strings(
+                    zf.read("xl/sharedStrings.xml").decode("utf-8", errors="replace")
+                )
             name = "xl/worksheets/sheet1.xml"
             if name not in zf.namelist():
                 sheets = [n for n in zf.namelist() if n.startswith("xl/worksheets/sheet")]
                 if not sheets:
                     return []
                 name = sorted(sheets)[0]
-            xml = zf.read(name).decode("utf-8")
-            return parse_sheet(xml)
+            xml = zf.read(name).decode("utf-8", errors="replace")
+            return parse_sheet(xml, shared)
     except (zipfile.BadZipFile, KeyError, OSError):
         return []
 
@@ -280,15 +329,23 @@ def list_md1_files(folder: Path) -> List[Path]:
     return sorted(files, key=lambda p: p.name.lower())
 
 
-def merge_folder(folder: Path) -> Tuple[List[Row], int, int]:
+def merge_folder(folder: Path, verbose: bool = True) -> Tuple[List[Row], int, int]:
     out: List[Row] = []
     current_date = ""
     last_station = ""
     ok = 0
     skipped = 0
 
-    for path in list_md1_files(folder):
+    files = list_md1_files(folder)
+    if verbose:
+        print(f"Složka: {folder}")
+        print(f"Nalezeno souborů *_MD1.xlsx: {len(files)}")
+
+    for path in files:
         rows = read_xlsx(path)
+        data_n = sum(1 for r in rows if r.role == Role.DATA and not r.is_empty())
+        if verbose:
+            print(f"  - {path.name}: {len(rows)} řádků XML, z toho {data_n} datových")
         wrote = False
         file_date_guess = date_from_filename(path.name)
 
@@ -367,11 +424,22 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 1
 
     rows, ok, skipped = merge_folder(folder)
+    data_out = sum(1 for r in rows if r.role == Role.DATA)
+    if data_out == 0:
+        print(
+            "CHYBA: do souhrnu se nedostala žádná data.\n"
+            "Zkontroluj, že ve složce jsou originální soubory z appky (*_MD1.xlsx),\n"
+            "ne jen prázdný Souhrn_mereni.xlsx.",
+            file=sys.stderr,
+        )
+        return 1
+
     out_path = folder / args.output
     write_xlsx(out_path, rows)
 
     print(f"Soubory OK: {ok}")
     print(f"Přeskočeno: {skipped}")
+    print(f"Datových řádků: {data_out}")
     print(f"Uloženo: {out_path}")
     return 0
 

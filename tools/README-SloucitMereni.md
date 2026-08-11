@@ -12,6 +12,12 @@ Appka ukládá dávky `YYMMDD_N_MD1.xlsx`. Na PC je sloučíš do jednoho
    nebo **přetáhni složku** s `*_MD1.xlsx` na bat.
 4. Otevři vzniklé `Souhrn_mereni.xlsx` v Excelu.
 
+V okně bat uvidíš u každého souboru počet načtených řádků.
+Když je u všech **0 datových**, skript souhrn nevytvoří a napíše chybu.
+
+**Tip:** Ber soubory přímo z OneDrive / z appky. Když je Excel otevře a znovu
+uloží, formát se změní — nová verze skriptu to umí, ale originál z appky je jistější.
+
 Nepotřebuješ Python, VBA ani admin práva — PowerShell je součást Windows.
 
 ## Ručně v PowerShellu
