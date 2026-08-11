@@ -131,10 +131,13 @@ LOOKS_LIKE_DATE_RE = re.compile(r"^\d{1,2}[./]\d{1,2}[./]\d{4}$")
 # OneDrive layout:
 #   Popis_měření_MD1/
 #     Popis_měření_MD1.xlsx          ← souhrn
-#     MD1_popis_dny/
-#       YYMMDD_N_MD1.xlsx            ← denní dávky z appky
+#     Dny/
+#       YYMMDD_N_MD1.xlsx            ← nove denni davky
+#       sloučeno/
+#         YYMMDD_N_MD1.xlsx          ← uz sloučene
 MAIN_FOLDER_NAME = "Popis_měření_MD1"
-DAYS_SUBFOLDER_NAME = "MD1_popis_dny"
+DAYS_SUBFOLDER_NAME = "Dny"
+DAYS_SUBFOLDER_LEGACY = "MD1_popis_dny"
 SUMMARY_XLSX_NAME = "Popis_měření_MD1.xlsx"
 ARCHIVE_FOLDER_NAME = "sloučeno"
 SUMMARY_EXCLUDE = {
@@ -347,28 +350,38 @@ def list_md1_files(folder: Path) -> List[Path]:
     return sorted(files, key=lambda p: p.name.lower())
 
 
+def days_folder(main: Path) -> Path:
+    """Dny/ (nebo legacy MD1_popis_dny, pokud existuje a má soubory)."""
+    dny = main / DAYS_SUBFOLDER_NAME
+    legacy = main / DAYS_SUBFOLDER_LEGACY
+    if dny.is_dir():
+        return dny
+    if legacy.is_dir() and list_md1_files(legacy):
+        return legacy
+    return dny
+
+
 def resolve_layout(folder: Path) -> Tuple[Path, Path]:
     """
     Vrátí (složka_s_denními, cesta_k_souhrnu).
 
-    Preferuje MD1_popis_dny, pokud v ní něco je.
+    Preferuje Dny/ (popř. legacy MD1_popis_dny), pokud v ní něco je.
     Jinak bere denní soubory přímo z hlavní složky.
     """
     folder = folder.resolve()
     summary = folder / SUMMARY_XLSX_NAME
-    days_sub = folder / DAYS_SUBFOLDER_NAME
 
-    if folder.name == DAYS_SUBFOLDER_NAME:
+    if folder.name in (DAYS_SUBFOLDER_NAME, DAYS_SUBFOLDER_LEGACY):
         parent = folder.parent
         return folder, parent / SUMMARY_XLSX_NAME
 
+    days_sub = days_folder(folder)
     if days_sub.is_dir() and list_md1_files(days_sub):
         return days_sub, summary
 
     if list_md1_files(folder):
         return folder, summary
 
-    # Prázdná podsložka existuje → stejně na ni ukaž (jasná chyba)
     if days_sub.is_dir():
         return days_sub, summary
 
@@ -456,8 +469,8 @@ def merge_folder(
 
 
 def archive_merged_files(files: List[Path], summary_path: Path) -> Path:
-    """Přesune sloučené denní soubory do Popis_…/sloučeno/."""
-    archive = summary_path.parent / ARCHIVE_FOLDER_NAME
+    """Přesune sloučené denní soubory do Popis_…/Dny/sloučeno/."""
+    archive = days_folder(summary_path.parent) / ARCHIVE_FOLDER_NAME
     archive.mkdir(parents=True, exist_ok=True)
     for src in files:
         if not src.is_file():
@@ -514,7 +527,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             f"  {MAIN_FOLDER_NAME}/\n"
             f"    {SUMMARY_XLSX_NAME}\n"
             f"    {DAYS_SUBFOLDER_NAME}/\n"
-            f"      YYMMDD_N_MD1.xlsx",
+            f"      YYMMDD_N_MD1.xlsx\n"
+            f"      {ARCHIVE_FOLDER_NAME}/",
             file=sys.stderr,
         )
         return 1
@@ -544,7 +558,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     print(f"Uloženo: {out_path}")
 
     archive = archive_merged_files(processed, out_path)
-    print(f"Přesunuto do {ARCHIVE_FOLDER_NAME}/: {len(processed)} souborů ({archive})")
+    print(f"Přesunuto do {DAYS_SUBFOLDER_NAME}/{ARCHIVE_FOLDER_NAME}/: {len(processed)} souborů ({archive})")
 
     try:
         if sys.platform.startswith("win"):

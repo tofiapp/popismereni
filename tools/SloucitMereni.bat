@@ -3,7 +3,8 @@ REM Slouci denni *_MD1.xlsx do Popis_mereni_MD1.xlsx
 REM Struktura OneDrive:
 REM   Popis_mereni_MD1\
 REM     Popis_mereni_MD1.xlsx
-REM     MD1_popis_dny\YYMMDD_N_MD1.xlsx
+REM     Dny\YYMMDD_N_MD1.xlsx
+REM     Dny\slouceno\...
 REM
 REM Pouziti:
 REM   1) Preetáhni slozku Popis_mereni_MD1 na tento .bat

@@ -954,8 +954,7 @@ fun MereniApp(
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         "Soubor YYMMDD_N_MD1.xlsx ulož do složky\n" +
-                            "Popis_měření_MD1\n" +
-                            "(volitelně do podsložky MD1_popis_dny).\n\n" +
+                            "Popis_měření_MD1 / Dny\n\n" +
                             "✕ — tlačítko zůstane červené.\n" +
                             "ANO — vymazat místní záznamy (zelená).",
                         color = MereniColors.TextMuted,

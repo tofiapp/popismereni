@@ -3,7 +3,7 @@
 # Layout:
 #   Popis_mereni_MD1/
 #     Popis_mereni_MD1.xlsx
-#     MD1_popis_dny/YYMMDD_N_MD1.xlsx
+#     Dny/YYMMDD_N_MD1.xlsx (+ Dny/slouceno/)
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
@@ -20,7 +20,8 @@ $eCaron = [char]0x011B
 $rCaron = [char]0x0159
 $iAcute = [char]0x00ED
 $MAIN_FOLDER_NAME = "Popis_m" + $eCaron + $rCaron + "en" + $iAcute + "_MD1"
-$DAYS_SUBFOLDER_NAME = "MD1_popis_dny"
+$DAYS_SUBFOLDER_NAME = "Dny"
+$DAYS_SUBFOLDER_LEGACY = "MD1_popis_dny"
 $SUMMARY_XLSX_NAME = $MAIN_FOLDER_NAME + ".xlsx"
 $cCaron = [char]0x010D
 $ARCHIVE_FOLDER_NAME = "slou" + $cCaron + "eno"
@@ -430,7 +431,7 @@ try {
         exit 2
     }
 
-    # Prefer days subfolder only when it actually has daily files
+    # Prefer Dny/ (or legacy MD1_popis_dny) when it has daily files
     $daysSub = Join-Path $folderPath $DAYS_SUBFOLDER_NAME
     $files = @()
     $sourcePath = $folderPath
@@ -442,10 +443,21 @@ try {
             $sourcePath = $daysSub
         }
     }
+    if ($files.Count -eq 0) {
+        $legacySub = Join-Path $folderPath $DAYS_SUBFOLDER_LEGACY
+        if (Test-Path -LiteralPath $legacySub -PathType Container) {
+            $inLegacy = @(Get-Md1Files $legacySub)
+            if ($inLegacy.Count -gt 0) {
+                $files = $inLegacy
+                $sourcePath = $legacySub
+                $daysSub = $legacySub
+            }
+        }
+    }
 
     if ($files.Count -eq 0) {
         $leaf = Split-Path -Leaf $folderPath
-        if ($leaf -eq $DAYS_SUBFOLDER_NAME) {
+        if (($leaf -eq $DAYS_SUBFOLDER_NAME) -or ($leaf -eq $DAYS_SUBFOLDER_LEGACY)) {
             $files = @(Get-Md1Files $folderPath)
             $sourcePath = $folderPath
             $outPath = Join-Path (Split-Path -Parent $folderPath) $SUMMARY_XLSX_NAME
@@ -481,7 +493,7 @@ try {
     if ($files.Count -eq 0) {
         Write-Host ""
         Write-Host "CHYBA: nenasel jsem denni soubory (napr. 260811_1_MD1.xlsx)."
-        Write-Host "Dej je bud primo do hlavni slozky, nebo do podslozky MD1_popis_dny."
+        Write-Host "Dej je do podslozky Dny (nebo primo do hlavni slozky)."
         Write-Host ""
         Write-Host "Co je ve slozce (xlsx):"
         Get-ChildItem -LiteralPath $folderPath -File -Filter "*.xlsx" -ErrorAction SilentlyContinue |
@@ -597,9 +609,16 @@ try {
     Write-Host ("Datovych radku: {0}" -f $dataOut)
     Write-Host ("Ulozeno: {0}" -f $outPath)
 
-    # Presun sloucenych dennich souboru do slozky "slouceno"
+    # Presun sloucenych dennich souboru do Dny/slouceno
     $archiveRoot = Split-Path -Parent $outPath
-    $archiveDir = Join-Path $archiveRoot $ARCHIVE_FOLDER_NAME
+    $daysDir = Join-Path $archiveRoot $DAYS_SUBFOLDER_NAME
+    if (-not (Test-Path -LiteralPath $daysDir)) {
+        # legacy fallback
+        $legacy = Join-Path $archiveRoot $DAYS_SUBFOLDER_LEGACY
+        if (Test-Path -LiteralPath $legacy) { $daysDir = $legacy }
+        else { New-Item -ItemType Directory -Path $daysDir -Force | Out-Null }
+    }
+    $archiveDir = Join-Path $daysDir $ARCHIVE_FOLDER_NAME
     if (-not (Test-Path -LiteralPath $archiveDir)) {
         New-Item -ItemType Directory -Path $archiveDir -Force | Out-Null
     }
@@ -617,7 +636,7 @@ try {
             Write-Host ("  ! Nepodarilo se presunout {0}: {1}" -f $f.Name, $_.Exception.Message)
         }
     }
-    Write-Host ("Presunuto do {0}: {1} souboru" -f $ARCHIVE_FOLDER_NAME, $moved)
+    Write-Host ("Presunuto do {0}/{1}: {2} souboru" -f $DAYS_SUBFOLDER_NAME, $ARCHIVE_FOLDER_NAME, $moved)
 
     Write-Host ""
     Write-Host "Oteviram Excel..."
