@@ -10,12 +10,23 @@ REM Pouziti:
 REM   1) Preetáhni slozku Popis_mereni_MD1 na tento .bat
 REM   2) Nebo bat + ps1 dej do Popis_mereni_MD1 a dej dvojklik
 REM NIC se neinstaluje — Windows PowerShell.
+REM VERZE: 2026-08-11c
 
 setlocal
 chcp 65001 >nul
 set "SCRIPT=%~dp0sloucit_mereni.ps1"
 set "TARGET=%~1"
 if "%TARGET%"=="" set "TARGET=%CD%"
+
+if not exist "%SCRIPT%" (
+  echo CHYBA: nenalezen %SCRIPT%
+  echo Stahni sloucit_mereni.ps1 do stejne slozky jako tento bat.
+  pause
+  exit /b 2
+)
+
+echo Spoustim: %SCRIPT%
+echo.
 
 powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT%" -Folder "%TARGET%"
 set "ERR=%ERRORLEVEL%"
