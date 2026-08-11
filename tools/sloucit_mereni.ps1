@@ -1,5 +1,5 @@
 ﻿#Requires -Version 5.1
-# sloucit_mereni.ps1 — verze 2026-08-11o
+# sloucit_mereni.ps1 — verze 2026-08-11p
 # ASCII-only source (Windows PowerShell 5.1). Czech names via [char] codes.
 # Layout:
 #   Popis_mereni_MD1/
@@ -30,6 +30,8 @@ $MAIN_FOLDER_ASCII = "Popis_mereni_MD1"
 $SUMMARY_ASCII = "Popis_mereni_MD1.xlsx"
 $MERGE_LOCK_NAME = ".sloucit_mereni.lock"
 $MERGE_LOCK_STALE_MINUTES = 45
+$BACKUP_FOLDER_NAME = "Zalohy"
+$BACKUP_KEEP = 5
 
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -719,14 +721,54 @@ function Write-ZipEntry([System.IO.Compression.ZipArchive]$zip, [string]$name, [
 }
 
 function Backup-SummaryBeforeWrite([string]$path) {
-    # Pred prepisem souhrnu zaloha .bak (obnova pri omylu / rozbitej merge)
+    # Zaloha do Zalohy/ (NE vedle souhrnu jako .xlsx.bak — to vypadalo jako "nesloucená kopie")
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return }
-    $bak = $path + ".bak"
+    $dir = Split-Path -Parent $path
+    $bakDir = Join-Path $dir $BACKUP_FOLDER_NAME
+    if (-not (Test-Path -LiteralPath $bakDir)) {
+        New-Item -ItemType Directory -Path $bakDir -Force | Out-Null
+    }
+    $stamp = Get-Date -Format "yyyyMMdd_HHmmss"
+    $leaf = [System.IO.Path]::GetFileNameWithoutExtension($path)
+    $bak = Join-Path $bakDir ("{0}_{1}.xlsx" -f $leaf, $stamp)
     try {
         Copy-Item -LiteralPath $path -Destination $bak -Force
-        Write-Host ("Zaloha pred zapisem: {0}" -f $bak)
+        Write-Host ("Zaloha: {0}" -f $bak)
     } catch {
-        Write-Host ("  ! Zaloha .bak se nepodarila: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+        Write-Host ("  ! Zaloha se nepodarila: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+        return
+    }
+    # Nech jen poslednich N zaloh
+    try {
+        $old = @(Get-ChildItem -LiteralPath $bakDir -File -Filter ($leaf + "_*.xlsx") |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -Skip $BACKUP_KEEP)
+        foreach ($o in $old) {
+            try { Remove-Item -LiteralPath $o.FullName -Force -ErrorAction SilentlyContinue } catch { }
+        }
+    } catch { }
+}
+
+function Remove-OrphanMergeJunk([string]$summaryPath) {
+    # Smaze docasne .sloucit_tmp_*.xlsx a stare .xlsx.bak vedle souhrnu (matouci "kopie")
+    $dir = Split-Path -Parent $summaryPath
+    if (-not $dir -or -not (Test-Path -LiteralPath $dir -PathType Container)) { return }
+    $n = 0
+    Get-ChildItem -LiteralPath $dir -File -Force -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.Name -like '.sloucit_tmp_*.xlsx' -or
+            $_.Name -like '*.xlsx.bak' -or
+            $_.Name -like '~$*'
+        } |
+        ForEach-Object {
+            try {
+                Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop
+                $n++
+                Write-Host ("  smazan odpad: {0}" -f $_.Name)
+            } catch { }
+        }
+    if ($n -gt 0) {
+        Write-Host ("Uklizeno docasnych/matoucich souboru: {0}" -f $n)
     }
 }
 
@@ -736,12 +778,15 @@ function Write-Xlsx([string]$path, $rows) {
         New-Item -ItemType Directory -Path $dir -Force | Out-Null
     }
 
+    Close-WorkbookIfOpen $path | Out-Null
+    Start-Sleep -Milliseconds 300
     Backup-SummaryBeforeWrite $path
 
     $batPath = Ensure-BatBesideSummary $path
     $sheetRels = Get-SheetRelsXml $batPath
 
-    # Nejdřív zapis do docasneho souboru, pak nahrad (min conflict s Excel/OneDrive zamkem)
+    # Docasny soubor mimo OneDrive root kdyz jde — stejne ve stejne slozce, ale
+    # CIL NEMAZEME (delete+create dela OneDrive conflict kopie).
     $tmp = Join-Path $dir (".sloucit_tmp_" + [guid]::NewGuid().ToString("N") + ".xlsx")
     if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
 
@@ -757,24 +802,39 @@ function Write-Xlsx([string]$path, $rows) {
     }
     finally { $zip.Dispose() }
 
-    if (-not (Remove-LockedFile $path)) {
-        try { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue } catch { }
-        throw ("Souhrn je zamceny (Excel nebo OneDrive):`n  {0}`nZavri soubor v Excelu a spust znovu (nebo pockej na sync)." -f $path)
-    }
-
-    $moved = $false
-    for ($i = 0; $i -lt 8; $i++) {
+    # 1) Preferuj overwrite na miste (zachova OneDrive identitu souboru)
+    $ok = $false
+    for ($i = 0; $i -lt 10; $i++) {
         try {
-            Move-Item -LiteralPath $tmp -Destination $path -Force -ErrorAction Stop
-            $moved = $true
+            Close-WorkbookIfOpen $path | Out-Null
+            [System.IO.File]::Copy($tmp, $path, $true)
+            $ok = $true
             break
         } catch {
-            Close-WorkbookIfOpen $path | Out-Null
-            Start-Sleep -Milliseconds (400 + ($i * 200))
+            Start-Sleep -Milliseconds (350 + ($i * 200))
         }
     }
-    if (-not $moved) {
-        try { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue } catch { }
+
+    # 2) Fallback: smaz + rename (stary zpusob)
+    if (-not $ok) {
+        if (-not (Remove-LockedFile $path)) {
+            try { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue } catch { }
+            throw ("Souhrn je zamceny (Excel nebo OneDrive):`n  {0}`nZavri soubor v Excelu a spust znovu (nebo pockej na sync)." -f $path)
+        }
+        for ($i = 0; $i -lt 8; $i++) {
+            try {
+                Move-Item -LiteralPath $tmp -Destination $path -Force -ErrorAction Stop
+                $ok = $true
+                break
+            } catch {
+                Close-WorkbookIfOpen $path | Out-Null
+                Start-Sleep -Milliseconds (400 + ($i * 200))
+            }
+        }
+    }
+
+    try { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue } catch { }
+    if (-not $ok) {
         throw ("Nepodarilo se nahradit souhrn (zamek):`n  {0}" -f $path)
     }
 }
@@ -819,7 +879,7 @@ function Resolve-Layout([string]$folderPath) {
 # ---- main ----
 $script:MergeLock = $null
 try {
-    Write-Host "sloucit_mereni.ps1 verze 2026-08-11o"
+    Write-Host "sloucit_mereni.ps1 verze 2026-08-11p"
     if (-not (Test-Path -LiteralPath $Folder)) {
         Write-Host "Slozka neexistuje:"
         Write-Host "  $Folder"
@@ -892,36 +952,37 @@ try {
     Write-Host ("Nalezeno YYMMDD_*_MD1.xlsx: {0}" -f $files.Count)
 
     $script:MergeLock = Acquire-MergeLock $outPath
+    Remove-OrphanMergeJunk $outPath
+
+    # OneDrive conflict kopie souhrnu (…-PC.xlsx / …-kopie.xlsx) — nebrat, jen varovat
+    $sumDir = Split-Path -Parent $outPath
+    $sumLeaf = [System.IO.Path]::GetFileNameWithoutExtension($outPath)
+    if ($sumDir -and (Test-Path -LiteralPath $sumDir -PathType Container)) {
+        $conflicts = @(Get-ChildItem -LiteralPath $sumDir -File -Filter "*.xlsx" -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.Name -ne ([System.IO.Path]::GetFileName($outPath)) -and
+                $_.Name -notlike '~$*' -and
+                $_.Name -notlike '.sloucit_tmp_*' -and
+                -not (Test-IsDailyMd1Name $_.Name) -and
+                ($_.BaseName -like ($sumLeaf + "*") -or $_.Name -match 'conflict|kopie|copy|-PC')
+            })
+        if ($conflicts.Count -gt 0) {
+            Write-Host ""
+            Write-Host "POZOR: vedle souhrnu jsou navic xlsx (casto OneDrive conflict / stare .bak):" -ForegroundColor Yellow
+            foreach ($c in $conflicts) {
+                Write-Host ("  - {0}" -f $c.Name) -ForegroundColor Yellow
+            }
+            Write-Host "  Spravny souhrn je jen: Popis_mereni_MD1.xlsx — ostatni neotvirej / smaz po kontrole." -ForegroundColor Yellow
+            Write-Host ""
+        }
+    }
 
     if ($files.Count -eq 0) {
         Write-Host ""
         Write-Host "Neni nic noveho ke slouceni (zadne YYMMDD_*_MD1.xlsx v Dny/)."
         Write-Host "To neni chyba — nove denni soubory z appky dej do Dny/."
+        Write-Host "Souhrn neprepisuji (zadna nova data) — jen otevru."
         if ((Test-Path -LiteralPath $outPath -PathType Leaf) -and ((Get-Item -LiteralPath $outPath).Length -gt 64)) {
-            try {
-                Close-WorkbookIfOpen $outPath | Out-Null
-                Start-Sleep -Milliseconds 400
-                $existingOnly = @(Read-XlsxRows $outPath)
-                $keep = New-Object System.Collections.Generic.List[object]
-                $skipHead = $true
-                foreach ($row in $existingOnly) {
-                    if (-not (Test-IsRowObject $row)) { continue }
-                    if ($skipHead) {
-                        if (($row.Role -eq "UPDATED") -or (Test-IsUpdateText ([string]$row.A))) { continue }
-                        if ($row.Role -eq "BLANK") { continue }
-                        $skipHead = $false
-                    }
-                    [void]$keep.Add($row)
-                }
-                if ($keep.Count -eq 0 -and ((Get-Item -LiteralPath $outPath).Length -gt 2500)) {
-                    throw "Souhrn se nacetl jako prazdny — neprepisuji (zavrete Excel / Keep on this device)."
-                }
-                $stampedOnly = Add-UpdateStamp -Rows $keep.ToArray()
-                Write-Xlsx $outPath $stampedOnly
-                Write-Host ("Aktualizace: {0}" -f $stampedOnly[0].A)
-            } catch {
-                Write-Host ("Souhrn neprepisuji ({0}), jen otevru." -f $_.Exception.Message)
-            }
             Open-SummaryExcel $outPath
         }
         else {
@@ -985,7 +1046,7 @@ try {
             Write-Host "CHYBA: Nelze bezpecne nacist existujici souhrn." -ForegroundColor Red
             Write-Host ("  {0}" -f $_.Exception.Message) -ForegroundColor Red
             Write-Host "  Soubor NEBUDE prepsan. Zavrete Excel a spuste znovu." -ForegroundColor Yellow
-            Write-Host "  Zaloha (pokud uz existuje): soubor.xlsx.bak" -ForegroundColor Yellow
+            Write-Host "  Zaloha (pokud uz existuje): slozka Zalohy/" -ForegroundColor Yellow
             Write-Host ""
             throw ("Abort: refuse overwrite of summary that failed to load.")
         }
@@ -1121,6 +1182,7 @@ try {
         New-Item -ItemType Directory -Path $archiveDir -Force | Out-Null
     }
     $moved = 0
+    $failedMove = New-Object System.Collections.Generic.List[string]
     foreach ($f in $processed) {
         try {
             $dest = Join-Path $archiveDir $f.Name
@@ -1132,9 +1194,20 @@ try {
             $moved++
         } catch {
             Write-Host ("  ! Nepodarilo se presunout {0}: {1}" -f $f.Name, $_.Exception.Message)
+            [void]$failedMove.Add($f.Name)
         }
     }
     Write-Host ("Presunuto do {0}/{1}: {2} souboru" -f $DAYS_SUBFOLDER_NAME, $ARCHIVE_FOLDER_NAME, $moved)
+    if ($failedMove.Count -gt 0) {
+        Write-Host "POZOR: tyto denni soubory zustaly v Dny/ (priste by se sloučily ZNOVU):" -ForegroundColor Yellow
+        foreach ($n in $failedMove) { Write-Host ("  - {0}" -f $n) -ForegroundColor Yellow }
+        Write-Host "  Presun je rucne do Dny/slouceno/ nebo smaz po kontrole souhrnu." -ForegroundColor Yellow
+    }
+    # Kontrola: v Dny/ uz nemaji zustat prave zpracovane
+    $left = @(Get-Md1Files $daysDir)
+    if ($left.Count -gt 0 -and $moved -gt 0) {
+        Write-Host ("V Dny/ zbývá jeste {0} denních xlsx (cekaji na pristi slouceni)." -f $left.Count)
+    }
 
     Open-SummaryExcel $outPath
     exit 0

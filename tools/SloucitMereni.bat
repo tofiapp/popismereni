@@ -1,6 +1,6 @@
 @echo off
 REM Slouci denni *_MD1.xlsx do Popis_mereni_MD1.xlsx
-REM VERZE: 2026-08-11o
+REM VERZE: 2026-08-11p
 REM Soubory ve slozce: SloucitMereni.bat + sloucit_mereni.ps1 (+ souhrn xlsx)
 REM Excel tlacitko Aktualizovat odkazuje primo na tento BAT (zadny .cmd navic).
 

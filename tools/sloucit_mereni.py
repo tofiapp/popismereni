@@ -33,6 +33,8 @@ from xml.sax.saxutils import escape as xml_escape
 
 MERGE_LOCK_NAME = ".sloucit_mereni.lock"
 MERGE_LOCK_STALE_MINUTES = 45
+BACKUP_FOLDER_NAME = "Zalohy"
+BACKUP_KEEP = 5
 
 
 class Role(Enum):
@@ -347,14 +349,51 @@ def read_xlsx(path: Path) -> List[Row]:
 
 
 def backup_summary_before_write(path: Path) -> None:
+    """Záloha do Zalohy/ — ne *.xlsx.bak vedle souhrnu (vypadalo jako nesloučená kopie)."""
     if not path.is_file():
         return
-    bak = path.with_suffix(path.suffix + ".bak")
+    bak_dir = path.parent / BACKUP_FOLDER_NAME
+    bak_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    bak = bak_dir / f"{path.stem}_{stamp}.xlsx"
     try:
         shutil.copy2(path, bak)
-        print(f"Záloha před zápisem: {bak}")
+        print(f"Záloha: {bak}")
     except OSError as exc:
-        print(f"  ! Záloha .bak se nepodařila: {exc}")
+        print(f"  ! Záloha se nepodařila: {exc}")
+        return
+    pattern = f"{path.stem}_*.xlsx"
+    old = sorted(bak_dir.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
+    for p in old[BACKUP_KEEP:]:
+        try:
+            p.unlink()
+        except OSError:
+            pass
+
+
+def remove_orphan_merge_junk(summary_path: Path) -> None:
+    parent = summary_path.parent
+    if not parent.is_dir():
+        return
+    n = 0
+    for p in parent.iterdir():
+        if not p.is_file():
+            continue
+        name = p.name
+        junk = (
+            (name.startswith(".sloucit_tmp_") and name.endswith(".xlsx"))
+            or name.endswith(".xlsx.bak")
+            or name.startswith("~$")
+        )
+        if junk:
+            try:
+                p.unlink()
+                n += 1
+                print(f"  smazán odpad: {name}")
+            except OSError:
+                pass
+    if n:
+        print(f"Uklizeno dočasných/matoucích souborů: {n}")
 
 
 def cell_xml(ref: str, value: str, style: int) -> str:
@@ -427,14 +466,24 @@ def write_xlsx(path: Path, rows: List[Row]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     backup_summary_before_write(path)
     bat = path.parent / UPDATE_BAT_NAME
-    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("[Content_Types].xml", CONTENT_TYPES)
-        zf.writestr("_rels/.rels", RELS_ROOT)
-        zf.writestr("xl/workbook.xml", WORKBOOK)
-        zf.writestr("xl/_rels/workbook.xml.rels", RELS_WB)
-        zf.writestr("xl/styles.xml", STYLES)
-        zf.writestr("xl/worksheets/sheet1.xml", sheet_xml(rows))
-        zf.writestr("xl/worksheets/_rels/sheet1.xml.rels", sheet_rels_xml(bat))
+    tmp = path.parent / f".sloucit_tmp_{os.getpid()}_{int(time.time())}.xlsx"
+    try:
+        with zipfile.ZipFile(tmp, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("[Content_Types].xml", CONTENT_TYPES)
+            zf.writestr("_rels/.rels", RELS_ROOT)
+            zf.writestr("xl/workbook.xml", WORKBOOK)
+            zf.writestr("xl/_rels/workbook.xml.rels", RELS_WB)
+            zf.writestr("xl/styles.xml", STYLES)
+            zf.writestr("xl/worksheets/sheet1.xml", sheet_xml(rows))
+            zf.writestr("xl/worksheets/_rels/sheet1.xml.rels", sheet_rels_xml(bat))
+        # overwrite na místě — bez delete cíle (OneDrive conflict kopie)
+        shutil.copy2(tmp, path)
+    finally:
+        try:
+            if tmp.is_file():
+                tmp.unlink()
+        except OSError:
+            pass
 
 
 def date_from_filename(name: str) -> str:
@@ -762,6 +811,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     lock = MergeLock(out_path)
     try:
         lock.acquire()
+        remove_orphan_merge_junk(out_path)
         return _main_locked(source, out_path, list_md1_files(source))
     except RuntimeError as exc:
         print(f"CHYBA: {exc}", file=sys.stderr)
@@ -774,14 +824,8 @@ def _main_locked(source: Path, out_path: Path, files: List[Path]) -> int:
     if not files:
         print(f"Není nic nového ke sloučení (žádné *_MD1.xlsx v {source}).")
         print("To není chyba — nové denní soubory z appky dej do Dny/.")
+        print("Souhrn nepřepisuji (žádná nová data) — jen otevřu.")
         if out_path.is_file() and out_path.stat().st_size > 64:
-            try:
-                base = strip_update_rows(read_xlsx(out_path))
-                stamped = with_update_stamp(base)
-                write_xlsx(out_path, stamped)
-                print(f"Aktualizace: {stamped[0].a}")
-            except Exception as exc:  # noqa: BLE001
-                print(f"Souhrn nepřepisuji ({exc}), jen otevřu.")
             try:
                 if sys.platform.startswith("win"):
                     os.startfile(out_path)  # type: ignore[attr-defined]
