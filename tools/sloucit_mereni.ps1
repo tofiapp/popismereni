@@ -1,5 +1,5 @@
 ﻿#Requires -Version 5.1
-# sloucit_mereni.ps1 — verze 2026-08-11e
+# sloucit_mereni.ps1 — verze 2026-08-11f
 # ASCII-only source (Windows PowerShell 5.1). Czech names via [char] codes.
 # Layout:
 #   Popis_mereni_MD1/
@@ -74,27 +74,40 @@ $WORKBOOK = @"
 </workbook>
 "@
 
+$STYLE_BUTTON = 5
+$BUTTON_LABEL = "Aktualizovat"
+$UPDATE_BAT_NAME = "SloucitMereni.bat"
+
+$SHEET_RELS = @"
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="SloucitMereni.bat" TargetMode="External"/>
+</Relationships>
+"@
+
 $STYLES = @"
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <fonts count="4">
+  <fonts count="5">
     <font><sz val="14"/><color theme="1"/><name val="Calibri"/><family val="2"/></font>
     <font><sz val="16"/><b/><color theme="1"/><name val="Calibri"/><family val="2"/></font>
     <font><sz val="16"/><b/><color theme="1"/><name val="Calibri"/><family val="2"/></font>
     <font><sz val="12"/><i/><color theme="1"/><name val="Calibri"/><family val="2"/></font>
+    <font><sz val="12"/><b/><color rgb="FFFFFFFF"/><name val="Calibri"/><family val="2"/></font>
   </fonts>
-  <fills count="5">
+  <fills count="6">
     <fill><patternFill patternType="none"/></fill>
     <fill><patternFill patternType="gray125"/></fill>
     <fill><patternFill patternType="solid"><fgColor rgb="FFBBDEFB"/></patternFill></fill>
     <fill><patternFill patternType="solid"><fgColor rgb="FFFFE0B2"/></patternFill></fill>
     <fill><patternFill patternType="solid"><fgColor rgb="FFE8F5E9"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FF1565C0"/></patternFill></fill>
   </fills>
   <borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
   <cellStyleXfs count="1">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>
   </cellStyleXfs>
-  <cellXfs count="5">
+  <cellXfs count="6">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
     <xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1">
       <alignment horizontal="left" vertical="center"/>
@@ -107,6 +120,9 @@ $STYLES = @"
     </xf>
     <xf numFmtId="0" fontId="3" fillId="4" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1">
       <alignment horizontal="left" vertical="center"/>
+    </xf>
+    <xf numFmtId="0" fontId="4" fillId="5" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1">
+      <alignment horizontal="center" vertical="center"/>
     </xf>
   </cellXfs>
   <cellStyles count="1">
@@ -406,19 +422,20 @@ function Get-CellXml([string]$ref, [string]$value, [int]$style) {
 function Get-SheetXml($rows) {
     $sb = New-Object System.Text.StringBuilder
     [void]$sb.Append('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>')
-    [void]$sb.Append('<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">')
-    # Zmrazeny 1. radek (razitko aktualizace) — zustane viditelny pri scrollovani
+    [void]$sb.Append('<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">')
+    # Zmrazeny 1. radek (razitko + tlacitko) — zustane viditelny pri scrollovani
     [void]$sb.Append('<sheetViews><sheetView workbookViewId="0">')
     [void]$sb.Append('<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>')
     [void]$sb.Append('<selection pane="bottomLeft" activeCell="A2" sqref="A2"/>')
     [void]$sb.Append('</sheetView></sheetViews>')
     [void]$sb.Append('<cols>')
-    [void]$sb.Append('<col min="1" max="1" width="32" customWidth="1"/>')
-    [void]$sb.Append('<col min="2" max="2" width="18" customWidth="1"/>')
+    [void]$sb.Append('<col min="1" max="1" width="36" customWidth="1"/>')
+    [void]$sb.Append('<col min="2" max="2" width="16" customWidth="1"/>')
     [void]$sb.Append('<col min="3" max="3" width="14" customWidth="1"/>')
     [void]$sb.Append('<col min="4" max="4" width="36" customWidth="1"/>')
     [void]$sb.Append('</cols><sheetData>')
     $r = 0
+    $buttonRow = 0
     foreach ($row in $rows) {
         if (-not (Test-IsRowObject $row)) { continue }
         $r++
@@ -428,7 +445,12 @@ function Get-SheetXml($rows) {
             "BLANK" { }
             "DATE" { [void]$sb.Append((Get-CellXml ("A$r") $row.A $STYLE_DATE)) }
             "STATION" { [void]$sb.Append((Get-CellXml ("A$r") $row.A $STYLE_STATION)) }
-            "UPDATED" { [void]$sb.Append((Get-CellXml ("A$r") $row.A $STYLE_UPDATED)) }
+            "UPDATED" {
+                [void]$sb.Append((Get-CellXml ("A$r") $row.A $STYLE_UPDATED))
+                # Modre "tlacitko" — hyperlink na SloucitMereni.bat (bez VBA)
+                [void]$sb.Append((Get-CellXml ("B$r") $BUTTON_LABEL $STYLE_BUTTON))
+                if ($buttonRow -eq 0) { $buttonRow = $r }
+            }
             default {
                 [void]$sb.Append((Get-CellXml ("A$r") $row.A $STYLE_DATA))
                 [void]$sb.Append((Get-CellXml ("B$r") $row.B $STYLE_DATA))
@@ -438,8 +460,41 @@ function Get-SheetXml($rows) {
         }
         [void]$sb.Append('</row>')
     }
-    [void]$sb.Append('</sheetData></worksheet>')
+    [void]$sb.Append('</sheetData>')
+    if ($buttonRow -gt 0) {
+        [void]$sb.Append(('<hyperlinks><hyperlink ref="B{0}" r:id="rId1" display="{1}"/></hyperlinks>' -f $buttonRow, (Escape-Xml $BUTTON_LABEL)))
+    }
+    [void]$sb.Append('</worksheet>')
     return $sb.ToString()
+}
+
+function Close-WorkbookIfOpen([string]$path) {
+    # Aby slo prepsat souhrn po kliku na tlacitko v Excelu
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $false }
+    $full = $null
+    try { $full = [System.IO.Path]::GetFullPath($path) } catch { return $false }
+    $excel = $null
+    try {
+        $excel = [System.Runtime.InteropServices.Marshal]::GetActiveObject("Excel.Application")
+    } catch {
+        return $false
+    }
+    $closed = $false
+    try {
+        foreach ($wb in @($excel.Workbooks)) {
+            try {
+                $wbPath = [string]$wb.FullName
+                if ([string]::IsNullOrEmpty($wbPath)) { continue }
+                $wbFull = [System.IO.Path]::GetFullPath($wbPath)
+                if ($wbFull.Equals($full, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    $wb.Close($false) | Out-Null
+                    $closed = $true
+                    Write-Host "Zaviram otevreny souhrn v Excelu (kvuli prepsani)..."
+                }
+            } catch { }
+        }
+    } catch { }
+    return $closed
 }
 
 function Open-SummaryExcel([string]$path) {
@@ -473,6 +528,9 @@ function Write-Xlsx([string]$path, $rows) {
     if ($dir -and -not (Test-Path -LiteralPath $dir)) {
         New-Item -ItemType Directory -Path $dir -Force | Out-Null
     }
+    Close-WorkbookIfOpen $path | Out-Null
+    # Kratka pauza po Close, aby Windows uvolnil zamek
+    Start-Sleep -Milliseconds 400
     if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
     $zip = [System.IO.Compression.ZipFile]::Open($path, [System.IO.Compression.ZipArchiveMode]::Create)
     try {
@@ -482,6 +540,7 @@ function Write-Xlsx([string]$path, $rows) {
         Write-ZipEntry $zip "xl/_rels/workbook.xml.rels" $RELS_WB
         Write-ZipEntry $zip "xl/styles.xml" $STYLES
         Write-ZipEntry $zip "xl/worksheets/sheet1.xml" (Get-SheetXml $rows)
+        Write-ZipEntry $zip "xl/worksheets/_rels/sheet1.xml.rels" $SHEET_RELS
     }
     finally { $zip.Dispose() }
 }
@@ -525,7 +584,7 @@ function Resolve-Layout([string]$folderPath) {
 
 # ---- main ----
 try {
-    Write-Host "sloucit_mereni.ps1 verze 2026-08-11e"
+    Write-Host "sloucit_mereni.ps1 verze 2026-08-11f"
     if (-not (Test-Path -LiteralPath $Folder)) {
         Write-Host "Slozka neexistuje:"
         Write-Host "  $Folder"
