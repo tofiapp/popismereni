@@ -1,48 +1,36 @@
 Attribute VB_Name = "SloucitMereni"
 Option Explicit
 
-' LOKALNI soubor (Documents / plocha) - NE ukladat do OneDrive.
-' OneDrive slozka = jen data *_MD1.xlsx + vystup Souhrn_mereni.xlsx (bez maker).
+' Jeden soubor: Souhrn_mereni.xlsm ve slozce s *_MD1.xlsx
+' + tlacitko Sloucit ve stejnem souboru.
 '
-' 1) Novy sesit, import tohoto .bas
-' 2) Uloz jako C:\Users\...\Documents\MereniSloucit.xlsm
-' 3) Alt+F8 -> Nastavit
-' 4) Tlacitko Sloucit
+' Jednou v Excelu: Datei -> Optionen -> Trust Center ->
+'   Vertrauenswuerdige Speicherorte -> pridat tuto OneDrive slozku
+' (jinak Excel makra z OneDrive zakaze)
+'
+' Alt+F8 -> Nastavit (jednou) -> pak jen tlacitko
 
 Private Const COLOR_DATE As Long = 16506555
 Private Const COLOR_STATION As Long = 11723007
-Private Const OUT_NAME As String = "Souhrn_mereni.xlsx"
 
 Private gBusy As Boolean
 
 Public Sub Nastavit()
     Dim wb As Workbook
+    Dim sp As Variant
     Dim ws As Worksheet
-    Dim folder As String
     Dim shp As Shape
     Dim btn As Button
 
     Set wb = ThisWorkbook
 
-    ' Musi byt lokalni .xlsm (ne OneDrive / https)
-    If IsWebPath(wb.FullName) Or IsWebPath(wb.Path) Then
-        MsgBox "Tento soubor je na OneDrive/https - Excel makra blokuje." & vbCrLf & _
-               "Uloz makra lokalne: Soubor -> Ulozit jako -> Documents\MereniSloucit.xlsm", vbCritical
-        Exit Sub
-    End If
-
     If Len(wb.Path) = 0 Or LCase$(Right$(wb.Name, 5)) <> ".xlsm" Then
-        Dim sp As Variant
         sp = Application.GetSaveAsFilename( _
-            InitialFileName:=Environ$("USERPROFILE") & "\Documents\MereniSloucit.xlsm", _
+            InitialFileName:="Souhrn_mereni.xlsm", _
             FileFilter:="Excel makro (*.xlsm), *.xlsm", _
-            Title:="Ulozit LOKALNE (ne do OneDrive)")
+            Title:="Ulozit do slozky s *_MD1.xlsx")
         If sp = False Then Exit Sub
         If LCase$(Right$(CStr(sp), 5)) <> ".xlsm" Then sp = CStr(sp) & ".xlsm"
-        If IsWebPath(CStr(sp)) Or InStr(1, LCase$(CStr(sp)), "onedrive", vbTextCompare) > 0 Then
-            MsgBox "Vyber slozku mimo OneDrive (napr. Documents).", vbExclamation
-            Exit Sub
-        End If
         Application.DisplayAlerts = False
         On Error Resume Next
         wb.SaveAs Filename:=CStr(sp), FileFormat:=52
@@ -55,9 +43,10 @@ Public Sub Nastavit()
         Application.DisplayAlerts = True
     End If
 
-    folder = PickDataFolder(GetSavedFolder())
-    If Len(folder) = 0 Then Exit Sub
-    Call SaveFolder(folder)
+    If IsWebPath(wb.FullName) Then
+        MsgBox "Soubor bezi jako https://. Zavri ho a otevri z Pruzkumnika (C:\...)." & vbCrLf & _
+               "Pak jednou pridej slozku do Trust Center -> Trusted Locations.", vbExclamation
+    End If
 
     Set ws = EnsureSheet(wb, "Start")
     On Error Resume Next
@@ -71,19 +60,16 @@ Public Sub Nastavit()
     ws.Range("A1").Value = "Mereni"
     ws.Range("A1").Font.Bold = True
     ws.Range("A1").Font.Size = 20
-    ws.Range("A3").Value = "Data:"
-    ws.Range("B3").Value = folder
-    ws.Range("A4").Value = "Vystup:"
-    ws.Range("B4").Value = folder & "\" & OUT_NAME
-    ws.Columns("A").ColumnWidth = 12
-    ws.Columns("B").ColumnWidth = 70
+    ws.Range("A3").Value = wb.Path
+    ws.Columns("A").ColumnWidth = 70
 
-    Set btn = ws.Buttons.Add(20, 100, 200, 44)
+    Set btn = ws.Buttons.Add(20, 70, 200, 44)
     btn.OnAction = "'" & Replace(wb.Name, "'", "''") & "'!Sloucit"
     btn.Characters.Text = "Sloucit"
     btn.Font.Size = 16
     btn.Font.Bold = True
 
+    Call EnsureSheet(wb, "Mereni")
     wb.Save
 End Sub
 
@@ -101,7 +87,6 @@ End Sub
 
 Public Sub SloucitVsechnaMereni()
     Dim src As String
-    Dim outPath As String
     Dim files As Collection
     Dim wbOut As Workbook
     Dim wsOut As Worksheet
@@ -120,36 +105,25 @@ Public Sub SloucitVsechnaMereni()
     Dim outRow As Long
     Dim nOk As Long
     Dim nSkip As Long
-    Dim createdOut As Boolean
 
     If gBusy Then Exit Sub
     gBusy = True
     On Error GoTo Fail
 
-    src = GetSavedFolder()
-    If Len(src) = 0 Or Not Fso().FolderExists(src) Then
-        src = PickDataFolder("")
-        If Len(src) = 0 Then
-            gBusy = False
-            Exit Sub
-        End If
-        Call SaveFolder(src)
+    src = LocalFolder()
+    If Len(src) = 0 Then
+        MsgBox "Otevri Souhrn_mereni.xlsm z Pruzkumnika (C:\...), ne z webu.", vbExclamation
+        gBusy = False
+        Exit Sub
+    End If
+    If Not Fso().FolderExists(src) Then
+        MsgBox "Slozka neexistuje:" & vbCrLf & src, vbCritical
+        gBusy = False
+        Exit Sub
     End If
 
-    outPath = src & "\" & OUT_NAME
-    Set files = ListMd1(src)
-
-    createdOut = False
-    Set wbOut = WorkbookByPath(outPath)
-    If wbOut Is Nothing Then
-        Set wbOut = Workbooks.Add(xlWBATWorksheet)
-        createdOut = True
-    End If
-
-    Set wsOut = wbOut.Worksheets(1)
-    On Error Resume Next
-    wsOut.Name = "Mereni"
-    On Error GoTo Fail
+    Set wbOut = ThisWorkbook
+    Set wsOut = EnsureSheet(wbOut, "Mereni")
     wsOut.Cells.Clear
     wsOut.Columns("A").ColumnWidth = 32
     wsOut.Columns("B").ColumnWidth = 18
@@ -161,6 +135,7 @@ Public Sub SloucitVsechnaMereni()
 
     Application.ScreenUpdating = False
     Application.DisplayAlerts = False
+    Set files = ListMd1(src)
 
     For i = 1 To files.Count
         fileName = CStr(files(i))
@@ -170,6 +145,10 @@ Public Sub SloucitVsechnaMereni()
         On Error GoTo Fail
         If wbIn Is Nothing Then
             nSkip = nSkip + 1
+            GoTo NextFile
+        End If
+        If StrComp(wbIn.FullName, wbOut.FullName, vbTextCompare) = 0 Then
+            wbIn.Close SaveChanges:=False
             GoTo NextFile
         End If
 
@@ -238,16 +217,12 @@ NextFile:
     Next i
 
     On Error Resume Next
-    If createdOut Or StrComp(wbOut.FullName, outPath, vbTextCompare) <> 0 Then
-        wbOut.SaveAs Filename:=outPath, FileFormat:=51
-    Else
-        wbOut.Save
-    End If
+    wbOut.Save
     On Error GoTo 0
-
     Application.DisplayAlerts = True
     Application.ScreenUpdating = True
-    MsgBox "Hotovo" & vbCrLf & outPath & vbCrLf & "Souboru: " & nOk, vbInformation
+    wsOut.Activate
+    MsgBox "Hotovo. Souboru: " & nOk, vbInformation
     gBusy = False
     Exit Sub
 
@@ -258,48 +233,16 @@ Fail:
     MsgBox "Chyba " & Err.Number & ": " & Err.Description, vbCritical
 End Sub
 
-Private Function PickDataFolder(ByVal initial As String) As String
-    Dim fd As FileDialog
-    Set fd = Application.FileDialog(msoFileDialogFolderPicker)
-    fd.Title = "Slozka s *_MD1.xlsx (OneDrive sync)"
-    If Len(initial) > 0 Then fd.InitialFileName = initial
-    If fd.Show <> -1 Then
-        PickDataFolder = ""
-        Exit Function
-    End If
-    PickDataFolder = fd.SelectedItems(1)
-End Function
-
-Private Function GetSavedFolder() As String
-    On Error Resume Next
-    GetSavedFolder = CStr(ThisWorkbook.Names("DataFolder").RefersToRange.Value)
-    If Err.Number <> 0 Then GetSavedFolder = ""
-    On Error GoTo 0
-End Function
-
-Private Sub SaveFolder(ByVal folder As String)
-    Dim ws As Worksheet
-    Set ws = EnsureSheet(ThisWorkbook, "Start")
-    ws.Range("Z1").Value = folder
-    On Error Resume Next
-    ThisWorkbook.Names("DataFolder").Delete
-    On Error GoTo 0
-    ThisWorkbook.Names.Add Name:="DataFolder", RefersTo:=ws.Range("Z1")
-End Sub
-
-Private Function WorkbookByPath(ByVal fullPath As String) As Workbook
-    Dim wb As Workbook
-    For Each wb In Application.Workbooks
-        If StrComp(wb.FullName, fullPath, vbTextCompare) = 0 Then
-            Set WorkbookByPath = wb
-            Exit Function
-        End If
-    Next wb
-    If Fso().FileExists(fullPath) Then
-        On Error Resume Next
-        Set WorkbookByPath = Workbooks.Open(Filename:=fullPath, UpdateLinks:=0)
-        On Error GoTo 0
-    End If
+Private Function LocalFolder() As String
+    Dim p As String
+    p = ThisWorkbook.Path
+    If Len(p) = 0 Then Exit Function
+    If IsWebPath(p) Or IsWebPath(ThisWorkbook.FullName) Then Exit Function
+    p = Replace(p, "/", "\")
+    Do While Right$(p, 1) = "\"
+        p = Left$(p, Len(p) - 1)
+    Loop
+    LocalFolder = p
 End Function
 
 Private Function IsWebPath(ByVal p As String) As Boolean
