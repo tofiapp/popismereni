@@ -127,8 +127,8 @@ Public Sub VytvoritTlacitko()
     wsBtn.Range("A4").Value = "2) Tlacitko nize = sloucit ted. Jinak bezi samo pri otevreni + kazde 2 min."
     wsBtn.Range("A5").Value = "Slozka zdroju (= tento soubor): " & wb.Path
     wsBtn.Range("A6").Value = "Soubor: " & wb.FullName
-    wsBtn.Range("A8").Value = "Kdyz tlacitko hlasi ze makro neni v souboru: makra jsou v JINEM sesitu." & _
-        " Zavri ostatni, nech jen tento .xlsm, znovu import .bas sem, znovu Mereni_Nastavit."
+    wsBtn.Range("A8").Value = "Kdyz chyba: Alt+F8 -> Mereni_Diagnostika (ukaze Path/FullName)."
+    wsBtn.Range("A9").Value = "Kdyz tlacitko hlasi ze makro neni v souboru: zavri ostatni sesity, import .bas sem, Mereni_Nastavit."
     wsBtn.Columns("A").ColumnWidth = 100
 
     Dim shp As Shape
@@ -171,7 +171,7 @@ Private Function SourceFolder() As String
     Dim p As String
     p = ThisWorkbook.Path
 
-    ' Opened from browser / SharePoint URL -> Dir() throws error 52
+    ' Opened from browser / SharePoint URL -> cannot list files
     If Len(p) = 0 Or IsWebPath(p) Or IsWebPath(ThisWorkbook.FullName) Then
         SourceFolder = ""
         Exit Function
@@ -205,9 +205,18 @@ Private Function IsWebPath(ByVal p As String) As Boolean
                 (InStr(t, "://") > 0) Or (InStr(t, "sharepoint.com") > 0)
 End Function
 
+' FileSystemObject handles Czech chars in OneDrive paths (Dir often -> error 52)
+Private Function Fso() As Object
+    Static cache As Object
+    If cache Is Nothing Then
+        Set cache = CreateObject("Scripting.FileSystemObject")
+    End If
+    Set Fso = cache
+End Function
+
 Private Function FolderExistsLocal(ByVal folderPath As String) As Boolean
     On Error Resume Next
-    FolderExistsLocal = ((GetAttr(folderPath) And vbDirectory) = vbDirectory)
+    FolderExistsLocal = Fso().FolderExists(folderPath)
     If Err.Number <> 0 Then
         Err.Clear
         FolderExistsLocal = False
@@ -215,38 +224,73 @@ Private Function FolderExistsLocal(ByVal folderPath As String) As Boolean
     On Error GoTo 0
 End Function
 
-' Dir() on bad/URL path = runtime 52 - always wrap
-Private Function SafeDir(ByVal pathOrPattern As String) As String
-    On Error Resume Next
-    SafeDir = Dir(pathOrPattern)
-    If Err.Number <> 0 Then
-        Err.Clear
-        SafeDir = ""
+Private Function IsMd1SourceName(ByVal fileName As String) As Boolean
+    Dim n As String
+    n = LCase$(fileName)
+    If StrComp(n, "souhrn_mereni.xlsx", vbTextCompare) = 0 Then
+        IsMd1SourceName = False
+        Exit Function
     End If
-    On Error GoTo 0
+    If StrComp(n, "souhrn_mereni.xlsm", vbTextCompare) = 0 Then
+        IsMd1SourceName = False
+        Exit Function
+    End If
+    ' mereni_MD1.xlsx or YYMMDD_N_MD1.xlsx
+    IsMd1SourceName = (Len(n) >= 9) And (Right$(n, 9) = "_md1.xlsx")
 End Function
 
-Private Function SafeDirNext() As String
+' Shows path info - run from Alt+F8 if something fails
+Public Sub Mereni_Diagnostika()
+    Dim msg As String
+    Dim folder As String
+    Dim ok As Boolean
+    Dim n As Long
+    Dim f As Object
+
+    folder = SourceFolder()
+    msg = "FullName:" & vbCrLf & ThisWorkbook.FullName & vbCrLf & vbCrLf & _
+          "Path:" & vbCrLf & ThisWorkbook.Path & vbCrLf & vbCrLf & _
+          "WebPath: " & CStr(IsWebPath(ThisWorkbook.FullName) Or IsWebPath(ThisWorkbook.Path)) & vbCrLf & _
+          "SourceFolder:" & vbCrLf & folder & vbCrLf
+
+    If Len(folder) = 0 Then
+        msg = msg & vbCrLf & "PROBLEM: neni lokalni cesta. Otevri xlsm z Pruzkumnika (OneDrive sync)."
+        MsgBox msg, vbExclamation, "Mereni diagnostika"
+        Exit Sub
+    End If
+
     On Error Resume Next
-    SafeDirNext = Dir()
-    If Err.Number <> 0 Then
-        Err.Clear
-        SafeDirNext = ""
+    ok = Fso().FolderExists(folder)
+    msg = msg & "FolderExists: " & CStr(ok) & vbCrLf
+    If ok Then
+        n = 0
+        For Each f In Fso().GetFolder(folder).Files
+            If IsMd1SourceName(CStr(f.Name)) Then
+                n = n + 1
+                If n <= 8 Then msg = msg & "  - " & f.Name & vbCrLf
+            End If
+        Next f
+        msg = msg & "MD1 souboru: " & CStr(n)
+    Else
+        msg = msg & "PROBLEM: FSO nevidi slozku (prava / OneDrive)."
     End If
     On Error GoTo 0
-End Function
+    MsgBox msg, vbInformation, "Mereni diagnostika"
+End Sub
 
 Private Sub ExplainBadPath(ByVal silent As Boolean)
     If silent Then
         Application.StatusBar = "Mereni: otevri soubor z lokalni OneDrive slozky (ne z prohlizece)"
         Exit Sub
     End If
-    MsgBox "Cesta k souboru neni lokalni disk (casto https:// SharePoint)." & vbCrLf & vbCrLf & _
+    MsgBox "Cesta k souboru neni lokalni disk (casto https:// SharePoint)," & vbCrLf & _
+           "nebo Dir/cesta s hacky selhala." & vbCrLf & vbCrLf & _
            "Oprav:" & vbCrLf & _
-           "1) Ve Windows Exploreru otevri synchronizovanou OneDrive slozku" & vbCrLf & _
-           "2) Dvojklik na Souhrn_mereni.xlsm (ne Open in Browser)" & vbCrLf & _
-           "3) Inhalt aktivieren / povolit makra" & vbCrLf & vbCrLf & _
-           "Aktualni FullName:" & vbCrLf & ThisWorkbook.FullName, vbCritical
+           "1) Windows Explorer -> synchronizovana OneDrive slozka" & vbCrLf & _
+           "2) Dvojklik Souhrn_mereni.xlsm" & vbCrLf & _
+           "3) Inhalt aktivieren" & vbCrLf & _
+           "4) Alt+F8 -> Mereni_Diagnostika (ukaze cestu)" & vbCrLf & vbCrLf & _
+           "FullName:" & vbCrLf & ThisWorkbook.FullName, vbCritical
 End Sub
 
 ' Called by OnTime - silent refresh only when folder content changed
@@ -294,7 +338,10 @@ Private Sub SloucitCore(ByVal silent As Boolean)
     End If
 
     If Not FolderExistsLocal(SourceFolder()) Then
-        If Not silent Then MsgBox "Slozka nenalezena:" & vbCrLf & SourceFolder(), vbCritical
+        If Not silent Then
+            MsgBox "Slozka nenalezena (FSO):" & vbCrLf & SourceFolder() & vbCrLf & vbCrLf & _
+                   "Spust Mereni_Diagnostika.", vbCritical
+        End If
         gBusy = False
         Exit Sub
     End If
@@ -475,27 +522,22 @@ Fail:
 End Sub
 
 Private Function FolderFingerprint(ByVal srcPath As String) As String
-    Dim name As String
     Dim sig As String
-    Dim full As String
-    Dim fd As Variant
-    Dim fl As Variant
+    Dim f As Object
+    Dim folder As String
+    folder = SourceFolder()
     sig = ""
-    name = SafeDir(srcPath & FILE_PATTERN)
-    Do While name <> ""
-        If StrComp(name, "Souhrn_mereni.xlsx", vbTextCompare) <> 0 And _
-           StrComp(name, "Souhrn_mereni.xlsm", vbTextCompare) <> 0 Then
-            full = srcPath & name
-            fd = ""
-            fl = ""
-            On Error Resume Next
-            fd = FileDateTime(full)
-            fl = FileLen(full)
-            On Error GoTo 0
-            sig = sig & name & "|" & CStr(fd) & "|" & CStr(fl) & ";"
+    On Error Resume Next
+    If Not Fso().FolderExists(folder) Then
+        FolderFingerprint = ""
+        Exit Function
+    End If
+    For Each f In Fso().GetFolder(folder).Files
+        If IsMd1SourceName(CStr(f.Name)) Then
+            sig = sig & f.Name & "|" & CStr(f.DateLastModified) & "|" & CStr(f.Size) & ";"
         End If
-        name = SafeDirNext()
-    Loop
+    Next f
+    On Error GoTo 0
     FolderFingerprint = sig
 End Function
 
@@ -515,7 +557,6 @@ Private Sub SetStoredSig(ByVal sig As String)
     On Error Resume Next
     ThisWorkbook.Names(SIG_NAME).Delete
     On Error GoTo 0
-    ' store on Start!IV1 (far cell) + named range
     ws.Range("IV1").Value = sig
     ThisWorkbook.Names.Add Name:=SIG_NAME, RefersTo:=ws.Range("IV1")
 End Sub
@@ -536,25 +577,29 @@ End Function
 
 Private Function ListSortedFiles(ByVal srcPath As String, ByVal pattern As String) As Collection
     Dim col As Collection
-    Dim name As String
     Dim i As Long
     Dim j As Long
     Dim tmp As String
     Dim arr() As String
     Dim n As Long
+    Dim f As Object
+    Dim folder As String
 
     Set col = New Collection
     n = 0
-    name = SafeDir(srcPath & pattern)
-    Do While name <> ""
-        If StrComp(name, "Souhrn_mereni.xlsx", vbTextCompare) <> 0 And _
-           StrComp(name, "Souhrn_mereni.xlsm", vbTextCompare) <> 0 Then
-            n = n + 1
-            ReDim Preserve arr(1 To n)
-            arr(n) = name
-        End If
-        name = SafeDirNext()
-    Loop
+    folder = SourceFolder()
+
+    On Error Resume Next
+    If Fso().FolderExists(folder) Then
+        For Each f In Fso().GetFolder(folder).Files
+            If IsMd1SourceName(CStr(f.Name)) Then
+                n = n + 1
+                ReDim Preserve arr(1 To n)
+                arr(n) = CStr(f.Name)
+            End If
+        Next f
+    End If
+    On Error GoTo 0
 
     If n = 0 Then
         Set ListSortedFiles = col
