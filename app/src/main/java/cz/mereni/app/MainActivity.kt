@@ -65,6 +65,8 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import cz.mereni.app.data.CreateXlsxDocumentContract
+import cz.mereni.app.data.CreateXlsxRequest
 import cz.mereni.app.data.MeasurementStore
 import cz.mereni.app.data.PasportKey
 import cz.mereni.app.data.PasportKind
@@ -81,6 +83,8 @@ import cz.mereni.app.ui.FieldPanel
 import cz.mereni.app.ui.MereniColors
 import cz.mereni.app.ui.PasportSettingsButton
 import cz.mereni.app.ui.StationSearchPicker
+import androidx.documentfile.provider.DocumentFile
+import java.io.File
 import java.util.Calendar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -91,7 +95,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-            val store = MeasurementStore(this)
+        val store = MeasurementStore(this)
         store.ensureReady()
         val version = BuildConfig.VERSION_NAME
         val initial = PasportRepository.load(this, version)
@@ -167,6 +171,22 @@ class MainActivity : ComponentActivity() {
                 onIsPendingOneDriveConfirm = {
                     store.isPendingOneDriveConfirm()
                 },
+                onTrySaveToDnyFolder = { file ->
+                    store.tryWriteExportToDnyFolder(file)
+                },
+                onWriteExportToUri = { uri, file ->
+                    store.writeExportToUri(uri, file)
+                },
+                onGetDnyTreeUri = { store.getDnyTreeUri() },
+                onGetLastSaveUri = { store.getLastSaveUri() },
+                onGetDnyFolderLabel = { store.getDnyFolderLabel() },
+                onSetDnyTreeFolder = { uri, label, persisted ->
+                    store.setDnyTreeFolder(uri, label, persisted)
+                },
+                onClearDnyTreeFolder = { store.clearDnyTreeFolder() },
+                onTakePersistableTree = { uri ->
+                    SafUris.takePersistableReadWrite(contentResolver, uri)
+                },
                 onShareOneDrive = { file ->
                     val uri = FileProvider.getUriForFile(
                         this@MainActivity,
@@ -185,7 +205,7 @@ class MainActivity : ComponentActivity() {
                             uri,
                         )
                     }
-                    val chooser = Intent.createChooser(send, "Uložit na OneDrive").apply {
+                    val chooser = Intent.createChooser(send, "Sdílet denní soubor").apply {
                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     }
                     startActivity(chooser)
@@ -217,11 +237,19 @@ fun MereniApp(
     onSave: (stationName: String, udu: String, pole1: String, pole2: String, casMereni: String, poznamka: String) -> Pair<Int, Int>,
     onUsedLabels: suspend (String) -> Pair<Set<String>, Set<String>>,
     onPersistBytes: suspend (ByteArray, Uri?) -> PasportLoadResult,
-    onPrepareOneDriveFile: suspend () -> java.io.File,
+    onPrepareOneDriveFile: suspend () -> File,
     onConfirmOneDriveSaved: () -> Pair<Int, Int>,
     onCancelOneDriveConfirm: () -> Unit,
     onIsPendingOneDriveConfirm: () -> Boolean,
-    onShareOneDrive: (java.io.File) -> Unit,
+    onTrySaveToDnyFolder: (File) -> Boolean,
+    onWriteExportToUri: (Uri, File) -> Unit,
+    onGetDnyTreeUri: () -> Uri?,
+    onGetLastSaveUri: () -> Uri?,
+    onGetDnyFolderLabel: () -> String,
+    onSetDnyTreeFolder: (Uri, String, Boolean) -> Boolean,
+    onClearDnyTreeFolder: () -> Unit,
+    onTakePersistableTree: (Uri) -> Boolean,
+    onShareOneDrive: (File) -> Unit,
     onReload: suspend () -> PasportLoadResult,
     onKeysForStation: suspend (Station?, List<PasportKey>) -> List<PasportKey>,
 ) {
@@ -248,6 +276,8 @@ fun MereniApp(
     var oneDriveSynced by remember { mutableStateOf(initialOneDriveSynced) }
     var leftForOneDriveShare by remember { mutableStateOf(false) }
     var showOneDriveConfirm by remember { mutableStateOf(false) }
+    var pendingExportFile by remember { mutableStateOf<File?>(null) }
+    var dnyFolderLabel by remember { mutableStateOf(onGetDnyFolderLabel()) }
     var reorderPole1 by remember { mutableStateOf(false) }
     var reorderPole2 by remember { mutableStateOf(false) }
     var usedPole1A by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -426,6 +456,78 @@ fun MereniApp(
         if (uri != null) loadPasportFromUri(uri)
     }
 
+    val createXlsx = rememberLauncherForActivityResult(
+        contract = CreateXlsxDocumentContract(),
+    ) { uri: Uri? ->
+        val file = pendingExportFile
+        pendingExportFile = null
+        if (uri == null || file == null) {
+            onCancelOneDriveConfirm()
+            exportMessage = "Ukládání zrušeno"
+            return@rememberLauncherForActivityResult
+        }
+        // Zápis hned na Main — OneDrive grant je krátký
+        runCatching { onWriteExportToUri(uri, file) }
+            .onSuccess {
+                oneDriveSynced = false
+                showOneDriveConfirm = true
+                exportMessage = "Uloženo: ${file.name}"
+            }
+            .onFailure { e ->
+                onCancelOneDriveConfirm()
+                exportMessage = e.message ?: "Zápis se nepovedl"
+            }
+    }
+
+    val pickDnyFolder = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree(),
+    ) { uri: Uri? ->
+        if (uri == null) {
+            exportMessage = "Výběr složky zrušen"
+            return@rememberLauncherForActivityResult
+        }
+        val persisted = onTakePersistableTree(uri)
+        val name = DocumentFile.fromTreeUri(context, uri)?.name
+            ?.takeIf { it.isNotBlank() }
+            ?: "Dny"
+        onSetDnyTreeFolder(uri, name, persisted)
+        dnyFolderLabel = name
+        exportMessage = if (persisted) {
+            "Složka Dny nastavena: $name — příště uloží přímo sem"
+        } else {
+            "Složka zapamatována ($name), ale OneDrive často nepovolí trvalý zápis. " +
+                "Uložit otevře „Uložit jako…“ blízko této cesty."
+        }
+    }
+
+    fun launchSavePicker(file: File) {
+        pendingExportFile = file
+        val initial = onGetDnyTreeUri() ?: onGetLastSaveUri()
+        createXlsx.launch(CreateXlsxRequest(fileName = file.name, initialUri = initial))
+        exportMessage = "Ulož ${file.name} do ${MeasurementStore.DNY_HINT_PATH}"
+    }
+
+    fun startOneDriveSave(preferShare: Boolean = false) {
+        exportMessage = null
+        scope.launch {
+            val file = onPrepareOneDriveFile()
+            oneDriveSynced = false
+            if (preferShare) {
+                leftForOneDriveShare = true
+                onShareOneDrive(file)
+                exportMessage = "Sdílení ${file.name}…"
+                return@launch
+            }
+            if (onGetDnyTreeUri() != null && onTrySaveToDnyFolder(file)) {
+                showOneDriveConfirm = true
+                exportMessage = "Uloženo do Dny: ${file.name}"
+                return@launch
+            }
+            // CreateDocument — název předvyplněný, tip na poslední / Dny URI
+            launchSavePicker(file)
+        }
+    }
+
     fun useNow() {
         val c = Calendar.getInstance()
         hour = c.get(Calendar.HOUR_OF_DAY)
@@ -513,14 +615,7 @@ fun MereniApp(
                                 .background(oneDriveAccent.copy(alpha = 0.12f))
                                 .border(2.5.dp, oneDriveAccent, oneDriveShape)
                                 .clickable {
-                                    exportMessage = null
-                                    leftForOneDriveShare = true
-                                    scope.launch {
-                                        val file = onPrepareOneDriveFile()
-                                        onShareOneDrive(file)
-                                        oneDriveSynced = false
-                                        exportMessage = "Sdílení ${file.name}…"
-                                    }
+                                    startOneDriveSave(preferShare = false)
                                 }
                                 .padding(horizontal = 14.dp),
                         ) {
@@ -570,6 +665,7 @@ fun MereniApp(
                     loading = pasportLoading || keysLoading,
                     appVersion = appVersion,
                     recordCount = recordCount,
+                    dnyFolderLabel = dnyFolderLabel,
                     onPick = {
                         pickPasport.launch(
                             arrayOf(
@@ -584,6 +680,17 @@ fun MereniApp(
                         pasportLoading = true
                         pasportLoadingMsg = "Obnovuji pasport…"
                         scope.launch { applyLoad(onReload()) }
+                    },
+                    onPickDnyFolder = {
+                        pickDnyFolder.launch(onGetDnyTreeUri())
+                    },
+                    onClearDnyFolder = {
+                        onClearDnyTreeFolder()
+                        dnyFolderLabel = ""
+                        exportMessage = "Složka Dny zrušena"
+                    },
+                    onShareFallback = {
+                        startOneDriveSave(preferShare = true)
                     },
                     exportMessage = exportMessage,
                 )
@@ -944,7 +1051,7 @@ fun MereniApp(
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        "Nahrál jsi denní soubor na OneDrive?",
+                        "Uložil jsi denní soubor na OneDrive?",
                         color = MereniColors.Text,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 17.sp,
@@ -953,8 +1060,8 @@ fun MereniApp(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "Soubor YYMMDD_N_MD1.xlsx ulož do složky\n" +
-                            "Popis_měření_MD1 / Dny\n\n" +
+                        "Cíl: ${MeasurementStore.DNY_HINT_PATH}\n" +
+                            "(YYMMDD_N_MD1.xlsx)\n\n" +
                             "✕ — tlačítko zůstane červené.\n" +
                             "ANO — vymazat místní záznamy (zelená).",
                         color = MereniColors.TextMuted,
