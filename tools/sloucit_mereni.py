@@ -57,6 +57,24 @@ UPDATE_PREFIX = "Naposledy aktualizováno:"
 BUTTON_LABEL = "Aktualizovat"
 UPDATE_BAT_NAME = "SloucitMereni.bat"
 
+
+def file_uri(path: Path) -> str:
+    """Absolutní file:///… — relativní .bat na OneDrive Excel otevírá jako https → 404."""
+    return path.resolve().as_uri()
+
+
+def sheet_rels_xml(bat_path: Path) -> str:
+    target = xml_escape(file_uri(bat_path))
+    return (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        '<Relationship Id="rId1" '
+        'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" '
+        f'Target="{target}" TargetMode="External"/>'
+        "</Relationships>"
+    )
+
+
 CONTENT_TYPES = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
@@ -75,11 +93,6 @@ RELS_WB = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
   <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
-</Relationships>"""
-
-SHEET_RELS = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="{UPDATE_BAT_NAME}" TargetMode="External"/>
 </Relationships>"""
 
 WORKBOOK = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -390,6 +403,7 @@ def sheet_xml(rows: Iterable[Row]) -> str:
 
 def write_xlsx(path: Path, rows: List[Row]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    bat = path.parent / UPDATE_BAT_NAME
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("[Content_Types].xml", CONTENT_TYPES)
         zf.writestr("_rels/.rels", RELS_ROOT)
@@ -397,7 +411,7 @@ def write_xlsx(path: Path, rows: List[Row]) -> None:
         zf.writestr("xl/_rels/workbook.xml.rels", RELS_WB)
         zf.writestr("xl/styles.xml", STYLES)
         zf.writestr("xl/worksheets/sheet1.xml", sheet_xml(rows))
-        zf.writestr("xl/worksheets/_rels/sheet1.xml.rels", SHEET_RELS)
+        zf.writestr("xl/worksheets/_rels/sheet1.xml.rels", sheet_rels_xml(bat))
 
 
 def date_from_filename(name: str) -> str:
