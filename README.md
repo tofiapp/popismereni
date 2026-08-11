@@ -1,12 +1,11 @@
-# Měření v0.47.0
+# Měření v0.50.1
 
 ## Aktualizace
 ```bash
-adb install -r artifacts/mereni-v0.47.0-debug.apk
+adb install -r artifacts/mereni-v0.50.1-debug.apk
 ```
 
-## OneDrive — starý způsob
-**Uložit na OneDrive** = share sheet (jako před v0.46).  
-Vyber **OneDrive**, ne Google Files → `Popis_měření_MD1 / Dny`.
+## OneDrive (work profil)
+**Uložit na OneDrive** = jen share sheet → appka **OneDrive** (xlsx) nebo **Edge** (ZIP).
 
-Files v postranním panelu OneDrive často schová (work profil) — to je OK, přes sdílení to nepotřebuješ.
+Ve Files OneDrive neuvidíš — nejde nastavit „Složku Dny“. Ulož v OneDrive do `Popis_měření_MD1 / Dny`.

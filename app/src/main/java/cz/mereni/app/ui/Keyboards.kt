@@ -1071,11 +1071,7 @@ fun PasportSettingsButton(
     recordCount: Int,
     onPick: () -> Unit,
     onReload: () -> Unit,
-    dnyFolderLabel: String = "",
-    onPickDnyFolder: () -> Unit = {},
-    onClearDnyFolder: () -> Unit = {},
     onShareFallback: () -> Unit = {},
-    onSaveViaSaf: () -> Unit = {},
     exportMessage: String? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -1135,11 +1131,10 @@ fun PasportSettingsButton(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    "Sdílení otevře OneDrive v režimu „uložit sdílený soubor“ — " +
-                        "je to zjednodušené (často bez Oblíbených). Tak to má Microsoft.\n\n" +
-                        "Lepší: níže nastav Složku Dny (uvidíš víc složek). " +
-                        "Příště Uložit na OneDrive zapíše rovnou tam.\n\n" +
-                        "Cíl: Popis_měření_MD1 / Dny  →  YYMMDD_N_MD1.xlsx",
+                    "Na work profilu OneDrive ve Files / výběru složky NENÍ — " +
+                        "nejde nastavit Složku Dny. Jediná cesta je sdílení do appky OneDrive.\n\n" +
+                        "OneDrive = xlsx → ulož do Popis_měření_MD1 / Dny\n" +
+                        "Edge = ZIP (xlsx v prohlížeči nejde otevřít)",
                     color = MereniColors.TextMuted,
                     fontSize = 12.sp,
                 )
@@ -1149,35 +1144,6 @@ fun PasportSettingsButton(
                     open = false
                 }) {
                     Text("Sdílet (OneDrive / Edge)…", color = MereniColors.Accent, fontWeight = FontWeight.SemiBold)
-                }
-                TextButton(onClick = {
-                    onSaveViaSaf()
-                    open = false
-                }) {
-                    Text("Uložit jako… (Files — často nejde)", color = MereniColors.TextMuted, fontSize = 12.sp)
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    if (dnyFolderLabel.isNotBlank()) {
-                        "Složka Dny: $dnyFolderLabel"
-                    } else {
-                        "Složka Dny — plnější výběr než sdílení (zkus nastavit)"
-                    },
-                    color = if (dnyFolderLabel.isNotBlank()) MereniColors.Kolej else MereniColors.TextMuted,
-                    fontSize = 12.sp,
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TextButton(onClick = {
-                        onPickDnyFolder()
-                        open = false
-                    }) {
-                        Text("Vybrat složku Dny…", color = MereniColors.TextMuted, fontSize = 12.sp)
-                    }
-                    if (dnyFolderLabel.isNotBlank()) {
-                        TextButton(onClick = { onClearDnyFolder() }) {
-                            Text("Zrušit", color = MereniColors.TextMuted, fontSize = 12.sp)
-                        }
-                    }
                 }
 
                 Spacer(modifier = Modifier.height(14.dp))

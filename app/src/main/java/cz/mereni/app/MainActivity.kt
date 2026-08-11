@@ -63,8 +63,6 @@ import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import cz.mereni.app.data.CreateXlsxDocumentContract
-import cz.mereni.app.data.CreateXlsxRequest
 import cz.mereni.app.data.MeasurementStore
 import cz.mereni.app.data.OneDriveShare
 import cz.mereni.app.data.PasportKey
@@ -82,7 +80,6 @@ import cz.mereni.app.ui.FieldPanel
 import cz.mereni.app.ui.MereniColors
 import cz.mereni.app.ui.PasportSettingsButton
 import cz.mereni.app.ui.StationSearchPicker
-import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import java.util.Calendar
 import kotlinx.coroutines.Dispatchers
@@ -170,22 +167,6 @@ class MainActivity : ComponentActivity() {
                 onIsPendingOneDriveConfirm = {
                     store.isPendingOneDriveConfirm()
                 },
-                onTrySaveToDnyFolder = { file ->
-                    store.tryWriteExportToDnyFolder(file)
-                },
-                onWriteExportToUri = { uri, file ->
-                    store.writeExportToUri(uri, file)
-                },
-                onGetDnyTreeUri = { store.getDnyTreeUri() },
-                onGetLastSaveUri = { store.getLastSaveUri() },
-                onGetDnyFolderLabel = { store.getDnyFolderLabel() },
-                onSetDnyTreeFolder = { uri, label, persisted ->
-                    store.setDnyTreeFolder(uri, label, persisted)
-                },
-                onClearDnyTreeFolder = { store.clearDnyTreeFolder() },
-                onTakePersistableTree = { uri ->
-                    SafUris.takePersistableReadWrite(contentResolver, uri)
-                },
                 onShareOneDrive = { file ->
                     OneDriveShare.shareExport(this@MainActivity, file)
                 },
@@ -220,14 +201,6 @@ fun MereniApp(
     onConfirmOneDriveSaved: () -> Pair<Int, Int>,
     onCancelOneDriveConfirm: () -> Unit,
     onIsPendingOneDriveConfirm: () -> Boolean,
-    onTrySaveToDnyFolder: (File) -> Boolean,
-    onWriteExportToUri: (Uri, File) -> Unit,
-    onGetDnyTreeUri: () -> Uri?,
-    onGetLastSaveUri: () -> Uri?,
-    onGetDnyFolderLabel: () -> String,
-    onSetDnyTreeFolder: (Uri, String, Boolean) -> Boolean,
-    onClearDnyTreeFolder: () -> Unit,
-    onTakePersistableTree: (Uri) -> Boolean,
     onShareOneDrive: (File) -> Unit,
     onReload: suspend () -> PasportLoadResult,
     onKeysForStation: suspend (Station?, List<PasportKey>) -> List<PasportKey>,
@@ -255,8 +228,6 @@ fun MereniApp(
     var oneDriveSynced by remember { mutableStateOf(initialOneDriveSynced) }
     var leftForOneDriveShare by remember { mutableStateOf(false) }
     var showOneDriveConfirm by remember { mutableStateOf(false) }
-    var pendingExportFile by remember { mutableStateOf<File?>(null) }
-    var dnyFolderLabel by remember { mutableStateOf(onGetDnyFolderLabel()) }
     var reorderPole1 by remember { mutableStateOf(false) }
     var reorderPole2 by remember { mutableStateOf(false) }
     var usedPole1A by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -435,91 +406,17 @@ fun MereniApp(
         if (uri != null) loadPasportFromUri(uri)
     }
 
-    val createXlsx = rememberLauncherForActivityResult(
-        contract = CreateXlsxDocumentContract(),
-    ) { uri: Uri? ->
-        val file = pendingExportFile
-        pendingExportFile = null
-        if (uri == null || file == null) {
-            onCancelOneDriveConfirm()
-            exportMessage = "Ukládání zrušeno"
-            return@rememberLauncherForActivityResult
-        }
-        // Zápis hned na Main — OneDrive grant je krátký
-        runCatching { onWriteExportToUri(uri, file) }
-            .onSuccess {
-                oneDriveSynced = false
-                showOneDriveConfirm = true
-                exportMessage = "Uloženo: ${file.name}"
-            }
-            .onFailure { e ->
-                onCancelOneDriveConfirm()
-                exportMessage = e.message ?: "Zápis se nepovedl"
-            }
-    }
-
-    val pickDnyFolder = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocumentTree(),
-    ) { uri: Uri? ->
-        if (uri == null) {
-            exportMessage = "Výběr složky zrušen"
-            return@rememberLauncherForActivityResult
-        }
-        val persisted = onTakePersistableTree(uri)
-        val name = DocumentFile.fromTreeUri(context, uri)?.name
-            ?.takeIf { it.isNotBlank() }
-            ?: "Dny"
-        onSetDnyTreeFolder(uri, name, persisted)
-        dnyFolderLabel = name
-        exportMessage = if (persisted) {
-            "Složka Dny nastavena: $name — příště uloží přímo sem"
-        } else {
-            "Složka zapamatována ($name), ale OneDrive často nepovolí trvalý zápis. " +
-                "Uložit otevře „Uložit jako…“ blízko této cesty."
-        }
-    }
-
-    fun launchSavePicker(file: File) {
-        pendingExportFile = file
-        val initial = onGetDnyTreeUri() ?: onGetLastSaveUri()
-        createXlsx.launch(CreateXlsxRequest(fileName = file.name, initialUri = initial))
-        exportMessage = "Ulož ${file.name} do ${MeasurementStore.DNY_HINT_PATH}"
-    }
-
-    fun startOneDriveSave(mode: String = "share") {
+    fun startOneDriveSave() {
         exportMessage = null
         scope.launch {
             val file = onPrepareOneDriveFile()
             oneDriveSynced = false
-            when (mode) {
-                "saf" -> {
-                    // Uložit jako… — na pracovním profilu často bez OneDrive
-                    launchSavePicker(file)
-                }
-                "folder" -> {
-                    if (onGetDnyTreeUri() != null && onTrySaveToDnyFolder(file)) {
-                        showOneDriveConfirm = true
-                        exportMessage = "Uloženo do Dny: ${file.name}"
-                    } else {
-                        launchSavePicker(file)
-                    }
-                }
-                else -> {
-                    // Nejdřív zapamatovaná složka Dny (plný výběr složek jednou v ⚙).
-                    // Jinak share sheet — OneDrive ukáže jen zjednodušené „uložit sem“
-                    // (bez Oblíbených); to dělá Microsoft, ne naše appka.
-                    if (onGetDnyTreeUri() != null && onTrySaveToDnyFolder(file)) {
-                        showOneDriveConfirm = true
-                        exportMessage = "Uloženo přímo do Dny: ${file.name}"
-                    } else {
-                        leftForOneDriveShare = true
-                        onShareOneDrive(file)
-                        exportMessage =
-                            "Sdílení ${file.name}… OneDrive ukáže zjednodušené uložení " +
-                                "(bez Oblíbených). Tip: v ⚙ nastav Složku Dny."
-                    }
-                }
-            }
+            // Work profil: OneDrive ve Files / SAF není — jen share sheet → appka OneDrive.
+            leftForOneDriveShare = true
+            onShareOneDrive(file)
+            exportMessage =
+                "Sdílení ${file.name}… vyber OneDrive (xlsx) nebo Edge (ZIP). " +
+                    "Ve Files OneDrive neuvidíš — to je omezení profilu, ne appky."
         }
     }
 
@@ -610,7 +507,7 @@ fun MereniApp(
                                 .background(oneDriveAccent.copy(alpha = 0.12f))
                                 .border(2.5.dp, oneDriveAccent, oneDriveShape)
                                 .clickable {
-                                    startOneDriveSave("share")
+                                    startOneDriveSave()
                                 }
                                 .padding(horizontal = 14.dp),
                         ) {
@@ -660,7 +557,6 @@ fun MereniApp(
                     loading = pasportLoading || keysLoading,
                     appVersion = appVersion,
                     recordCount = recordCount,
-                    dnyFolderLabel = dnyFolderLabel,
                     onPick = {
                         pickPasport.launch(
                             arrayOf(
@@ -676,19 +572,8 @@ fun MereniApp(
                         pasportLoadingMsg = "Obnovuji pasport…"
                         scope.launch { applyLoad(onReload()) }
                     },
-                    onPickDnyFolder = {
-                        pickDnyFolder.launch(onGetDnyTreeUri())
-                    },
-                    onClearDnyFolder = {
-                        onClearDnyTreeFolder()
-                        dnyFolderLabel = ""
-                        exportMessage = "Složka Dny zrušena"
-                    },
-                    onSaveViaSaf = {
-                        startOneDriveSave("saf")
-                    },
                     onShareFallback = {
-                        startOneDriveSave("share")
+                        startOneDriveSave()
                     },
                     exportMessage = exportMessage,
                 )
@@ -1058,11 +943,9 @@ fun MereniApp(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "V share sheetu: OneDrive (uložit) nebo Edge (prohlížeč).\n" +
-                            "OneDrive ukáže zjednodušené uložení — bez Oblíbených " +
-                            "(omezení OneDrive při sdílení).\n" +
-                            "Cíl: ${MeasurementStore.DNY_HINT_PATH} / YYMMDD_N_MD1.xlsx\n\n" +
-                            "Tip: v ⚙ nastav Složku Dny → příště bez tohoto dialogu.\n\n" +
+                        "Ve Files OneDrive neuvidíš — ulož přes appku OneDrive.\n" +
+                            "OneDrive = xlsx → ${MeasurementStore.DNY_HINT_PATH}\n" +
+                            "Edge = ZIP (xlsx v prohlížeči nejde).\n\n" +
                             "✕ — tlačítko zůstane červené.\n" +
                             "ANO — vymazat místní záznamy (zelená).",
                         color = MereniColors.TextMuted,
