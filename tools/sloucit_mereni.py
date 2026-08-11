@@ -331,6 +331,11 @@ def sheet_xml(rows: Iterable[Row]) -> str:
     parts = [
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
         '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">',
+        # Zmrazený 1. řádek (razítko aktualizace) zůstane viditelný při scrollování
+        '<sheetViews><sheetView workbookViewId="0">'
+        '<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>'
+        '<selection pane="bottomLeft" activeCell="A2" sqref="A2"/>'
+        "</sheetView></sheetViews>",
         "<cols>",
         '<col min="1" max="1" width="32" customWidth="1"/>',
         '<col min="2" max="2" width="18" customWidth="1"/>',
@@ -566,17 +571,30 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     files = list_md1_files(source)
     if not files:
-        print(f"Ve složce nejsou žádné *_MD1.xlsx:\n  {source}", file=sys.stderr)
-        print(
-            f"Očekávaná struktura:\n"
-            f"  {MAIN_FOLDER_NAME}/\n"
-            f"    {SUMMARY_XLSX_NAME}\n"
-            f"    {DAYS_SUBFOLDER_NAME}/\n"
-            f"      YYMMDD_N_MD1.xlsx\n"
-            f"      {ARCHIVE_FOLDER_NAME}/",
-            file=sys.stderr,
-        )
-        return 1
+        print(f"Není nic nového ke sloučení (žádné *_MD1.xlsx v {source}).")
+        print("To není chyba — nové denní soubory z appky dej do Dny/.")
+        if out_path.is_file() and out_path.stat().st_size > 64:
+            try:
+                base = strip_update_rows(read_xlsx(out_path))
+                stamped = with_update_stamp(base)
+                write_xlsx(out_path, stamped)
+                print(f"Aktualizace: {stamped[0].a}")
+            except Exception as exc:  # noqa: BLE001
+                print(f"Souhrn nepřepisuji ({exc}), jen otevřu.")
+            try:
+                if sys.platform.startswith("win"):
+                    os.startfile(out_path)  # type: ignore[attr-defined]
+                    print("Otevírám Excel…")
+                elif os.environ.get("SLOUCIT_NO_OPEN") != "1":
+                    import subprocess
+
+                    subprocess.Popen(["xdg-open", str(out_path)])
+                    print("Otevírám Excel…")
+            except OSError as exc:
+                print(f"Nepodařilo se otevřít soubor: {exc}", file=sys.stderr)
+        else:
+            print(f"Souhrn zatím neexistuje: {out_path}")
+        return 0
 
     print(f"Denní soubory: {source}")
     print(f"Souhrn:        {out_path}")
