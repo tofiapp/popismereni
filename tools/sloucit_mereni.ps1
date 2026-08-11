@@ -1,5 +1,5 @@
 ﻿#Requires -Version 5.1
-# sloucit_mereni.ps1 — verze 2026-08-11l
+# sloucit_mereni.ps1 — verze 2026-08-11m
 # ASCII-only source (Windows PowerShell 5.1). Czech names via [char] codes.
 # Layout:
 #   Popis_mereni_MD1/
@@ -513,10 +513,11 @@ function Get-SheetXml($rows) {
 }
 
 function Close-WorkbookIfOpen([string]$path) {
-    # Aby slo prepsat souhrn, pokud je otevreny v Excelu
+    # Zavri souhrn v Excelu (klik na Aktualizovat necha sešit otevřený → zamek)
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $false }
     $full = $null
-    try { $full = [System.IO.Path]::GetFullPath($path) } catch { return $false }
+    try { $full = [System.IO.Path]::GetFullPath($path) } catch { $full = $path }
+    $leaf = [System.IO.Path]::GetFileName($path)
     $excel = $null
     try {
         $excel = [System.Runtime.InteropServices.Marshal]::GetActiveObject("Excel.Application")
@@ -525,20 +526,57 @@ function Close-WorkbookIfOpen([string]$path) {
     }
     $closed = $false
     try {
+        try { $excel.DisplayAlerts = $false } catch { }
         foreach ($wb in @($excel.Workbooks)) {
             try {
                 $wbPath = [string]$wb.FullName
-                if ([string]::IsNullOrEmpty($wbPath)) { continue }
-                $wbFull = [System.IO.Path]::GetFullPath($wbPath)
-                if ($wbFull.Equals($full, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $wbName = [string]$wb.Name
+                $match = $false
+                if ($wbName -and $wbName.Equals($leaf, [StringComparison]::OrdinalIgnoreCase)) {
+                    $match = $true
+                }
+                if (-not [string]::IsNullOrEmpty($wbPath)) {
+                    if ($wbPath.Equals($path, [StringComparison]::OrdinalIgnoreCase)) { $match = $true }
+                    if ($wbPath.Equals($full, [StringComparison]::OrdinalIgnoreCase)) { $match = $true }
+                    try {
+                        $wbFull = [System.IO.Path]::GetFullPath($wbPath)
+                        if ($wbFull.Equals($full, [StringComparison]::OrdinalIgnoreCase)) { $match = $true }
+                    } catch { }
+                    if ([System.IO.Path]::GetFileName($wbPath).Equals($leaf, [StringComparison]::OrdinalIgnoreCase)) {
+                        $match = $true
+                    }
+                }
+                if ($match) {
+                    Write-Host "Zaviram otevreny souhrn v Excelu (kvuli prepsani)..."
                     $wb.Close($false) | Out-Null
                     $closed = $true
-                    Write-Host "Zaviram otevreny souhrn v Excelu (kvuli prepsani)..."
                 }
             } catch { }
         }
+        try { [System.GC]::Collect(); [System.GC]::WaitForPendingFinalizers() } catch { }
     } catch { }
     return $closed
+}
+
+function Remove-LockedFile([string]$path, [int]$tries = 12) {
+    # Smaze i Excel lock ~$soubor.xlsx
+    $dir = Split-Path -Parent $path
+    $leaf = [System.IO.Path]::GetFileName($path)
+    $lock = Join-Path $dir ("~$" + $leaf)
+    for ($i = 0; $i -lt $tries; $i++) {
+        Close-WorkbookIfOpen $path | Out-Null
+        if (Test-Path -LiteralPath $lock) {
+            try { Remove-Item -LiteralPath $lock -Force -ErrorAction SilentlyContinue } catch { }
+        }
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $true }
+        try {
+            Remove-Item -LiteralPath $path -Force -ErrorAction Stop
+            return $true
+        } catch {
+            Start-Sleep -Milliseconds (400 + ($i * 250))
+        }
+    }
+    return $false
 }
 
 function Open-SummaryExcel([string]$path) {
@@ -572,12 +610,15 @@ function Write-Xlsx([string]$path, $rows) {
     if ($dir -and -not (Test-Path -LiteralPath $dir)) {
         New-Item -ItemType Directory -Path $dir -Force | Out-Null
     }
-    Close-WorkbookIfOpen $path | Out-Null
-    Start-Sleep -Milliseconds 400
-    if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
+
     $batPath = Ensure-BatBesideSummary $path
     $sheetRels = Get-SheetRelsXml $batPath
-    $zip = [System.IO.Compression.ZipFile]::Open($path, [System.IO.Compression.ZipArchiveMode]::Create)
+
+    # Nejdřív zapis do docasneho souboru, pak nahrad (min conflict s Excel/OneDrive zamkem)
+    $tmp = Join-Path $dir (".sloucit_tmp_" + [guid]::NewGuid().ToString("N") + ".xlsx")
+    if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
+
+    $zip = [System.IO.Compression.ZipFile]::Open($tmp, [System.IO.Compression.ZipArchiveMode]::Create)
     try {
         Write-ZipEntry $zip "[Content_Types].xml" $CONTENT_TYPES
         Write-ZipEntry $zip "_rels/.rels" $RELS_ROOT
@@ -588,6 +629,27 @@ function Write-Xlsx([string]$path, $rows) {
         Write-ZipEntry $zip "xl/worksheets/_rels/sheet1.xml.rels" $sheetRels
     }
     finally { $zip.Dispose() }
+
+    if (-not (Remove-LockedFile $path)) {
+        try { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue } catch { }
+        throw ("Souhrn je zamceny (Excel nebo OneDrive):`n  {0}`nZavri soubor v Excelu a spust znovu (nebo pockej na sync)." -f $path)
+    }
+
+    $moved = $false
+    for ($i = 0; $i -lt 8; $i++) {
+        try {
+            Move-Item -LiteralPath $tmp -Destination $path -Force -ErrorAction Stop
+            $moved = $true
+            break
+        } catch {
+            Close-WorkbookIfOpen $path | Out-Null
+            Start-Sleep -Milliseconds (400 + ($i * 200))
+        }
+    }
+    if (-not $moved) {
+        try { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue } catch { }
+        throw ("Nepodarilo se nahradit souhrn (zamek):`n  {0}" -f $path)
+    }
 }
 
 function Test-IsDailyMd1Name([string]$name) {
@@ -629,7 +691,7 @@ function Resolve-Layout([string]$folderPath) {
 
 # ---- main ----
 try {
-    Write-Host "sloucit_mereni.ps1 verze 2026-08-11l"
+    Write-Host "sloucit_mereni.ps1 verze 2026-08-11m"
     if (-not (Test-Path -LiteralPath $Folder)) {
         Write-Host "Slozka neexistuje:"
         Write-Host "  $Folder"

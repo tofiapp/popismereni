@@ -21,4 +21,6 @@ Jen **dva** skripty: `SloucitMereni.bat` + `sloucit_mereni.ps1`.
 2. Spusť bat (nebo v desktop Excelu klikni **Aktualizovat**)
 3. Tlačítko míří přímo na `SloucitMereni.bat` (skript ho případně doplní sám)
 
-Verze: **2026-08-11l**
+Verze: **2026-08-11m**
+
+Skript před zápisem zavře souhrn v Excelu a při zámku opakuje smazání/nahrazení.
