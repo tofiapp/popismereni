@@ -38,11 +38,13 @@ Jen **dva** skripty: `SloucitMereni.bat` + `sloucit_mereni.ps1`.
 
 1. Bat + ps1 dej vedle souhrnu (jednou na sdíleném místě)
 2. Spusť bat (nebo v desktop Excelu klikni **Aktualizovat**)
-3. Když v `Dny/` nic není, skript souhrn **nepřepisuje** — jen otevře Excel
+3. Když v `Dny/` nic není, skript souhrn nepřepisuje — **kromě opravy** duplicitních nadpisů stanic
 
 ## Stanice víckrát za den
 
-Nymburk → Poděbrady → Nymburk = dva oranžové bloky. Skript bere i čas ve sloupci C.
+- **Hned pod sebou** stejný název (bez jiné stanice mezi) → **jeden** oranžový blok (např. dvě dávky Třemošnice).
+- **Návrat po jiné stanici** (Nymburk → Poděbrady → Nymburk) → **dva** bloky.
+- Aktualizovat opraví i už zapsané duplicitní nadpisy v souhrnu.
 
 ## Pravidla pro více lidí
 
@@ -50,6 +52,6 @@ Nymburk → Poděbrady → Nymburk = dva oranžové bloky. Skript bere i čas ve
 - Souhrn nesmí mít mezitím otevřený někdo jiný v Excelu
 - OneDrive: **Keep on this device**
 - Po sloučení počkej na sync
-- Banner musí být `verze 2026-08-11p`
+- Banner musí být `verze 2026-08-11r`
 
-Verze: **2026-08-11p**
+Verze: **2026-08-11r**

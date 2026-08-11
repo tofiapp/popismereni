@@ -563,6 +563,36 @@ def time_to_minutes(text: str) -> int:
     return hh * 60 + mm
 
 
+def collapse_consecutive_same_stations(
+    rows: List[Row], verbose: bool = True
+) -> List[Row]:
+    """Stejná stanice hned pod sebou → jeden nadpis. Návrat po jiné stanici zůstane."""
+    out: List[Row] = []
+    last_station = ""
+    collapsed = 0
+    for row in rows:
+        if row.role == Role.DATE:
+            last_station = ""
+            out.append(row)
+            continue
+        if row.role == Role.STATION:
+            name = row.a or ""
+            if name and name == last_station:
+                if out and out[-1].role == Role.BLANK:
+                    out.pop()
+                collapsed += 1
+                continue
+            last_station = name
+            out.append(row)
+            continue
+        out.append(row)
+    if collapsed and verbose:
+        print(
+            f"Sloučeno duplicitních nadpisů stanic (stejný den, hned pod sebou): {collapsed}"
+        )
+    return out
+
+
 def merge_folder(
     folder: Path,
     verbose: bool = True,
@@ -571,23 +601,12 @@ def merge_folder(
     out: List[Row] = strip_update_rows(list(base_rows or []))
     current_date = ""
     last_station = ""
-    last_time_min = -1
-    data_under_station = False
     for row in out:
         if row.role == Role.DATE and row.a:
             current_date = row.a
             last_station = ""
-            last_time_min = -1
-            data_under_station = False
         elif row.role == Role.STATION and row.a:
             last_station = row.a
-            last_time_min = -1
-            data_under_station = False
-        elif row.role == Role.DATA:
-            data_under_station = True
-            tm = time_to_minutes(row.c)
-            if tm >= 0:
-                last_time_min = tm
     ok = 0
     skipped = 0
     processed: List[Path] = []
@@ -618,8 +637,6 @@ def merge_folder(
                     out.append(Row(a=row.a, role=Role.DATE))
                     current_date = row.a
                     last_station = ""
-                    last_time_min = -1
-                    data_under_station = False
                     wrote = True
                 continue
 
@@ -630,19 +647,11 @@ def merge_folder(
                     out.append(Row(a=file_date_guess, role=Role.DATE))
                     current_date = file_date_guess
                     last_station = ""
-                    last_time_min = -1
-                    data_under_station = False
-                # Stanice může být v jednom dni víckrát (Nymburk → Poděbrady → Nymburk).
-                same_name = row.a == last_station
-                consecutive_dup = same_name and not data_under_station
-                if not consecutive_dup:
-                    if same_name and data_under_station and verbose:
-                        print(f"    nová návštěva stanice: {row.a}")
+                # Stejné jméno hned za sebou = pokračování (jeden nadpis).
+                if row.a != last_station:
                     out.append(Row(role=Role.BLANK))
                     out.append(Row(a=row.a, role=Role.STATION))
                     last_station = row.a
-                    last_time_min = -1
-                    data_under_station = False
                     wrote = True
                 continue
 
@@ -653,30 +662,8 @@ def merge_folder(
                 out.append(Row(a=file_date_guess, role=Role.DATE))
                 current_date = file_date_guess
                 last_station = ""
-                last_time_min = -1
-                data_under_station = False
-
-            tm = time_to_minutes(row.c)
-            if (
-                last_station
-                and data_under_station
-                and tm >= 0
-                and last_time_min >= 0
-                and tm < (last_time_min - 15)
-            ):
-                if verbose:
-                    print(
-                        f"    čas skáče zpět ({row.c}) u {last_station} — nová návštěva"
-                    )
-                out.append(Row(role=Role.BLANK))
-                out.append(Row(a=last_station, role=Role.STATION))
-                last_time_min = -1
-                data_under_station = False
 
             out.append(Row(a=row.a, b=row.b, c=row.c, d=row.d, role=Role.DATA))
-            data_under_station = True
-            if tm >= 0:
-                last_time_min = tm
             wrote = True
 
         if wrote:
@@ -685,6 +672,7 @@ def merge_folder(
         else:
             skipped += 1
 
+    out = collapse_consecutive_same_stations(out, verbose=verbose)
     return out, ok, skipped, processed
 
 
@@ -824,8 +812,18 @@ def _main_locked(source: Path, out_path: Path, files: List[Path]) -> int:
     if not files:
         print(f"Není nic nového ke sloučení (žádné *_MD1.xlsx v {source}).")
         print("To není chyba — nové denní soubory z appky dej do Dny/.")
-        print("Souhrn nepřepisuji (žádná nová data) — jen otevřu.")
         if out_path.is_file() and out_path.stat().st_size > 64:
+            try:
+                base = strip_update_rows(read_xlsx(out_path))
+                fixed = collapse_consecutive_same_stations(base)
+                if len(fixed) < len(base):
+                    stamped = with_update_stamp(fixed)
+                    write_xlsx(out_path, stamped)
+                    print(f"Opraveny duplicitní stanice, aktualizace: {stamped[0].a}")
+                else:
+                    print("Souhrn nepřepisuji (žádná nová data / žádné duplicitní stanice) — jen otevřu.")
+            except Exception as exc:  # noqa: BLE001
+                print(f"Souhrn nepřepisuji ({exc}), jen otevřu.")
             try:
                 if sys.platform.startswith("win"):
                     os.startfile(out_path)  # type: ignore[attr-defined]

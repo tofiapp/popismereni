@@ -1,5 +1,5 @@
 ﻿#Requires -Version 5.1
-# sloucit_mereni.ps1 — verze 2026-08-11p
+# sloucit_mereni.ps1 — verze 2026-08-11r
 # ASCII-only source (Windows PowerShell 5.1). Czech names via [char] codes.
 # Layout:
 #   Popis_mereni_MD1/
@@ -279,6 +279,55 @@ function ConvertTo-TimeMinutes([string]$s) {
     $mm = [int]$m.Groups[2].Value
     if ($hh -gt 23 -or $mm -gt 59) { return -1 }
     return ($hh * 60 + $mm)
+}
+
+function Collapse-ConsecutiveSameStations {
+    # Stejna stanice hned pod sebou (bez jine stanice mezi) → jeden nazev.
+    # Nymburk → Podebrady → Nymburk zustane dve navstevy. Tremosnice + Tremosnice → jedna.
+    param($Rows)
+    $list = New-Object System.Collections.Generic.List[object]
+    $lastStation = ""
+    $collapsed = 0
+    if ($null -eq $Rows) { return ,$list }
+
+    $arr = $null
+    try {
+        if ($Rows -is [System.Array]) { $arr = [object[]]$Rows }
+        elseif ($Rows.PSObject.Methods['ToArray']) { $arr = [object[]]$Rows.ToArray() }
+    } catch { $arr = $null }
+    if ($null -eq $arr) { return ,$list }
+
+    foreach ($r in $arr) {
+        if (-not (Test-IsRowObject $r)) { continue }
+        $role = [string]$r.Role
+        if ($role -eq "DATE") {
+            $lastStation = ""
+            [void]$list.Add($r)
+            continue
+        }
+        if ($role -eq "STATION") {
+            $name = ""
+            try { $name = [string]$r.A } catch { $name = "" }
+            if ($name -and $name -eq $lastStation) {
+                if ($list.Count -gt 0) {
+                    $prev = $list[$list.Count - 1]
+                    if ((Test-IsRowObject $prev) -and ([string]$prev.Role -eq "BLANK")) {
+                        $list.RemoveAt($list.Count - 1)
+                    }
+                }
+                $collapsed++
+                continue
+            }
+            $lastStation = $name
+            [void]$list.Add($r)
+            continue
+        }
+        [void]$list.Add($r)
+    }
+    if ($collapsed -gt 0) {
+        Write-Host ("Slouceno duplicitnich nadpisu stanic (stejny den, hned pod sebou): {0}" -f $collapsed)
+    }
+    return ,$list
 }
 
 function Get-MergeLockPath([string]$summaryPath) {
@@ -879,7 +928,7 @@ function Resolve-Layout([string]$folderPath) {
 # ---- main ----
 $script:MergeLock = $null
 try {
-    Write-Host "sloucit_mereni.ps1 verze 2026-08-11p"
+    Write-Host "sloucit_mereni.ps1 verze 2026-08-11r"
     if (-not (Test-Path -LiteralPath $Folder)) {
         Write-Host "Slozka neexistuje:"
         Write-Host "  $Folder"
@@ -981,8 +1030,36 @@ try {
         Write-Host ""
         Write-Host "Neni nic noveho ke slouceni (zadne YYMMDD_*_MD1.xlsx v Dny/)."
         Write-Host "To neni chyba — nove denni soubory z appky dej do Dny/."
-        Write-Host "Souhrn neprepisuji (zadna nova data) — jen otevru."
         if ((Test-Path -LiteralPath $outPath -PathType Leaf) -and ((Get-Item -LiteralPath $outPath).Length -gt 64)) {
+            # Oprava duplicitnich nadpisu stanic i bez novych denních souboru
+            try {
+                Close-WorkbookIfOpen $outPath | Out-Null
+                Start-Sleep -Milliseconds 300
+                $existingOnly = @(Read-XlsxRows $outPath)
+                $keep = New-Object System.Collections.Generic.List[object]
+                $skipHead = $true
+                foreach ($row in $existingOnly) {
+                    if (-not (Test-IsRowObject $row)) { continue }
+                    if ($skipHead) {
+                        if (($row.Role -eq "UPDATED") -or (Test-IsUpdateText ([string]$row.A))) { continue }
+                        if ($row.Role -eq "BLANK") { continue }
+                        $skipHead = $false
+                    }
+                    [void]$keep.Add($row)
+                }
+                $before = $keep.Count
+                $collapsedList = Collapse-ConsecutiveSameStations -Rows $keep.ToArray()
+                if ($collapsedList.Count -lt $before) {
+                    $stampedFix = Add-UpdateStamp -Rows $collapsedList.ToArray()
+                    Write-Xlsx $outPath $stampedFix
+                    Write-Host ("Opraveny duplicitni stanice, aktualizace: {0}" -f $stampedFix[0].A)
+                }
+                else {
+                    Write-Host "Souhrn neprepisuji (zadna nova data / zadne duplicitni stanice) — jen otevru."
+                }
+            } catch {
+                Write-Host ("Souhrn neprepisuji ({0}), jen otevru." -f $_.Exception.Message)
+            }
             Open-SummaryExcel $outPath
         }
         else {
@@ -995,8 +1072,6 @@ try {
     $processed = New-Object System.Collections.Generic.List[object]
     $currentDate = ""
     $lastStation = ""
-    $lastTimeMin = -1
-    $dataUnderStation = $false
     $ok = 0
     $skipped = 0
 
@@ -1023,18 +1098,9 @@ try {
                 if ($row.Role -eq "DATE" -and $row.A) {
                     $currentDate = $row.A
                     $lastStation = ""
-                    $lastTimeMin = -1
-                    $dataUnderStation = $false
                 }
                 elseif ($row.Role -eq "STATION" -and $row.A) {
                     $lastStation = $row.A
-                    $lastTimeMin = -1
-                    $dataUnderStation = $false
-                }
-                elseif ($row.Role -eq "DATA") {
-                    $dataUnderStation = $true
-                    $tm = ConvertTo-TimeMinutes ([string]$row.C)
-                    if ($tm -ge 0) { $lastTimeMin = $tm }
                 }
             }
             if ($mergeRows.Count -eq 0 -and $summarySize -gt 2500) {
@@ -1075,8 +1141,6 @@ try {
                     [void]$mergeRows.Add((New-Row "DATE" $row.A))
                     $currentDate = $row.A
                     $lastStation = ""
-                    $lastTimeMin = -1
-                    $dataUnderStation = $false
                     $wrote = $true
                 }
                 continue
@@ -1088,23 +1152,13 @@ try {
                     [void]$mergeRows.Add((New-Row "DATE" $guess))
                     $currentDate = $guess
                     $lastStation = ""
-                    $lastTimeMin = -1
-                    $dataUnderStation = $false
                 }
-                # Stanice muze byt v jednom dni vicokrat (Nymburk → Podebrady → Nymburk).
-                # Explicitni radek STATION z appky = nova navsteva — nepreskakovat
-                # jen proto, ze lastStation ma stejne jmeno (typicky po predchozim souboru).
-                $sameName = ($row.A -eq $lastStation)
-                $consecutiveDup = $sameName -and (-not $dataUnderStation)
-                if (-not $consecutiveDup) {
-                    if ($sameName -and $dataUnderStation) {
-                        Write-Host ("    nova navsteva stanice: {0}" -f $row.A)
-                    }
+                # Stejne jmeno hned za sebou = pokracovani (jeden nadpis).
+                # Jina stanice mezi tim (Nymburk→Podebrady→Nymburk) = nova navsteva.
+                if ($row.A -ne $lastStation) {
                     [void]$mergeRows.Add((New-Row "BLANK"))
                     [void]$mergeRows.Add((New-Row "STATION" $row.A))
                     $lastStation = $row.A
-                    $lastTimeMin = -1
-                    $dataUnderStation = $false
                     $wrote = $true
                 }
                 continue
@@ -1115,24 +1169,9 @@ try {
                 [void]$mergeRows.Add((New-Row "DATE" $guess))
                 $currentDate = $guess
                 $lastStation = ""
-                $lastTimeMin = -1
-                $dataUnderStation = $false
-            }
-
-            # Cas (sloupec C): skok zpet v case u stejne stanice = nova navsteva
-            # (kdyz v dennim souboru chybi druhy radek STATION).
-            $tm = ConvertTo-TimeMinutes ([string]$row.C)
-            if ($lastStation -and $dataUnderStation -and $tm -ge 0 -and $lastTimeMin -ge 0 -and $tm -lt ($lastTimeMin - 15)) {
-                Write-Host ("    cas skoci zpet ({0} → {1}) u {2} — nova navsteva" -f $row.C, $lastTimeMin, $lastStation)
-                [void]$mergeRows.Add((New-Row "BLANK"))
-                [void]$mergeRows.Add((New-Row "STATION" $lastStation))
-                $lastTimeMin = -1
-                $dataUnderStation = $false
             }
 
             [void]$mergeRows.Add((New-Row "DATA" $row.A $row.B $row.C $row.D))
-            $dataUnderStation = $true
-            if ($tm -ge 0) { $lastTimeMin = $tm }
             $wrote = $true
         }
 
@@ -1143,6 +1182,9 @@ try {
             $skipped++
         }
     }
+
+    # Pojistka: sluc duplicitni nadpisy stanic hned pod sebou (stejny den)
+    $mergeRows = Collapse-ConsecutiveSameStations -Rows $mergeRows.ToArray()
 
     $dataOut = 0
     for ($di = 0; $di -lt $mergeRows.Count; $di++) {
