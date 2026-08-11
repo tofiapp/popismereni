@@ -1,18 +1,8 @@
-# Chyba 52 znovu / háčky v cestě
+# VBA slouceni
 
-Makro už **nepoužívá `Dir`** (ten padá na `Správa železnic` i na `https://`).  
-Používá **FileSystemObject**.
+1. Novy sesit → Alt+F11 → Datei importieren → `SloucitMereni.bas`
+2. Alt+F8 → **Mereni_Nastavit** → uloz `.xlsm` do slozky s `*_MD1.xlsx`
+3. Otevirat z Pruzkumnika (`C:\...`), ne z webu
+4. Tlacitko **Sloucit**
 
-## Teď
-1. Stáhni nový `.bas`  
-   https://raw.githubusercontent.com/tofiapp/popismereni/cursor/update-and-ui-tweaks-3a97/tools/SloucitMereni.bas
-2. Nový sešit → import `.bas`
-3. Alt+F8 → **`Mereni_Nastavit`** → ulož `.xlsm` do OneDrive složky **přes Explorer**
-4. Když něco nefunguje: Alt+F8 → **`Mereni_Diagnostika`**  
-   - uvidíš `Path` / `FullName` / kolik `*_MD1.xlsx` FSO vidí  
-   - když `FullName` začíná `https://` → otevři soubor z Průzkumníka, ne z webu
-
-## Ručně spouštěj jen
-- `Mereni_Nastavit` — jednou
-- `SloucitVsechnaMereni` / tlačítko — sloučit
-- `Mereni_Diagnostika` — když chyba
+https://raw.githubusercontent.com/tofiapp/popismereni/cursor/update-and-ui-tweaks-3a97/tools/SloucitMereni.bas
