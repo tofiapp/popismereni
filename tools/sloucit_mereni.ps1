@@ -570,6 +570,18 @@ try {
     Write-Host ("Preskoceno: {0}" -f $skipped)
     Write-Host ("Datovych radku: {0}" -f $dataOut)
     Write-Host ("Ulozeno: {0}" -f $outPath)
+    Write-Host ""
+    Write-Host "Oteviram Excel..."
+    try {
+        Invoke-Item -LiteralPath $outPath
+    } catch {
+        try {
+            Start-Process -FilePath $outPath
+        } catch {
+            Write-Host ("Nepodarilo se otevrit soubor: {0}" -f $_.Exception.Message)
+            Write-Host "Otevri ho rucne v Excelu."
+        }
+    }
     exit 0
 }
 catch {

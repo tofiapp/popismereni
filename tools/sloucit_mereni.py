@@ -17,6 +17,7 @@ Použití:
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 import zipfile
@@ -503,6 +504,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     print(f"Přeskočeno: {skipped}")
     print(f"Datových řádků: {data_out}")
     print(f"Uloženo: {out_path}")
+    try:
+        if sys.platform.startswith("win"):
+            os.startfile(out_path)  # type: ignore[attr-defined]
+        else:
+            import subprocess
+
+            subprocess.Popen(["xdg-open", str(out_path)])
+        print("Otevírám Excel…")
+    except OSError as exc:
+        print(f"Nepodařilo se otevřít soubor: {exc}", file=sys.stderr)
     return 0
 
 

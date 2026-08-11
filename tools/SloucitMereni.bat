@@ -23,8 +23,9 @@ if not "%ERR%"=="0" (
   echo.
   echo Chyba %ERR%. Zkus:
   echo   powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT%" -Folder "%TARGET%"
+  echo.
+  pause
+  endlocal & exit /b %ERR%
 )
 
-echo.
-pause
-endlocal & exit /b %ERR%
+endlocal & exit /b 0
