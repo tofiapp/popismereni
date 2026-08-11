@@ -65,8 +65,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import cz.mereni.app.data.CreateXlsxDocumentContract
 import cz.mereni.app.data.CreateXlsxRequest
+import cz.mereni.app.data.DnyFolderProbe
 import cz.mereni.app.data.MeasurementStore
 import cz.mereni.app.data.OneDriveShare
+import cz.mereni.app.data.OpenDnyTreeContract
 import cz.mereni.app.data.PasportKey
 import cz.mereni.app.data.PasportKind
 import cz.mereni.app.data.PasportLoadResult
@@ -459,23 +461,43 @@ fun MereniApp(
     }
 
     val pickDnyFolder = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocumentTree(),
+        contract = OpenDnyTreeContract(),
     ) { uri: Uri? ->
         if (uri == null) {
             exportMessage = "Výběr složky zrušen"
             return@rememberLauncherForActivityResult
         }
         val persisted = onTakePersistableTree(uri)
+        val writable = DnyFolderProbe.canWrite(context, uri)
         val name = DocumentFile.fromTreeUri(context, uri)?.name
             ?.takeIf { it.isNotBlank() }
             ?: "Dny"
-        onSetDnyTreeFolder(uri, name, persisted)
-        dnyFolderLabel = name
-        exportMessage = if (persisted) {
-            "Složka Dny nastavena: $name — příště uloží přímo sem"
-        } else {
-            "Složka zapamatována ($name), ale OneDrive často nepovolí trvalý zápis. " +
-                "Uložit otevře „Uložit jako…“ blízko této cesty."
+        when {
+            !writable -> {
+                // OneDrive / work profil — tree URI bez zápisu; neukládat jako „nastaveno“
+                onClearDnyTreeFolder()
+                dnyFolderLabel = ""
+                exportMessage =
+                    if (SafUris.isOneDrive(uri)) {
+                        "OneDrive tu složku pro trvalý zápis nepustí (typické na work profilu). " +
+                            "Použij hlavní tlačítko Uložit na OneDrive (sdílení) — Edge dostane ZIP."
+                    } else {
+                        "Do vybrané složky nejde zapsat. Zkus jinou, nebo Uložit na OneDrive (sdílení)."
+                    }
+            }
+            persisted -> {
+                onSetDnyTreeFolder(uri, name, true)
+                dnyFolderLabel = name
+                exportMessage = "Složka Dny nastavena: $name — příště uloží přímo sem"
+            }
+            else -> {
+                // Zapamatujeme URI i bez persist (někdy platí do restartu)
+                onSetDnyTreeFolder(uri, name, false)
+                dnyFolderLabel = name
+                exportMessage =
+                    "Složka $name jde teď zapsat, ale trvalý grant chybí — " +
+                        "po restartu appky může zmizet. Spolehlivější je sdílení na OneDrive."
+            }
         }
     }
 
@@ -515,8 +537,8 @@ fun MereniApp(
                         leftForOneDriveShare = true
                         onShareOneDrive(file)
                         exportMessage =
-                            "Sdílení ${file.name}… OneDrive ukáže zjednodušené uložení " +
-                                "(bez Oblíbených). Tip: v ⚙ nastav Složku Dny."
+                            "Sdílení ${file.name}… OneDrive=xlsx, Edge=ZIP. " +
+                                "Složka Dny u OneDrive často nejde nastavit."
                     }
                 }
             }
@@ -1058,11 +1080,9 @@ fun MereniApp(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "V share sheetu: OneDrive (uložit) nebo Edge (prohlížeč).\n" +
-                            "OneDrive ukáže zjednodušené uložení — bez Oblíbených " +
-                            "(omezení OneDrive při sdílení).\n" +
+                        "OneDrive = xlsx do Dny.\n" +
+                            "Edge = ZIP (xlsx v prohlížeči nejde otevřít).\n" +
                             "Cíl: ${MeasurementStore.DNY_HINT_PATH} / YYMMDD_N_MD1.xlsx\n\n" +
-                            "Tip: v ⚙ nastav Složku Dny → příště bez tohoto dialogu.\n\n" +
                             "✕ — tlačítko zůstane červené.\n" +
                             "ANO — vymazat místní záznamy (zelená).",
                         color = MereniColors.TextMuted,

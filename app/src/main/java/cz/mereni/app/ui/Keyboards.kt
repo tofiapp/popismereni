@@ -1135,10 +1135,10 @@ fun PasportSettingsButton(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    "Sdílení otevře OneDrive v režimu „uložit sdílený soubor“ — " +
-                        "je to zjednodušené (často bez Oblíbených). Tak to má Microsoft.\n\n" +
-                        "Lepší: níže nastav Složku Dny (uvidíš víc složek). " +
-                        "Příště Uložit na OneDrive zapíše rovnou tam.\n\n" +
+                    "Sdílení: OneDrive dostane xlsx, Edge dostane ZIP " +
+                        "(xlsx v Edge nejde otevřít).\n\n" +
+                        "Složka Dny přes systémový výběr u OneDrive / work profilu " +
+                        "často nejde — to omezuje Microsoft. Spolehlivé je sdílení.\n\n" +
                         "Cíl: Popis_měření_MD1 / Dny  →  YYMMDD_N_MD1.xlsx",
                     color = MereniColors.TextMuted,
                     fontSize = 12.sp,
@@ -1148,7 +1148,7 @@ fun PasportSettingsButton(
                     onShareFallback()
                     open = false
                 }) {
-                    Text("Sdílet (OneDrive / Edge)…", color = MereniColors.Accent, fontWeight = FontWeight.SemiBold)
+                    Text("Sdílet (OneDrive xlsx / Edge zip)…", color = MereniColors.Accent, fontWeight = FontWeight.SemiBold)
                 }
                 TextButton(onClick = {
                     onSaveViaSaf()
@@ -1161,7 +1161,7 @@ fun PasportSettingsButton(
                     if (dnyFolderLabel.isNotBlank()) {
                         "Složka Dny: $dnyFolderLabel"
                     } else {
-                        "Složka Dny — plnější výběr než sdílení (zkus nastavit)"
+                        "Složka Dny — jen když provider dovolí zápis (OneDrive často ne)"
                     },
                     color = if (dnyFolderLabel.isNotBlank()) MereniColors.Kolej else MereniColors.TextMuted,
                     fontSize = 12.sp,
