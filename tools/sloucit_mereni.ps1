@@ -1,4 +1,5 @@
 ﻿#Requires -Version 5.1
+# sloucit_mereni.ps1 — verze 2026-08-11c
 # ASCII-only source (Windows PowerShell 5.1). Czech names via [char] codes.
 # Layout:
 #   Popis_mereni_MD1/
@@ -146,7 +147,7 @@ function Test-IsRowObject($obj) {
     return ($null -ne $obj.PSObject -and $null -ne $obj.PSObject.Properties['Role'])
 }
 
-function Add-UpdateStampToList($rows) {
+function Add-UpdateStamp($rows) {
     # Vraci List[object] radku — bez PowerShell array unwrap/comma triku.
     $list = New-Object System.Collections.Generic.List[object]
     [void]$list.Add((New-UpdateRow))
@@ -163,6 +164,10 @@ function Add-UpdateStampToList($rows) {
         [void]$list.Add($r)
     }
     return $list
+}
+
+function Add-UpdateStampToList($rows) {
+    return (Add-UpdateStamp $rows)
 }
 
 function New-Row([string]$Role, [string]$A = "", [string]$B = "", [string]$C = "", [string]$D = "") {
@@ -384,6 +389,7 @@ function Get-SheetXml($rows) {
     [void]$sb.Append('</cols><sheetData>')
     $r = 0
     foreach ($row in $rows) {
+        if (-not (Test-IsRowObject $row)) { continue }
         $r++
         $ht = $(if ($row.Role -eq "BLANK") { "12" } else { "24" })
         [void]$sb.Append(('<row r="{0}" ht="{1}" customHeight="1">' -f $r, $ht))
@@ -469,6 +475,7 @@ function Resolve-Layout([string]$folderPath) {
 
 # ---- main ----
 try {
+    Write-Host "sloucit_mereni.ps1 verze 2026-08-11c"
     if (-not (Test-Path -LiteralPath $Folder)) {
         Write-Host "Slozka neexistuje:"
         Write-Host "  $Folder"
@@ -566,14 +573,20 @@ try {
     # Existujici souhrn = zaklad (nove denni soubory se pripoji)
     if ((Test-Path -LiteralPath $outPath -PathType Leaf) -and ((Get-Item -LiteralPath $outPath).Length -gt 64)) {
         try {
-            $existing = @(Strip-UpdateRows (Read-XlsxRows $outPath))
+            $existing = @(Read-XlsxRows $outPath)
+            $skipHead = $true
             foreach ($row in $existing) {
-                if ($row.Role -eq "UPDATED") { continue }
+                if (-not (Test-IsRowObject $row)) { continue }
+                if ($skipHead) {
+                    if (($row.Role -eq "UPDATED") -or (Test-IsUpdateText ([string]$row.A))) { continue }
+                    if ($row.Role -eq "BLANK") { continue }
+                    $skipHead = $false
+                }
                 [void]$out.Add($row)
                 if ($row.Role -eq "DATE" -and $row.A) { $currentDate = $row.A; $lastStation = "" }
                 elseif ($row.Role -eq "STATION" -and $row.A) { $lastStation = $row.A }
             }
-            Write-Host ("Nacten existujici souhrn: {0} radku" -f $existing.Count)
+            Write-Host ("Nacten existujici souhrn: {0} radku" -f $out.Count)
         } catch {
             Write-Host ("  ! Souhrn nejde nacist, vytvorim novy: {0}" -f $_.Exception.Message)
             $out.Clear()
@@ -653,7 +666,7 @@ try {
         exit 1
     }
 
-    $stamped = @(Add-UpdateStamp $out.ToArray())
+    $stamped = Add-UpdateStamp $out
     Write-Xlsx $outPath $stamped
     Write-Host ("Aktualizace: {0}" -f $stamped[0].A)
 
