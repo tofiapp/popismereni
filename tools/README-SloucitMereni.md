@@ -50,6 +50,8 @@ Nymburk → Poděbrady → Nymburk = dva oranžové bloky. Skript bere i čas ve
 - Souhrn nesmí mít mezitím otevřený někdo jiný v Excelu
 - OneDrive: **Keep on this device**
 - Po sloučení počkej na sync
-- Banner musí být `verze 2026-08-11p`
+- Banner musí být `verze 2026-08-11q`
 
-Verze: **2026-08-11p**
+Verze: **2026-08-11q**
+
+Při chybě zápisu skript **nesmaže** souhrn (dřív OneDrive vrátil starou verzi z cloudu). Neplatný zápis se vrátí ze `Zalohy/` z tohoto běhu.
