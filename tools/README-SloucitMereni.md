@@ -1,25 +1,24 @@
-# Sloučení denních `*_MD1.xlsx` (bez VBA)
+# Sloučení denních `*_MD1.xlsx` (bez instalace)
 
 Appka ukládá dávky `YYMMDD_N_MD1.xlsx`. Na PC je sloučíš do jednoho
-`Souhrn_mereni.xlsx` — **Python skript, bez makra a bez Excelu**.
+`Souhrn_mereni.xlsx` — **Windows PowerShell, nic se neinstaluje**.
 
 ## Rychle (Windows)
 
 1. Stáhni / synchronizuj složku s denními soubory z OneDrive.
-2. Dvojklik na `SloucitMereni.bat` **ve složce se soubory**,  
-   nebo **přetáhni složku** na `SloucitMereni.bat`.
-3. Otevři vzniklé `Souhrn_mereni.xlsx` v Excelu (obyčejný xlsx, ne xlsm).
+2. Zkopíruj sem z repa `SloucitMereni.bat` + `sloucit_mereni.ps1`  
+   (oba soubory musí být ve stejné složce).
+3. **Dvojklik** na `SloucitMereni.bat`,  
+   nebo **přetáhni složku** s `*_MD1.xlsx` na bat.
+4. Otevři vzniklé `Souhrn_mereni.xlsx` v Excelu.
 
-Potřebuješ [Python 3](https://www.python.org/downloads/) s „Add to PATH“
-(nebo `py` launcher). Žádné `pip install`.
+Nepotřebuješ Python, VBA ani admin práva — PowerShell je součást Windows.
 
-## Ručně
+## Ručně v PowerShellu
 
-```bat
-python sloucit_mereni.py "C:\Users\...\OneDrive\MD1_rozdeleno"
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\sloucit_mereni.ps1 -Folder "C:\Users\...\OneDrive\MD1_rozdeleno"
 ```
-
-Výstup: `Souhrn_mereni.xlsx` ve stejné složce.
 
 ## Výstup = stejný vzhled jako appka
 
@@ -31,13 +30,10 @@ koleje | výhybky | čas | poznámka   ← data A–D
 ```
 
 List **Mereni**, 4 sloupce A–D.  
-Bere `YYMMDD_N_MD1.xlsx` (víc dávek za den) i starší `mereni_MD1.xlsx` /
-`YYMMDD_MD1.xlsx`. Soubor `Souhrn_mereni.xlsx` se při dalším běhu přepíše.
+Bere `YYMMDD_N_MD1.xlsx` (víc dávek za den) i starší `*_MD1.xlsx`.  
+`Souhrn_mereni.xlsx` se při dalším běhu přepíše.
 
-## Proč ne VBA
+## Zálohy v repu
 
-Firemní Excel často **blokuje makra** (žádný žlutý pruh „Aktivieren“).
-Python čte/zapisuje xlsx přímo — politika makra ho neomezuje.
-
-Starý modul `SloucitMereni.bas` v repu zůstává jen jako záloha, pokud bys
-makra směl.
+- `sloucit_mereni.py` — stejná logika, kdybys měl Python
+- `SloucitMereni.bas` — VBA (často blokované firemní politikou)
