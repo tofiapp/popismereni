@@ -7,11 +7,15 @@ Option Explicit
 '   - folder watch: every POLL_SECONDS check *_MD1.xlsx; if new/changed -> merge
 '   (Excel must stay open for the watch; closed file waits until next open)
 '
-' Setup:
-'   1) New workbook -> import this .bas
-'   2) Save As Souhrn_mereni.xlsm into shared OneDrive folder (with *_MD1.xlsx)
-'   3) Alt+F8 -> VytvoritTlacitko
-'   4) Enable macros when opening
+' Setup (ONE step):
+'   1) New empty workbook
+'   2) Alt+F11 -> Datei importieren -> this .bas  (module under THIS workbook)
+'   3) Alt+F8 -> Mereni_Nastavit  (or VytvoritTlacitko)
+'      -> dialog: save as Souhrn_mereni.xlsm into folder with *_MD1.xlsx
+'      -> creates button in THE SAME file (macros stay inside)
+'   4) Close other workbooks. Next time open only Souhrn_mereni.xlsm + enable macros.
+'
+' Do NOT save as .xlsx (that deletes macros). Do NOT run Nastavit from a different file.
 
 Private Const FILE_PATTERN As String = "*_MD1.xlsx"
 Private Const COLOR_DATE As Long = 16506555
@@ -40,40 +44,128 @@ Public Sub StartFolderWatch()
     Call StopFolderWatch
     On Error Resume Next
     gNextPoll = Now + TimeSerial(0, 0, POLL_SECONDS)
-    Application.OnTime EarliestTime:=gNextPoll, Procedure:="CheckFolderAndRefresh", Schedule:=True
+    Application.OnTime EarliestTime:=gNextPoll, Procedure:=QualifiedMacro("CheckFolderAndRefresh"), Schedule:=True
     On Error GoTo 0
 End Sub
 
 Public Sub StopFolderWatch()
     On Error Resume Next
     If gNextPoll <> 0 Then
-        Application.OnTime EarliestTime:=gNextPoll, Procedure:="CheckFolderAndRefresh", Schedule:=False
+        Application.OnTime EarliestTime:=gNextPoll, Procedure:=QualifiedMacro("CheckFolderAndRefresh"), Schedule:=False
     End If
     On Error GoTo 0
     gNextPoll = 0
 End Sub
 
-' Called by OnTime - silent refresh only when folder content changed
-Public Sub CheckFolderAndRefresh()
-    On Error GoTo ScheduleNext
+' "'Souhrn_mereni.xlsm'!MacroName" so button/OnTime find macros in THIS file
+Private Function QualifiedMacro(ByVal macroName As String) As String
+    QualifiedMacro = "'" & Replace(ThisWorkbook.Name, "'", "''") & "'!" & macroName
+End Function
 
-    Dim srcPath As String
-    srcPath = SourcePath()
-    If Len(srcPath) = 0 Then GoTo ScheduleNext
+' ========== once: save THIS workbook as xlsm + button (same file) ==========
+' Prefer this name in Alt+F8 list
+Public Sub Mereni_Nastavit()
+    Call VytvoritTlacitko
+End Sub
 
-    Dim sig As String
-    sig = FolderFingerprint(srcPath)
-    If Len(sig) > 0 And sig <> GetStoredSig() Then
-        Application.StatusBar = "Mereni: novy/zmeneny soubor - slouci..."
-        Call SloucitCore(True)
+Public Sub VytvoritTlacitko()
+    Dim wb As Workbook
+    Set wb = ThisWorkbook
+
+    ' Must import .bas into the workbook you are setting up (not into another open file)
+    Dim savePath As Variant
+    Dim needSaveAs As Boolean
+    needSaveAs = (Len(wb.Path) = 0) Or (LCase$(Right$(wb.Name, 5)) <> ".xlsm")
+
+    If needSaveAs Then
+        MsgBox "Vyber slozku se soubory *_MD1.xlsx a uloz jako Souhrn_mereni.xlsm." & vbCrLf & _
+               "Dulezite: typ souboru musi byt .xlsm (s makry), ne .xlsx.", vbInformation
+
+        savePath = Application.GetSaveAsFilename( _
+            InitialFileName:=DefaultSaveSuggestion(), _
+            FileFilter:="Excel s makry (*.xlsm), *.xlsm", _
+            Title:="Ulozit Souhrn_mereni.xlsm do slozky s merenim")
+
+        If savePath = False Then
+            MsgBox "Zruseno. Bez ulozeni .xlsm nejde tlacitko vytvorit.", vbExclamation
+            Exit Sub
+        End If
+        If LCase$(Right$(CStr(savePath), 5)) <> ".xlsm" Then
+            savePath = CStr(savePath) & ".xlsm"
+        End If
+
+        Application.DisplayAlerts = False
+        On Error Resume Next
+        wb.SaveAs Filename:=CStr(savePath), FileFormat:=52
+        If Err.Number <> 0 Then
+            Dim errMsg As String
+            errMsg = Err.Description
+            Err.Clear
+            Application.DisplayAlerts = True
+            MsgBox "Ulozeni .xlsm selhalo:" & vbCrLf & errMsg & vbCrLf & vbCrLf & _
+                   "Zkus jinou slozku (nebo lokalni disk) a znovu Mereni_Nastavit.", vbCritical
+            Exit Sub
+        End If
+        On Error GoTo 0
+        Application.DisplayAlerts = True
+    Else
+        wb.Save
     End If
 
-ScheduleNext:
+    ' After SaveAs, ThisWorkbook IS Souhrn_mereni.xlsm and still has this module
+    Dim wsBtn As Worksheet
+    Set wsBtn = EnsureSheet(wb, "Start")
     On Error Resume Next
-    gNextPoll = Now + TimeSerial(0, 0, POLL_SECONDS)
-    Application.OnTime EarliestTime:=gNextPoll, Procedure:="CheckFolderAndRefresh", Schedule:=True
+    wsBtn.Move Before:=wb.Sheets(1)
     On Error GoTo 0
+
+    wsBtn.Cells.Clear
+    wsBtn.Range("A1").Value = "Mereni - slouceni"
+    wsBtn.Range("A1").Font.Size = 18
+    wsBtn.Range("A1").Font.Bold = True
+    wsBtn.Range("A3").Value = "1) Povol makra (Inhalt aktivieren)."
+    wsBtn.Range("A4").Value = "2) Tlacitko nize = sloucit ted. Jinak bezi samo pri otevreni + kazde 2 min."
+    wsBtn.Range("A5").Value = "Slozka zdroju (= tento soubor): " & wb.Path
+    wsBtn.Range("A6").Value = "Soubor: " & wb.FullName
+    wsBtn.Range("A8").Value = "Kdyz tlacitko hlasi ze makro neni v souboru: makra jsou v JINEM sesitu." & _
+        " Zavri ostatni, nech jen tento .xlsm, znovu import .bas sem, znovu Mereni_Nastavit."
+    wsBtn.Columns("A").ColumnWidth = 100
+
+    Dim shp As Shape
+    On Error Resume Next
+    For Each shp In wsBtn.Shapes
+        shp.Delete
+    Next shp
+    On Error GoTo 0
+
+    Dim btn As Button
+    Set btn = wsBtn.Buttons.Add(Left:=20, Top:=160, Width:=300, Height:=55)
+    ' Point explicitly at THIS workbook (fixes "macro not in this workbook")
+    btn.OnAction = QualifiedMacro("SloucitVsechnaMereni")
+    btn.Characters.Text = "Sloucit ted"
+    btn.Font.Size = 16
+    btn.Font.Bold = True
+
+    Call EnsureSheet(wb, "Mereni")
+    Call StartFolderWatch
+    wb.Save
+
+    MsgBox "Hotovo. Makra + tlacitko jsou v JEDNOM souboru:" & vbCrLf & wb.FullName & vbCrLf & vbCrLf & _
+           "Zavri ostatni sesity (Mappe1/Sesit1)." & vbCrLf & _
+           "Priste otevri jen tento .xlsm -> Inhalt aktivieren -> tlacitko nebo pockej na auto.", vbInformation
 End Sub
+
+Private Function DefaultSaveSuggestion() As String
+    Dim p As String
+    p = Environ$("USERPROFILE")
+    If Len(ThisWorkbook.Path) > 0 Then
+        DefaultSaveSuggestion = ThisWorkbook.Path & "\Souhrn_mereni.xlsm"
+    ElseIf Len(p) > 0 Then
+        DefaultSaveSuggestion = p & "\Souhrn_mereni.xlsm"
+    Else
+        DefaultSaveSuggestion = "Souhrn_mereni.xlsm"
+    End If
+End Function
 
 Private Function SourceFolder() As String
     Dim p As String
@@ -96,74 +188,26 @@ Private Function SourcePath() As String
     SourcePath = p
 End Function
 
-' ========== once: button + hint text ==========
-Public Sub VytvoritTlacitko()
-    Dim wb As Workbook
-    Set wb = ThisWorkbook
+' Called by OnTime - silent refresh only when folder content changed
+Public Sub CheckFolderAndRefresh()
+    On Error GoTo ScheduleNext
 
-    If Len(wb.Path) = 0 Then
-        MsgBox "Nejdrive uloz tento sesit do sdilene OneDrive slozky s *_MD1.xlsx" & vbCrLf & _
-               "(Ulozit jako -> Souhrn_mereni.xlsm)," & vbCrLf & _
-               "pak znovu spust VytvoritTlacitko.", vbInformation
-        Exit Sub
+    Dim srcPath As String
+    srcPath = SourcePath()
+    If Len(srcPath) = 0 Then GoTo ScheduleNext
+
+    Dim sig As String
+    sig = FolderFingerprint(srcPath)
+    If Len(sig) > 0 And sig <> GetStoredSig() Then
+        Application.StatusBar = "Mereni: novy/zmeneny soubor - slouci..."
+        Call SloucitCore(True)
     End If
 
-    If LCase$(Right$(wb.Name, 5)) <> ".xlsm" Then
-        Application.DisplayAlerts = False
-        On Error Resume Next
-        wb.SaveAs Filename:=wb.Path & "\Souhrn_mereni.xlsm", FileFormat:=52
-        If Err.Number <> 0 Then
-            Dim errMsg As String
-            errMsg = Err.Description
-            Err.Clear
-            Application.DisplayAlerts = True
-            MsgBox "SaveAs xlsm selhalo:" & vbCrLf & errMsg, vbExclamation
-            Exit Sub
-        End If
-        On Error GoTo 0
-        Application.DisplayAlerts = True
-    Else
-        wb.Save
-    End If
-
-    Dim wsBtn As Worksheet
-    Set wsBtn = EnsureSheet(wb, "Start")
+ScheduleNext:
     On Error Resume Next
-    wsBtn.Move Before:=wb.Sheets(1)
+    gNextPoll = Now + TimeSerial(0, 0, POLL_SECONDS)
+    Application.OnTime EarliestTime:=gNextPoll, Procedure:=QualifiedMacro("CheckFolderAndRefresh"), Schedule:=True
     On Error GoTo 0
-
-    wsBtn.Cells.Clear
-    wsBtn.Range("A1").Value = "Mereni - slouceni (sdileny soubor)"
-    wsBtn.Range("A1").Font.Size = 18
-    wsBtn.Range("A1").Font.Bold = True
-    wsBtn.Range("A3").Value = "Automaticky: pri otevreni + kazde 2 minuty, kdyz ve slozce pribyde/zmeni se *_MD1.xlsx"
-    wsBtn.Range("A4").Value = "Excel musi zustat otevreny (jinak az pri pristim otevreni)."
-    wsBtn.Range("A5").Value = "Slozka: " & wb.Path
-    wsBtn.Range("A6").Value = "Soubor: " & wb.FullName
-    wsBtn.Columns("A").ColumnWidth = 95
-
-    Dim shp As Shape
-    On Error Resume Next
-    For Each shp In wsBtn.Shapes
-        shp.Delete
-    Next shp
-    On Error GoTo 0
-
-    Dim btn As Button
-    Set btn = wsBtn.Buttons.Add(Left:=20, Top:=140, Width:=280, Height:=55)
-    btn.OnAction = "SloucitVsechnaMereni"
-    btn.Characters.Text = "Sloucit ted"
-    btn.Font.Size = 16
-    btn.Font.Bold = True
-
-    Call EnsureSheet(wb, "Mereni")
-    Call StartFolderWatch
-    wb.Save
-
-    MsgBox "OK." & vbCrLf & wb.FullName & vbCrLf & vbCrLf & _
-           "Pri otevreni se slouci samo." & vbCrLf & _
-           "Pak kazde " & POLL_SECONDS & " s kontrola slozky (kdyz Excel bezi)." & vbCrLf & _
-           "Tlacitko = okamzite rucne.", vbInformation
 End Sub
 
 ' Manual button - with MsgBox
