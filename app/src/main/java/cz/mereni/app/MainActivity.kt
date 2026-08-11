@@ -1,7 +1,6 @@
 package cz.mereni.app
 
 import android.Manifest
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -62,12 +61,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import cz.mereni.app.data.CreateXlsxDocumentContract
 import cz.mereni.app.data.CreateXlsxRequest
 import cz.mereni.app.data.MeasurementStore
+import cz.mereni.app.data.OneDriveShare
 import cz.mereni.app.data.PasportKey
 import cz.mereni.app.data.PasportKind
 import cz.mereni.app.data.PasportLoadResult
@@ -188,27 +187,7 @@ class MainActivity : ComponentActivity() {
                     SafUris.takePersistableReadWrite(contentResolver, uri)
                 },
                 onShareOneDrive = { file ->
-                    val uri = FileProvider.getUriForFile(
-                        this@MainActivity,
-                        "${packageName}.fileprovider",
-                        file,
-                    )
-                    val send = Intent(Intent.ACTION_SEND).apply {
-                        type = MeasurementStore.MIME_XLSX
-                        putExtra(Intent.EXTRA_STREAM, uri)
-                        putExtra(Intent.EXTRA_SUBJECT, file.name)
-                        putExtra(Intent.EXTRA_TITLE, file.name)
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        clipData = android.content.ClipData.newUri(
-                            contentResolver,
-                            file.name,
-                            uri,
-                        )
-                    }
-                    val chooser = Intent.createChooser(send, "Sdílet denní soubor").apply {
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    }
-                    startActivity(chooser)
+                    OneDriveShare.shareExport(this@MainActivity, file)
                 },
                 onReload = {
                     withContext(Dispatchers.IO) {
@@ -507,24 +486,31 @@ fun MereniApp(
         exportMessage = "Ulož ${file.name} do ${MeasurementStore.DNY_HINT_PATH}"
     }
 
-    fun startOneDriveSave(preferShare: Boolean = false) {
+    fun startOneDriveSave(mode: String = "share") {
         exportMessage = null
         scope.launch {
             val file = onPrepareOneDriveFile()
             oneDriveSynced = false
-            if (preferShare) {
-                leftForOneDriveShare = true
-                onShareOneDrive(file)
-                exportMessage = "Sdílení ${file.name}…"
-                return@launch
+            when (mode) {
+                "saf" -> {
+                    // Uložit jako… — na pracovním profilu často bez OneDrive
+                    launchSavePicker(file)
+                }
+                "folder" -> {
+                    if (onGetDnyTreeUri() != null && onTrySaveToDnyFolder(file)) {
+                        showOneDriveConfirm = true
+                        exportMessage = "Uloženo do Dny: ${file.name}"
+                    } else {
+                        launchSavePicker(file)
+                    }
+                }
+                else -> {
+                    // Starý způsob: share sheet „Uložit na OneDrive“ (ne Files/SAF)
+                    leftForOneDriveShare = true
+                    onShareOneDrive(file)
+                    exportMessage = "Sdílení ${file.name}…"
+                }
             }
-            if (onGetDnyTreeUri() != null && onTrySaveToDnyFolder(file)) {
-                showOneDriveConfirm = true
-                exportMessage = "Uloženo do Dny: ${file.name}"
-                return@launch
-            }
-            // CreateDocument — název předvyplněný, tip na poslední / Dny URI
-            launchSavePicker(file)
         }
     }
 
@@ -615,7 +601,7 @@ fun MereniApp(
                                 .background(oneDriveAccent.copy(alpha = 0.12f))
                                 .border(2.5.dp, oneDriveAccent, oneDriveShape)
                                 .clickable {
-                                    startOneDriveSave(preferShare = false)
+                                    startOneDriveSave("share")
                                 }
                                 .padding(horizontal = 14.dp),
                         ) {
@@ -689,8 +675,11 @@ fun MereniApp(
                         dnyFolderLabel = ""
                         exportMessage = "Složka Dny zrušena"
                     },
+                    onSaveViaSaf = {
+                        startOneDriveSave("saf")
+                    },
                     onShareFallback = {
-                        startOneDriveSave(preferShare = true)
+                        startOneDriveSave("share")
                     },
                     exportMessage = exportMessage,
                 )
@@ -1051,7 +1040,7 @@ fun MereniApp(
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        "Uložil jsi denní soubor na OneDrive?",
+                        "Nahrál jsi denní soubor na OneDrive?",
                         color = MereniColors.Text,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 17.sp,
@@ -1060,7 +1049,8 @@ fun MereniApp(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "Cíl: ${MeasurementStore.DNY_HINT_PATH}\n" +
+                        "V share sheetu vyber OneDrive (ne Files)\n" +
+                            "a ulož do ${MeasurementStore.DNY_HINT_PATH}\n" +
                             "(YYMMDD_N_MD1.xlsx)\n\n" +
                             "✕ — tlačítko zůstane červené.\n" +
                             "ANO — vymazat místní záznamy (zelená).",
