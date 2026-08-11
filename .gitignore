@@ -13,3 +13,4 @@ captures/
 *.ap_
 *.aab
 .netlify/
+tools/__pycache__/

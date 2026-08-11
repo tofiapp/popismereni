@@ -66,7 +66,6 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import cz.mereni.app.data.MeasurementStore
-import cz.mereni.app.data.OneDriveExportMode
 import cz.mereni.app.data.PasportKey
 import cz.mereni.app.data.PasportKind
 import cz.mereni.app.data.PasportLoadResult
@@ -139,7 +138,6 @@ class MainActivity : ComponentActivity() {
                 initialCount = bootRecordCount,
                 initialDayRecord = store.dayRecordNumber(),
                 initialOneDriveSynced = store.isSyncedToOneDrive(),
-                initialExportMode = store.exportMode,
                 onSave = { stationName, udu, pole1, pole2, cas, poznamka ->
                     store.append(stationName, udu, pole1, pole2, cas, poznamka)
                     store.count() to store.dayRecordNumber()
@@ -168,9 +166,6 @@ class MainActivity : ComponentActivity() {
                 },
                 onIsPendingOneDriveConfirm = {
                     store.isPendingOneDriveConfirm()
-                },
-                onExportModeChange = { mode ->
-                    store.exportMode = mode
                 },
                 onShareOneDrive = { file ->
                     val uri = FileProvider.getUriForFile(
@@ -219,7 +214,6 @@ fun MereniApp(
     initialCount: Int,
     initialDayRecord: Int,
     initialOneDriveSynced: Boolean,
-    initialExportMode: OneDriveExportMode,
     onSave: (stationName: String, udu: String, pole1: String, pole2: String, casMereni: String, poznamka: String) -> Pair<Int, Int>,
     onUsedLabels: suspend (String) -> Pair<Set<String>, Set<String>>,
     onPersistBytes: suspend (ByteArray, Uri?) -> PasportLoadResult,
@@ -227,7 +221,6 @@ fun MereniApp(
     onConfirmOneDriveSaved: () -> Pair<Int, Int>,
     onCancelOneDriveConfirm: () -> Unit,
     onIsPendingOneDriveConfirm: () -> Boolean,
-    onExportModeChange: (OneDriveExportMode) -> Unit,
     onShareOneDrive: (java.io.File) -> Unit,
     onReload: suspend () -> PasportLoadResult,
     onKeysForStation: suspend (Station?, List<PasportKey>) -> List<PasportKey>,
@@ -253,7 +246,6 @@ fun MereniApp(
     var recordCount by remember { mutableIntStateOf(initialCount) }
     var dayRecordNum by remember { mutableIntStateOf(initialDayRecord.coerceAtLeast(0)) }
     var oneDriveSynced by remember { mutableStateOf(initialOneDriveSynced) }
-    var exportMode by remember { mutableStateOf(initialExportMode) }
     var leftForOneDriveShare by remember { mutableStateOf(false) }
     var showOneDriveConfirm by remember { mutableStateOf(false) }
     var reorderPole1 by remember { mutableStateOf(false) }
@@ -594,17 +586,6 @@ fun MereniApp(
                         scope.launch { applyLoad(onReload()) }
                     },
                     exportMessage = exportMessage,
-                    exportMode = exportMode,
-                    onExportModeChange = { mode ->
-                        exportMode = mode
-                        onExportModeChange(mode)
-                        exportMessage = when (mode) {
-                            OneDriveExportMode.DAILY ->
-                                "Režim: denní YYMMDD_N_MD1.xlsx (víc souborů za den)"
-                            OneDriveExportMode.REPLACE ->
-                                "Režim: přepisovat mereni_MD1.xlsx"
-                        }
-                    },
                 )
             }
 
@@ -963,12 +944,7 @@ fun MereniApp(
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        when (exportMode) {
-                            OneDriveExportMode.DAILY ->
-                                "Nahrál jsi denní soubor na OneDrive?"
-                            OneDriveExportMode.REPLACE ->
-                                "Nahrál jsi mereni_MD1.xlsx na OneDrive?"
-                        },
+                        "Nahrál jsi denní soubor na OneDrive?",
                         color = MereniColors.Text,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 17.sp,
@@ -977,18 +953,10 @@ fun MereniApp(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        when (exportMode) {
-                            OneDriveExportMode.DAILY ->
-                                "Soubor YYMMDD_N_MD1.xlsx ulož do OneDrive\n" +
-                                    "(N = pořadí dávky ten den: 1, 2, 3…).\n\n" +
-                                    "✕ — tlačítko zůstane červené.\n" +
-                                    "ANO — vymazat místní záznamy (zelená)."
-                            OneDriveExportMode.REPLACE ->
-                                "Stejný soubor na OneDrive nahraď — lokální záznamy se nemažou,\n" +
-                                    "další měření se do něj donahrají.\n\n" +
-                                    "✕ — tlačítko zůstane červené.\n" +
-                                    "ANO — označit jako uložené (zelená)."
-                        },
+                        "Soubor YYMMDD_N_MD1.xlsx ulož do OneDrive\n" +
+                            "(N = pořadí dávky ten den: 1, 2, 3…).\n\n" +
+                            "✕ — tlačítko zůstane červené.\n" +
+                            "ANO — vymazat místní záznamy (zelená).",
                         color = MereniColors.TextMuted,
                         fontSize = 12.sp,
                         textAlign = TextAlign.Center,
@@ -1002,12 +970,7 @@ fun MereniApp(
                             dayRecordNum = day
                             showOneDriveConfirm = false
                             oneDriveSynced = true
-                            exportMessage = when (exportMode) {
-                                OneDriveExportMode.DAILY ->
-                                    "Uloženo — místní záznamy vymazány"
-                                OneDriveExportMode.REPLACE ->
-                                    "OneDrive má mereni_MD1.xlsx — další záznamy se donahrají"
-                            }
+                            exportMessage = "Uloženo — místní záznamy vymazány"
                         },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MereniColors.Vyhybka,

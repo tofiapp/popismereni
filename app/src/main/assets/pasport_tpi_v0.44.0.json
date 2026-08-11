@@ -1,0 +1,121 @@
+{
+  "version": "0.39.0",
+  "source": "DZS_PASPORT_TPI.sqlite / DZS_SUPER_RO_TPI + DZS_SUPER_MT_SL",
+  "note": "Hlavní název UDU z TUDU xxxxx1",
+  "stations": [
+    {
+      "udu": "12345",
+      "jmeno": "Meziměstí",
+      "jmeno_raw": "žst. Meziměstí",
+      "tudu": "123451"
+    },
+    {
+      "udu": "23456",
+      "jmeno": "Náchod",
+      "jmeno_raw": "žst. Náchod",
+      "tudu": "234561"
+    },
+    {
+      "udu": "34567",
+      "jmeno": "Hronov",
+      "jmeno_raw": "odb. Hronov",
+      "tudu": "345671"
+    },
+    {
+      "udu": "12345",
+      "tudu": "123452",
+      "jmeno": "Meziměstí zastávka",
+      "jmeno_raw": "žst. Meziměstí zastávka"
+    }
+  ],
+  "rows": [
+    {
+      "cobjekt": "1",
+      "iob": "",
+      "poloha": "JAP",
+      "cobjekt_tpi": "",
+      "tudu": "12345XX",
+      "udu": "12345"
+    },
+    {
+      "cobjekt": "1",
+      "iob": "A",
+      "poloha": "JAP",
+      "cobjekt_tpi": "",
+      "tudu": "12345XX",
+      "udu": "12345"
+    },
+    {
+      "cobjekt": "3",
+      "iob": "",
+      "poloha": "CA",
+      "cobjekt_tpi": "",
+      "tudu": "23456AA",
+      "udu": "23456"
+    },
+    {
+      "cobjekt": "2",
+      "iob": "X",
+      "poloha": "",
+      "cobjekt_tpi": "zhl",
+      "tudu": "12345XX",
+      "udu": "12345"
+    },
+    {
+      "cobjekt": "2",
+      "iob": "S",
+      "poloha": "",
+      "cobjekt_tpi": "zhl",
+      "tudu": "12345XX",
+      "udu": "12345"
+    },
+    {
+      "cobjekt": "5",
+      "iob": "X",
+      "poloha": "",
+      "cobjekt_tpi": "zhl",
+      "tudu": "23456AA",
+      "udu": "23456"
+    },
+    {
+      "cobjekt": "10",
+      "iob": "",
+      "poloha": "",
+      "cobjekt_tpi": "",
+      "tudu": "12345XX",
+      "udu": "12345"
+    },
+    {
+      "cobjekt": "10",
+      "iob": "A",
+      "poloha": "",
+      "cobjekt_tpi": "",
+      "tudu": "12345XX",
+      "udu": "12345"
+    },
+    {
+      "cobjekt": "10",
+      "iob": "B",
+      "poloha": "",
+      "cobjekt_tpi": "",
+      "tudu": "12345XX",
+      "udu": "12345"
+    },
+    {
+      "cobjekt": "11",
+      "iob": "C",
+      "poloha": "",
+      "cobjekt_tpi": "",
+      "tudu": "34567BB",
+      "udu": "34567"
+    },
+    {
+      "cobjekt": "12",
+      "iob": "",
+      "poloha": "",
+      "cobjekt_tpi": "",
+      "tudu": "34567BB",
+      "udu": "34567"
+    }
+  ]
+}

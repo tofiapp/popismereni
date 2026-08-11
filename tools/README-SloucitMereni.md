@@ -1,4 +1,24 @@
-# VBA: sloučení `*_MD1.xlsx`
+# Sloučení denních `*_MD1.xlsx` (bez instalace)
+
+Appka ukládá dávky `YYMMDD_N_MD1.xlsx`. Na PC je sloučíš do jednoho
+`Souhrn_mereni.xlsx` — **Windows PowerShell, nic se neinstaluje**.
+
+## Rychle (Windows)
+
+1. Stáhni / synchronizuj složku s denními soubory z OneDrive.
+2. Zkopíruj sem z repa `SloucitMereni.bat` + `sloucit_mereni.ps1`  
+   (oba soubory musí být ve stejné složce).
+3. **Dvojklik** na `SloucitMereni.bat`,  
+   nebo **přetáhni složku** s `*_MD1.xlsx` na bat.
+4. Otevři vzniklé `Souhrn_mereni.xlsx` v Excelu.
+
+Nepotřebuješ Python, VBA ani admin práva — PowerShell je součást Windows.
+
+## Ručně v PowerShellu
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\sloucit_mereni.ps1 -Folder "C:\Users\...\OneDrive\MD1_rozdeleno"
+```
 
 ## Výstup = stejný vzhled jako appka
 
@@ -10,14 +30,10 @@ koleje | výhybky | čas | poznámka   ← data A–D
 ```
 
 List **Mereni**, 4 sloupce A–D.  
-Bere `YYMMDD_N_MD1.xlsx` (víc dávek za den) i `mereni_MD1.xlsx`.
+Bere `YYMMDD_N_MD1.xlsx` (víc dávek za den) i starší `*_MD1.xlsx`.  
+`Souhrn_mereni.xlsx` se při dalším běhu přepíše.
 
-## Německý Excel — nahrát makro
+## Zálohy v repu
 
-1. **Alt+F11**
-2. Starý modul: pravý klik → **Entfernen**
-3. **Datei → Datei importieren…** → `SloucitMereni.bas`
-4. Uprav `SOURCE_FOLDER` (v kódu přes `ChrW` / cestu z Exploreru)
-5. **Alt+F8** → `SloucitVsechnaMereni` → **Ausführen**
-
-Výsledek: `Souhrn_mereni.xlsx` ve stejné složce.
+- `sloucit_mereni.py` — stejná logika, kdybys měl Python
+- `SloucitMereni.bas` — VBA (často blokované firemní politikou)
