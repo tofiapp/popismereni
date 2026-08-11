@@ -130,10 +130,53 @@ function Get-DateFromFileName([string]$name) {
     return ("{0}.{1}.{2}" -f $dd, $mm, (2000 + $yy))
 }
 
+function Get-SharedStrings([System.IO.Compression.ZipArchive]$zip) {
+    $list = New-Object System.Collections.Generic.List[string]
+    $entry = $zip.GetEntry("xl/sharedStrings.xml")
+    if (-not $entry) { return ,$list.ToArray() }
+    $sr = New-Object System.IO.StreamReader($entry.Open())
+    try { $xml = $sr.ReadToEnd() } finally { $sr.Dispose() }
+    $siMatches = [regex]::Matches($xml, '<si\b[^>]*>(.*?)</si>', 'IgnoreCase, Singleline')
+    foreach ($sm in $siMatches) {
+        $parts = [regex]::Matches($sm.Groups[1].Value, '<t[^>]*>(.*?)</t>', 'IgnoreCase, Singleline')
+        $text = ""
+        foreach ($p in $parts) { $text += (Unescape-Xml $p.Groups[1].Value) }
+        [void]$list.Add($text.Trim())
+    }
+    return ,$list.ToArray()
+}
+
+function Get-CellText([string]$attrs, [string]$body, [string[]]$shared) {
+    $ctype = ""
+    $tm = [regex]::Match($attrs, 't="([^"]+)"', 'IgnoreCase')
+    if ($tm.Success) { $ctype = $tm.Groups[1].Value.ToLowerInvariant() }
+
+    if ($ctype -eq "s") {
+        $vm = [regex]::Match($body, '<v[^>]*>(.*?)</v>', 'IgnoreCase, Singleline')
+        if (-not $vm.Success) { return "" }
+        $idx = 0
+        if (-not [int]::TryParse($vm.Groups[1].Value.Trim(), [ref]$idx)) { return "" }
+        if ($idx -lt 0 -or $idx -ge $shared.Count) { return "" }
+        return $shared[$idx]
+    }
+
+    $tParts = [regex]::Matches($body, '<t[^>]*>(.*?)</t>', 'IgnoreCase, Singleline')
+    if ($tParts.Count -gt 0) {
+        $text = ""
+        foreach ($p in $tParts) { $text += (Unescape-Xml $p.Groups[1].Value) }
+        return $text.Trim()
+    }
+
+    $vm2 = [regex]::Match($body, '<v[^>]*>(.*?)</v>', 'IgnoreCase, Singleline')
+    if ($vm2.Success) { return (Unescape-Xml $vm2.Groups[1].Value).Trim() }
+    return ""
+}
+
 function Read-XlsxRows([string]$path) {
     $rows = New-Object System.Collections.Generic.List[object]
     $zip = [System.IO.Compression.ZipFile]::OpenRead($path)
     try {
+        $shared = @(Get-SharedStrings $zip)
         $entry = $zip.GetEntry("xl/worksheets/sheet1.xml")
         if (-not $entry) {
             $entry = $zip.Entries | Where-Object { $_.FullName -like "xl/worksheets/sheet*.xml" } |
@@ -149,15 +192,15 @@ function Read-XlsxRows([string]$path) {
     foreach ($rm in $rowMatches) {
         $cells = @{}
         $styleA = $null
-        $cellMatches = [regex]::Matches($rm.Groups[1].Value, '<c\b([^>]*)>(?:.*?<t[^>]*>(.*?)</t>.*?)?</c>|<c\b([^>]*)/>', 'IgnoreCase, Singleline')
+        $cellMatches = [regex]::Matches($rm.Groups[1].Value, '<c\b([^>]*?)(?:/>|>(.*?)</c>)', 'IgnoreCase, Singleline')
         foreach ($cm in $cellMatches) {
             $attrs = $cm.Groups[1].Value
-            if ([string]::IsNullOrEmpty($attrs)) { $attrs = $cm.Groups[3].Value }
-            $text = Unescape-Xml $cm.Groups[2].Value
+            $body = $cm.Groups[2].Value
+            if ($null -eq $body) { $body = "" }
             $refM = [regex]::Match($attrs, 'r="([A-Z]+)\d+"', 'IgnoreCase')
             if (-not $refM.Success) { continue }
             $col = $refM.Groups[1].Value.ToUpperInvariant()
-            $cells[$col] = $text.Trim()
+            $cells[$col] = Get-CellText $attrs $body $shared
             if ($col -eq "A") {
                 $sm = [regex]::Match($attrs, 's="(\d+)"')
                 if ($sm.Success) { $styleA = [int]$sm.Groups[1].Value }
@@ -175,7 +218,8 @@ function Read-XlsxRows([string]$path) {
             if ($styleA -eq $STYLE_DATE) { $role = "DATE" }
             elseif ($styleA -eq $STYLE_STATION) { $role = "STATION" }
             elseif ($a -and -not ($b -or $c -or $d)) {
-                $role = $(if ($rows.Count -eq 0) { "DATE" } else { "STATION" })
+                if ($rows.Count -eq 0 -or (Test-LooksLikeDate $a)) { $role = "DATE" }
+                else { $role = "STATION" }
             }
             else { $role = "DATA" }
         }
@@ -265,9 +309,13 @@ if (-not (Test-Path -LiteralPath $folderPath -PathType Container)) {
 }
 
 $files = @(Get-Md1Files $folderPath)
+Write-Host ("Slozka: {0}" -f $folderPath)
+Write-Host ("Nalezeno souboru *_MD1.xlsx: {0}" -f $files.Count)
 if ($files.Count -eq 0) {
     Write-Host "Ve slozce nejsou zadne *_MD1.xlsx:"
     Write-Host "  $folderPath"
+    Write-Host "Soubory .xlsx ve slozce:"
+    Get-ChildItem -LiteralPath $folderPath -File -Filter "*.xlsx" | ForEach-Object { Write-Host ("  - {0}" -f $_.Name) }
     exit 1
 }
 
@@ -279,6 +327,8 @@ $skipped = 0
 
 foreach ($f in $files) {
     $srcRows = @(Read-XlsxRows $f.FullName)
+    $dataN = @($srcRows | Where-Object { $_.Role -eq "DATA" -and ($_.A -or $_.B -or $_.C -or $_.D) }).Count
+    Write-Host ("  - {0}: {1} radku XML, z toho {2} datovych" -f $f.Name, $srcRows.Count, $dataN)
     $wrote = $false
     $guess = Get-DateFromFileName $f.Name
 
@@ -325,10 +375,19 @@ foreach ($f in $files) {
     if ($wrote) { $ok++ } else { $skipped++ }
 }
 
+$dataOut = @($out | Where-Object { $_.Role -eq "DATA" }).Count
+if ($dataOut -eq 0) {
+    Write-Host ""
+    Write-Host "CHYBA: do souhrnu se nedostala zadna data."
+    Write-Host "Zkontroluj, ze ve slozce jsou originalni soubory z appky (*_MD1.xlsx)."
+    exit 1
+}
+
 $outPath = Join-Path $folderPath $Output
 Write-Xlsx $outPath $out.ToArray()
 
 Write-Host ("Soubory OK: {0}" -f $ok)
 Write-Host ("Preskoceno: {0}" -f $skipped)
+Write-Host ("Datovych radku: {0}" -f $dataOut)
 Write-Host ("Ulozeno: {0}" -f $outPath)
 exit 0
