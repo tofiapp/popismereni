@@ -78,14 +78,23 @@ class MeasurementStore(context: Context) {
     fun usedLabelsForStation(stationName: String): Pair<Set<String>, Set<String>> {
         val want = stationName.trim()
         if (want.isEmpty()) return emptySet<String>() to emptySet()
+        val rows = SimpleXlsx.read(workingFile)
+        // Poslední návštěva stanice (Nymburk → Poděbrady → Nymburk znovu)
+        var start = -1
+        for (i in rows.indices) {
+            val row = rows[i]
+            if (row.role == SimpleXlsx.Role.STATION && row.a.trim() == want) {
+                start = i
+            }
+        }
+        if (start < 0) return emptySet<String>() to emptySet()
         val pole1 = linkedSetOf<String>()
         val pole2 = linkedSetOf<String>()
-        val rows = SimpleXlsx.read(workingFile)
-        var active = false
-        for (row in rows) {
+        for (i in (start + 1) until rows.size) {
+            val row = rows[i]
             when (row.role) {
-                SimpleXlsx.Role.STATION -> active = row.a.trim() == want
-                SimpleXlsx.Role.DATA -> if (active) {
+                SimpleXlsx.Role.STATION, SimpleXlsx.Role.DATE -> break
+                SimpleXlsx.Role.DATA -> {
                     row.a.split(',').map { it.trim() }.filter { it.isNotEmpty() }.forEach { pole1.add(it) }
                     row.b.split(Regex("""\s*-\s*""")).map { it.trim() }
                         .filter { it.isNotEmpty() }.forEach { pole2.add(it) }
