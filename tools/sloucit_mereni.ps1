@@ -1,5 +1,5 @@
 ﻿#Requires -Version 5.1
-# sloucit_mereni.ps1 — verze 2026-08-11g
+# sloucit_mereni.ps1 — verze 2026-08-11h
 # ASCII-only source (Windows PowerShell 5.1). Czech names via [char] codes.
 # Layout:
 #   Popis_mereni_MD1/
@@ -77,10 +77,34 @@ $WORKBOOK = @"
 $STYLE_BUTTON = 5
 $BUTTON_LABEL = "Aktualizovat"
 $UPDATE_BAT_NAME = "SloucitMereni.bat"
+# ASCII nazev — Excel/odkazy nemaji problem s diakritikou v JMENU souboru
+$UPDATE_CMD_NAME = "Aktualizovat.cmd"
+
+function Get-ShortPathName([string]$path) {
+    $full = [System.IO.Path]::GetFullPath($path)
+    if (-not (Test-Path -LiteralPath $full)) { return $full }
+    try {
+        if (-not ("Win32ShortPath" -as [type])) {
+            Add-Type -TypeDefinition @"
+using System;
+using System.Text;
+using System.Runtime.InteropServices;
+public static class Win32ShortPath {
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern int GetShortPathName(string path, StringBuilder shortPath, int bufferSize);
+}
+"@
+        }
+        $sb = New-Object System.Text.StringBuilder 1024
+        $n = [Win32ShortPath]::GetShortPathName($full, $sb, $sb.Capacity)
+        if ($n -gt 0 -and $sb.Length -gt 0) { return $sb.ToString() }
+    } catch { }
+    return $full
+}
 
 function Get-FileUri([string]$path) {
-    # Absolutni file:///... — relativni .bat na OneDrive Excel otevira jako https → 404 v prohlizeci
-    $full = [System.IO.Path]::GetFullPath($path)
+    # file:/// + ideálně 8.3 cesta (OneDrive diakritika v Excelu jinak rozbije odkaz)
+    $full = Get-ShortPathName $path
     return ([uri]$full).AbsoluteUri
 }
 
@@ -94,27 +118,62 @@ function Get-SheetRelsXml([string]$batPath) {
 "@
 }
 
+function Write-UpdateCmd([string]$dir) {
+    # ASCII-only launcher vedle souhrnu (volany z Excel tlacitka)
+    $cmdPath = Join-Path $dir $UPDATE_CMD_NAME
+    $lines = @(
+        "@echo off",
+        "setlocal",
+        "chcp 65001 >nul",
+        "REM Launcher pro Excel tlacitko Aktualizovat (ASCII nazev souboru)",
+        "set "DIR=%~dp0"",
+        "if not exist "%DIR%sloucit_mereni.ps1" (",
+        "  echo CHYBA: chybi sloucit_mereni.ps1 vedle tohoto CMD",
+        "  pause",
+        "  exit /b 2",
+        ")",
+        "powershell -NoProfile -ExecutionPolicy Bypass -File "%DIR%sloucit_mereni.ps1" -Folder "%DIR%."",
+        "set "ERR=%ERRORLEVEL%"",
+        "if not "%ERR%"=="0" (",
+        "  echo.",
+        "  echo Chyba %ERR%",
+        "  pause",
+        ")",
+        "endlocal & exit /b %ERR%"
+    )
+    # CMD: UTF-8 bez BOM je OK s chcp 65001; obsah je ASCII
+    [System.IO.File]::WriteAllText($cmdPath, ($lines -join "`r`n") + "`r`n", (New-Object System.Text.UTF8Encoding $false))
+    return $cmdPath
+}
+
 function Resolve-UpdateBatPath([string]$summaryPath) {
     $dir = Split-Path -Parent $summaryPath
-    $nextToSummary = Join-Path $dir $UPDATE_BAT_NAME
-    if (Test-Path -LiteralPath $nextToSummary -PathType Leaf) { return $nextToSummary }
-    # bat vedle tohoto ps1 (tools/) — zkus zkopirovat k souhrnu
     $here = $PSScriptRoot
     if (-not $here) { $here = Split-Path -Parent $MyInvocation.MyCommand.Path }
-    $fromTools = Join-Path $here $UPDATE_BAT_NAME
-    if (Test-Path -LiteralPath $fromTools -PathType Leaf) {
-        try {
-            Copy-Item -LiteralPath $fromTools -Destination $nextToSummary -Force
-            $ps1Src = Join-Path $here "sloucit_mereni.ps1"
-            $ps1Dst = Join-Path $dir "sloucit_mereni.ps1"
-            if ((Test-Path -LiteralPath $ps1Src) -and -not (Test-Path -LiteralPath $ps1Dst)) {
+
+    # Dopln bat+ps1 k souhrnu, pokud chybi
+    $batDst = Join-Path $dir $UPDATE_BAT_NAME
+    $ps1Dst = Join-Path $dir "sloucit_mereni.ps1"
+    $batSrc = Join-Path $here $UPDATE_BAT_NAME
+    $ps1Src = Join-Path $here "sloucit_mereni.ps1"
+    try {
+        if ((Test-Path -LiteralPath $batSrc) -and -not (Test-Path -LiteralPath $batDst)) {
+            Copy-Item -LiteralPath $batSrc -Destination $batDst -Force
+        }
+        if ((Test-Path -LiteralPath $ps1Src)) {
+            # vzdy aktualizuj ps1 vedle souhrnu pri zapisu xlsx? ne — jen kdyz chybi
+            if (-not (Test-Path -LiteralPath $ps1Dst)) {
                 Copy-Item -LiteralPath $ps1Src -Destination $ps1Dst -Force
             }
-            Write-Host ("Zkopirovano {0} vedle souhrnu (pro tlacitko Aktualizovat)." -f $UPDATE_BAT_NAME)
-            return $nextToSummary
-        } catch { }
+        }
+    } catch { }
+
+    # Pro Excel hyperlink pouzij ASCII Aktualizovat.cmd (ne SloucitMereni.bat v Unicode ceste zobrazeni)
+    try {
+        return (Write-UpdateCmd $dir)
+    } catch {
+        return $batDst
     }
-    return $nextToSummary
 }
 
 $STYLES = @"
@@ -618,7 +677,7 @@ function Resolve-Layout([string]$folderPath) {
 
 # ---- main ----
 try {
-    Write-Host "sloucit_mereni.ps1 verze 2026-08-11g"
+    Write-Host "sloucit_mereni.ps1 verze 2026-08-11h"
     if (-not (Test-Path -LiteralPath $Folder)) {
         Write-Host "Slozka neexistuje:"
         Write-Host "  $Folder"
