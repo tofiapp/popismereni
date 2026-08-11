@@ -136,6 +136,7 @@ LOOKS_LIKE_DATE_RE = re.compile(r"^\d{1,2}[./]\d{1,2}[./]\d{4}$")
 MAIN_FOLDER_NAME = "Popis_měření_MD1"
 DAYS_SUBFOLDER_NAME = "MD1_popis_dny"
 SUMMARY_XLSX_NAME = "Popis_měření_MD1.xlsx"
+ARCHIVE_FOLDER_NAME = "sloučeno"
 SUMMARY_EXCLUDE = {
     SUMMARY_XLSX_NAME.lower(),
     "souhrn_mereni.xlsx",
@@ -374,17 +375,30 @@ def resolve_layout(folder: Path) -> Tuple[Path, Path]:
     return folder, summary
 
 
-def merge_folder(folder: Path, verbose: bool = True) -> Tuple[List[Row], int, int]:
-    out: List[Row] = []
+def merge_folder(
+    folder: Path,
+    verbose: bool = True,
+    base_rows: Optional[List[Row]] = None,
+) -> Tuple[List[Row], int, int, List[Path]]:
+    out: List[Row] = list(base_rows or [])
     current_date = ""
     last_station = ""
+    for row in out:
+        if row.role == Role.DATE and row.a:
+            current_date = row.a
+            last_station = ""
+        elif row.role == Role.STATION and row.a:
+            last_station = row.a
     ok = 0
     skipped = 0
+    processed: List[Path] = []
 
     files = list_md1_files(folder)
     if verbose:
         print(f"Složka: {folder}")
         print(f"Nalezeno souborů *_MD1.xlsx: {len(files)}")
+        if out:
+            print(f"Výchozí souhrn: {len(out)} řádků")
 
     for path in files:
         rows = read_xlsx(path)
@@ -434,10 +448,29 @@ def merge_folder(folder: Path, verbose: bool = True) -> Tuple[List[Row], int, in
 
         if wrote:
             ok += 1
+            processed.append(path)
         else:
             skipped += 1
 
-    return out, ok, skipped
+    return out, ok, skipped, processed
+
+
+def archive_merged_files(files: List[Path], summary_path: Path) -> Path:
+    """Přesune sloučené denní soubory do Popis_…/sloučeno/."""
+    archive = summary_path.parent / ARCHIVE_FOLDER_NAME
+    archive.mkdir(parents=True, exist_ok=True)
+    for src in files:
+        if not src.is_file():
+            continue
+        dest = archive / src.name
+        if dest.exists():
+            stem, suf = src.stem, src.suffix
+            n = 1
+            while dest.exists():
+                dest = archive / f"{stem}_{n}{suf}"
+                n += 1
+        src.rename(dest)
+    return archive
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -488,7 +521,12 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     print(f"Denní soubory: {source}")
     print(f"Souhrn:        {out_path}")
-    rows, ok, skipped = merge_folder(source)
+    base_rows: List[Row] = []
+    if out_path.is_file() and out_path.stat().st_size > 64:
+        base_rows = read_xlsx(out_path)
+        if base_rows:
+            print(f"Načten existující souhrn: {len(base_rows)} řádků")
+    rows, ok, skipped, processed = merge_folder(source, base_rows=base_rows)
     data_out = sum(1 for r in rows if r.role == Role.DATA)
     if data_out == 0:
         print(
@@ -504,14 +542,19 @@ def main(argv: Optional[List[str]] = None) -> int:
     print(f"Přeskočeno: {skipped}")
     print(f"Datových řádků: {data_out}")
     print(f"Uloženo: {out_path}")
+
+    archive = archive_merged_files(processed, out_path)
+    print(f"Přesunuto do {ARCHIVE_FOLDER_NAME}/: {len(processed)} souborů ({archive})")
+
     try:
         if sys.platform.startswith("win"):
             os.startfile(out_path)  # type: ignore[attr-defined]
-        else:
+            print("Otevírám Excel…")
+        elif os.environ.get("SLOUCIT_NO_OPEN") != "1":
             import subprocess
 
             subprocess.Popen(["xdg-open", str(out_path)])
-        print("Otevírám Excel…")
+            print("Otevírám Excel…")
     except OSError as exc:
         print(f"Nepodařilo se otevřít soubor: {exc}", file=sys.stderr)
     return 0

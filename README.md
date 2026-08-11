@@ -13,13 +13,14 @@ Denní soubor: `YYMMDD_N_MD1.xlsx` (N = 1, 2, 3… ten den). Po ANO se místní 
 ### Struktura složek
 ```
 Popis_měření_MD1/
-  Popis_měření_MD1.xlsx      ← souhrn (skript)
-  YYMMDD_N_MD1.xlsx         ← denní soubory sem
-  MD1_popis_dny/            ← nebo do této podsložky
+  Popis_měření_MD1.xlsx      ← souhrn (skript, připojuje nová data)
+  YYMMDD_N_MD1.xlsx         ← nové denní soubory
+  MD1_popis_dny/            ← nebo sem
+  sloučeno/                 ← už sloučené denní soubory
 ```
 
-Merge tool bere soubory z `MD1_popis_dny`, pokud tam nějaké jsou;
-jinak z hlavní složky `Popis_měření_MD1`.
+Skript bere nové soubory z hlavní složky / `MD1_popis_dny`,
+po sloučení je přesune do `sloučeno/` a otevře souhrn v Excelu.
 
 ## Sloučení denních souborů na PC
 

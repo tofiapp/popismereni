@@ -22,6 +22,8 @@ $iAcute = [char]0x00ED
 $MAIN_FOLDER_NAME = "Popis_m" + $eCaron + $rCaron + "en" + $iAcute + "_MD1"
 $DAYS_SUBFOLDER_NAME = "MD1_popis_dny"
 $SUMMARY_XLSX_NAME = $MAIN_FOLDER_NAME + ".xlsx"
+$cCaron = [char]0x010D
+$ARCHIVE_FOLDER_NAME = "slou" + $cCaron + "eno"
 $MAIN_FOLDER_ASCII = "Popis_mereni_MD1"
 $SUMMARY_ASCII = "Popis_mereni_MD1.xlsx"
 
@@ -493,10 +495,29 @@ try {
     }
 
     $out = New-Object System.Collections.Generic.List[object]
+    $processed = New-Object System.Collections.Generic.List[object]
     $currentDate = ""
     $lastStation = ""
     $ok = 0
     $skipped = 0
+
+    # Existujici souhrn = zaklad (nove denni soubory se pripoji)
+    if ((Test-Path -LiteralPath $outPath -PathType Leaf) -and ((Get-Item -LiteralPath $outPath).Length -gt 64)) {
+        try {
+            $existing = @(Read-XlsxRows $outPath)
+            foreach ($row in $existing) {
+                [void]$out.Add($row)
+                if ($row.Role -eq "DATE" -and $row.A) { $currentDate = $row.A; $lastStation = "" }
+                elseif ($row.Role -eq "STATION" -and $row.A) { $lastStation = $row.A }
+            }
+            Write-Host ("Nacten existujici souhrn: {0} radku" -f $existing.Count)
+        } catch {
+            Write-Host ("  ! Souhrn nejde nacist, vytvorim novy: {0}" -f $_.Exception.Message)
+            $out.Clear()
+            $currentDate = ""
+            $lastStation = ""
+        }
+    }
 
     foreach ($f in $files) {
         try {
@@ -551,7 +572,12 @@ try {
             $wrote = $true
         }
 
-        if ($wrote) { $ok++ } else { $skipped++ }
+        if ($wrote) {
+            $ok++
+            [void]$processed.Add($f)
+        } else {
+            $skipped++
+        }
     }
 
     $dataOut = @($out | Where-Object { $_.Role -eq "DATA" }).Count
@@ -570,6 +596,29 @@ try {
     Write-Host ("Preskoceno: {0}" -f $skipped)
     Write-Host ("Datovych radku: {0}" -f $dataOut)
     Write-Host ("Ulozeno: {0}" -f $outPath)
+
+    # Presun sloucenych dennich souboru do slozky "slouceno"
+    $archiveRoot = Split-Path -Parent $outPath
+    $archiveDir = Join-Path $archiveRoot $ARCHIVE_FOLDER_NAME
+    if (-not (Test-Path -LiteralPath $archiveDir)) {
+        New-Item -ItemType Directory -Path $archiveDir -Force | Out-Null
+    }
+    $moved = 0
+    foreach ($f in $processed) {
+        try {
+            $dest = Join-Path $archiveDir $f.Name
+            if (Test-Path -LiteralPath $dest) {
+                $stamp = Get-Date -Format "yyyyMMdd_HHmmss"
+                $dest = Join-Path $archiveDir ("{0}_{1}{2}" -f $f.BaseName, $stamp, $f.Extension)
+            }
+            Move-Item -LiteralPath $f.FullName -Destination $dest -Force
+            $moved++
+        } catch {
+            Write-Host ("  ! Nepodarilo se presunout {0}: {1}" -f $f.Name, $_.Exception.Message)
+        }
+    }
+    Write-Host ("Presunuto do {0}: {1} souboru" -f $ARCHIVE_FOLDER_NAME, $moved)
+
     Write-Host ""
     Write-Host "Oteviram Excel..."
     try {
