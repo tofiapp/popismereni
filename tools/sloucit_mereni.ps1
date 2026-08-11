@@ -1,5 +1,5 @@
 ﻿#Requires -Version 5.1
-# sloucit_mereni.ps1 — verze 2026-08-11c
+# sloucit_mereni.ps1 — verze 2026-08-11d
 # ASCII-only source (Windows PowerShell 5.1). Czech names via [char] codes.
 # Layout:
 #   Popis_mereni_MD1/
@@ -133,45 +133,71 @@ function Test-IsUpdateText([string]$s) {
     return ($t.StartsWith("naposledy aktualizov"))
 }
 
+function New-Row([string]$RoleName, [string]$A = "", [string]$B = "", [string]$C = "", [string]$D = "") {
+    return [pscustomobject]@{ Role = $RoleName; A = $A; B = $B; C = $C; D = $D }
+}
+
 function New-UpdateRow {
     $stamp = Get-Date -Format "dd.MM.yyyy HH:mm"
-    # "Naposledy aktualizováno:" — á = U+00E1
     $prefix = "Naposledy aktualizov" + [char]0x00E1 + "no:"
-    return [pscustomobject]@{ Role = "UPDATED"; A = ("{0} {1}" -f $prefix, $stamp); B = ""; C = ""; D = "" }
+    return (New-Row "UPDATED" ("{0} {1}" -f $prefix, $stamp))
 }
 
 function Test-IsRowObject($obj) {
     if ($null -eq $obj) { return $false }
     if ($obj -is [string]) { return $false }
-    if ($obj -is [System.Array]) { return $false }
-    return ($null -ne $obj.PSObject -and $null -ne $obj.PSObject.Properties['Role'])
+    try {
+        return ($null -ne $obj.PSObject.Properties['Role'])
+    } catch {
+        return $false
+    }
 }
 
-function Add-UpdateStamp($rows) {
-    # Vraci List[object] radku — bez PowerShell array unwrap/comma triku.
+function Add-UpdateStamp {
+    # PS 5.1: NIKDY nepouzivat @($List[object]) — hodi "Typy argumentu neodpovidaji".
+    # Predavat pole (ToArray) nebo indexovat pres Count / [$i].
+    param($Rows)
+
     $list = New-Object System.Collections.Generic.List[object]
     [void]$list.Add((New-UpdateRow))
     [void]$list.Add((New-Row "BLANK"))
 
-    $skippingHead = $true
-    foreach ($r in @($rows)) {
-        if (-not (Test-IsRowObject $r)) { continue }
-        if ($skippingHead) {
-            if (($r.Role -eq "UPDATED") -or (Test-IsUpdateText ([string]$r.A))) { continue }
-            if ($r.Role -eq "BLANK") { continue }
-            $skippingHead = $false
+    if ($null -ne $Rows) {
+        $arr = $null
+        try {
+            if ($Rows -is [System.Array]) {
+                $arr = [object[]]$Rows
+            } elseif ($Rows.PSObject.Methods['ToArray']) {
+                $arr = [object[]]$Rows.ToArray()
+            }
+        } catch {
+            $arr = $null
         }
-        [void]$list.Add($r)
+
+        if ($null -ne $arr) {
+            $skippingHead = $true
+            foreach ($r in $arr) {
+                if (-not (Test-IsRowObject $r)) { continue }
+                $role = [string]$r.Role
+                if ($skippingHead) {
+                    $aVal = ""
+                    try { $aVal = [string]$r.A } catch { $aVal = "" }
+                    if (($role -eq "UPDATED") -or (Test-IsUpdateText $aVal)) { continue }
+                    if ($role -eq "BLANK") { continue }
+                    $skippingHead = $false
+                }
+                [void]$list.Add($r)
+            }
+        }
     }
-    return $list
+
+    # Unary comma = vratit List jako 1 objekt (ne rozbalit na radky)
+    return ,$list
 }
 
-function Add-UpdateStampToList($rows) {
-    return (Add-UpdateStamp $rows)
-}
-
-function New-Row([string]$Role, [string]$A = "", [string]$B = "", [string]$C = "", [string]$D = "") {
-    return [pscustomobject]@{ Role = $Role; A = $A; B = $B; C = $C; D = $D }
+function Add-UpdateStampToList {
+    param($Rows)
+    return (Add-UpdateStamp -Rows $Rows)
 }
 
 function Test-LooksLikeDate([string]$s) {
@@ -475,7 +501,7 @@ function Resolve-Layout([string]$folderPath) {
 
 # ---- main ----
 try {
-    Write-Host "sloucit_mereni.ps1 verze 2026-08-11c"
+    Write-Host "sloucit_mereni.ps1 verze 2026-08-11d"
     if (-not (Test-Path -LiteralPath $Folder)) {
         Write-Host "Slozka neexistuje:"
         Write-Host "  $Folder"
@@ -563,7 +589,7 @@ try {
         exit 1
     }
 
-    $out = New-Object System.Collections.Generic.List[object]
+    $mergeRows = New-Object System.Collections.Generic.List[object]
     $processed = New-Object System.Collections.Generic.List[object]
     $currentDate = ""
     $lastStation = ""
@@ -582,14 +608,14 @@ try {
                     if ($row.Role -eq "BLANK") { continue }
                     $skipHead = $false
                 }
-                [void]$out.Add($row)
+                [void]$mergeRows.Add($row)
                 if ($row.Role -eq "DATE" -and $row.A) { $currentDate = $row.A; $lastStation = "" }
                 elseif ($row.Role -eq "STATION" -and $row.A) { $lastStation = $row.A }
             }
-            Write-Host ("Nacten existujici souhrn: {0} radku" -f $out.Count)
+            Write-Host ("Nacten existujici souhrn: {0} radku" -f $mergeRows.Count)
         } catch {
             Write-Host ("  ! Souhrn nejde nacist, vytvorim novy: {0}" -f $_.Exception.Message)
-            $out.Clear()
+            $mergeRows.Clear()
             $currentDate = ""
             $lastStation = ""
         }
@@ -609,12 +635,13 @@ try {
         $guess = Get-DateFromFileName $f.Name
 
         foreach ($row in $srcRows) {
+            if (-not (Test-IsRowObject $row)) { continue }
             if ($row.Role -eq "BLANK" -or (-not ($row.A -or $row.B -or $row.C -or $row.D))) { continue }
 
             if ($row.Role -eq "DATE") {
                 if ($row.A -ne $currentDate) {
-                    if ($out.Count -gt 0) { [void]$out.Add((New-Row "BLANK")) }
-                    [void]$out.Add((New-Row "DATE" $row.A))
+                    if ($mergeRows.Count -gt 0) { [void]$mergeRows.Add((New-Row "BLANK")) }
+                    [void]$mergeRows.Add((New-Row "DATE" $row.A))
                     $currentDate = $row.A
                     $lastStation = ""
                     $wrote = $true
@@ -624,14 +651,14 @@ try {
 
             if ($row.Role -eq "STATION") {
                 if (-not $currentDate -and $guess) {
-                    if ($out.Count -gt 0) { [void]$out.Add((New-Row "BLANK")) }
-                    [void]$out.Add((New-Row "DATE" $guess))
+                    if ($mergeRows.Count -gt 0) { [void]$mergeRows.Add((New-Row "BLANK")) }
+                    [void]$mergeRows.Add((New-Row "DATE" $guess))
                     $currentDate = $guess
                     $lastStation = ""
                 }
                 if ($row.A -ne $lastStation) {
-                    [void]$out.Add((New-Row "BLANK"))
-                    [void]$out.Add((New-Row "STATION" $row.A))
+                    [void]$mergeRows.Add((New-Row "BLANK"))
+                    [void]$mergeRows.Add((New-Row "STATION" $row.A))
                     $lastStation = $row.A
                     $wrote = $true
                 }
@@ -639,12 +666,12 @@ try {
             }
 
             if (-not $currentDate -and $guess) {
-                if ($out.Count -gt 0) { [void]$out.Add((New-Row "BLANK")) }
-                [void]$out.Add((New-Row "DATE" $guess))
+                if ($mergeRows.Count -gt 0) { [void]$mergeRows.Add((New-Row "BLANK")) }
+                [void]$mergeRows.Add((New-Row "DATE" $guess))
                 $currentDate = $guess
                 $lastStation = ""
             }
-            [void]$out.Add((New-Row "DATA" $row.A $row.B $row.C $row.D))
+            [void]$mergeRows.Add((New-Row "DATA" $row.A $row.B $row.C $row.D))
             $wrote = $true
         }
 
@@ -656,7 +683,11 @@ try {
         }
     }
 
-    $dataOut = @($out | Where-Object { $_.Role -eq "DATA" }).Count
+    $dataOut = 0
+    for ($di = 0; $di -lt $mergeRows.Count; $di++) {
+        $dr = $mergeRows[$di]
+        if ((Test-IsRowObject $dr) -and ($dr.Role -eq "DATA")) { $dataOut++ }
+    }
     if ($dataOut -eq 0) {
         Write-Host ""
         Write-Host "CHYBA: soubory jsem nasel, ale uvnitr nejsou citelna DATA (koleje/vyhybky/...)."
@@ -666,7 +697,8 @@ try {
         exit 1
     }
 
-    $stamped = Add-UpdateStamp $out
+    # ToArray() — ne @($mergeRows), to v PS 5.1 pada u List[object]
+    $stamped = Add-UpdateStamp -Rows $mergeRows.ToArray()
     Write-Xlsx $outPath $stamped
     Write-Host ("Aktualizace: {0}" -f $stamped[0].A)
 
