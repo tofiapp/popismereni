@@ -10,7 +10,7 @@ REM Pouziti:
 REM   1) Preetáhni slozku Popis_mereni_MD1 na tento .bat
 REM   2) Nebo bat + ps1 dej do Popis_mereni_MD1 a dej dvojklik
 REM NIC se neinstaluje — Windows PowerShell.
-REM VERZE: 2026-08-11h
+REM VERZE: 2026-08-11i
 REM
 REM Pozn.: Spravny nazev slozky je Popis_mereni_MD1 / Popis_měření_MD1
 REM        Kdyz v ceste vidis "SprĂˇva" / "mÄ›Ĺ™enĂ­", je to jen spatne kodovani zobrazeni.

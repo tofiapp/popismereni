@@ -1,5 +1,5 @@
 ﻿#Requires -Version 5.1
-# sloucit_mereni.ps1 — verze 2026-08-11h
+# sloucit_mereni.ps1 — verze 2026-08-11i
 # ASCII-only source (Windows PowerShell 5.1). Czech names via [char] codes.
 # Layout:
 #   Popis_mereni_MD1/
@@ -120,29 +120,30 @@ function Get-SheetRelsXml([string]$batPath) {
 
 function Write-UpdateCmd([string]$dir) {
     # ASCII-only launcher vedle souhrnu (volany z Excel tlacitka)
+    # POZOR: obsah CMD musi byt v single-quoted here-string — jinak PS rozbije uvozovky.
     $cmdPath = Join-Path $dir $UPDATE_CMD_NAME
-    $lines = @(
-        "@echo off",
-        "setlocal",
-        "chcp 65001 >nul",
-        "REM Launcher pro Excel tlacitko Aktualizovat (ASCII nazev souboru)",
-        "set "DIR=%~dp0"",
-        "if not exist "%DIR%sloucit_mereni.ps1" (",
-        "  echo CHYBA: chybi sloucit_mereni.ps1 vedle tohoto CMD",
-        "  pause",
-        "  exit /b 2",
-        ")",
-        "powershell -NoProfile -ExecutionPolicy Bypass -File "%DIR%sloucit_mereni.ps1" -Folder "%DIR%."",
-        "set "ERR=%ERRORLEVEL%"",
-        "if not "%ERR%"=="0" (",
-        "  echo.",
-        "  echo Chyba %ERR%",
-        "  pause",
-        ")",
-        "endlocal & exit /b %ERR%"
-    )
-    # CMD: UTF-8 bez BOM je OK s chcp 65001; obsah je ASCII
-    [System.IO.File]::WriteAllText($cmdPath, ($lines -join "`r`n") + "`r`n", (New-Object System.Text.UTF8Encoding $false))
+    $body = @'
+@echo off
+setlocal
+chcp 65001 >nul
+REM Launcher pro Excel tlacitko Aktualizovat (ASCII nazev souboru)
+set "DIR=%~dp0"
+if not exist "%DIR%sloucit_mereni.ps1" (
+  echo CHYBA: chybi sloucit_mereni.ps1 vedle tohoto CMD
+  pause
+  exit /b 2
+)
+powershell -NoProfile -ExecutionPolicy Bypass -File "%DIR%sloucit_mereni.ps1" -Folder "%DIR%."
+set "ERR=%ERRORLEVEL%"
+if not "%ERR%"=="0" (
+  echo.
+  echo Chyba %ERR%
+  pause
+)
+endlocal & exit /b %ERR%
+'@
+    $utf8 = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllText($cmdPath, ($body -replace "`n", "`r`n"), $utf8)
     return $cmdPath
 }
 
@@ -677,7 +678,7 @@ function Resolve-Layout([string]$folderPath) {
 
 # ---- main ----
 try {
-    Write-Host "sloucit_mereni.ps1 verze 2026-08-11h"
+    Write-Host "sloucit_mereni.ps1 verze 2026-08-11i"
     if (-not (Test-Path -LiteralPath $Folder)) {
         Write-Host "Slozka neexistuje:"
         Write-Host "  $Folder"
