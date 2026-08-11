@@ -133,12 +133,31 @@ function Get-DateFromFileName([string]$name) {
     return ("{0}.{1}.{2}" -f $dd, $mm, (2000 + $yy))
 }
 
+function Get-ZipEntryCI([System.IO.Compression.ZipArchive]$zip, [string]$name) {
+    $want = $name.Replace('\', '/').ToLowerInvariant()
+    foreach ($e in $zip.Entries) {
+        if ($e.FullName.Replace('\', '/').ToLowerInvariant() -eq $want) { return $e }
+    }
+    return $null
+}
+
+function Read-ZipEntryText([System.IO.Compression.ZipArchiveEntry]$entry) {
+    if (-not $entry) { return "" }
+    $sr = New-Object System.IO.StreamReader($entry.Open(), [System.Text.Encoding]::UTF8, $true)
+    try { return $sr.ReadToEnd() } finally { $sr.Dispose() }
+}
+
 function Get-SharedStrings([System.IO.Compression.ZipArchive]$zip) {
     $list = New-Object System.Collections.Generic.List[string]
-    $entry = $zip.GetEntry("xl/sharedStrings.xml")
-    if (-not $entry) { return ,@() }
-    $sr = New-Object System.IO.StreamReader($entry.Open(), [System.Text.Encoding]::UTF8)
-    try { $xml = $sr.ReadToEnd() } finally { $sr.Dispose() }
+    $entry = Get-ZipEntryCI $zip "xl/sharedStrings.xml"
+    if (-not $entry) {
+        [string[]]$empty = @()
+        return $empty
+    }
+    $xml = Read-ZipEntryText $entry
+    # strip ns prefixes: <x:si> -> <si>
+    $xml = [regex]::Replace($xml, '<([A-Za-z0-9._-]+):', '<')
+    $xml = [regex]::Replace($xml, '</([A-Za-z0-9._-]+):', '</')
     $siMatches = [regex]::Matches($xml, '<si\b[^>]*>(.*?)</si>', 'IgnoreCase, Singleline')
     foreach ($sm in $siMatches) {
         $parts = [regex]::Matches($sm.Groups[1].Value, '<t[^>]*>(.*?)</t>', 'IgnoreCase, Singleline')
@@ -146,12 +165,14 @@ function Get-SharedStrings([System.IO.Compression.ZipArchive]$zip) {
         foreach ($p in $parts) { $text += (Unescape-Xml $p.Groups[1].Value) }
         [void]$list.Add($text.Trim())
     }
-    return ,$list.ToArray()
+    [string[]]$arr = $list.ToArray()
+    return $arr
 }
 
 function Get-CellText([string]$attrs, [string]$body, [string[]]$shared) {
+    if ($null -eq $body) { $body = "" }
     $ctype = ""
-    $tm = [regex]::Match($attrs, 't="([^"]+)"', 'IgnoreCase')
+    $tm = [regex]::Match($attrs, 't\s*=\s*"([^"]+)"', 'IgnoreCase')
     if ($tm.Success) { $ctype = $tm.Groups[1].Value.ToLowerInvariant() }
 
     if ($ctype -eq "s") {
@@ -159,8 +180,9 @@ function Get-CellText([string]$attrs, [string]$body, [string[]]$shared) {
         if (-not $vm.Success) { return "" }
         $idx = 0
         if (-not [int]::TryParse($vm.Groups[1].Value.Trim(), [ref]$idx)) { return "" }
-        if ($null -eq $shared -or $idx -lt 0 -or $idx -ge $shared.Count) { return "" }
-        return $shared[$idx]
+        if ($null -eq $shared) { return "" }
+        if ($idx -lt 0 -or $idx -ge $shared.Length) { return "" }
+        return [string]$shared[$idx]
     }
 
     $tParts = [regex]::Matches($body, '<t[^>]*>(.*?)</t>', 'IgnoreCase, Singleline')
@@ -177,73 +199,118 @@ function Get-CellText([string]$attrs, [string]$body, [string[]]$shared) {
 
 function Read-XlsxRows([string]$path) {
     $rows = New-Object System.Collections.Generic.List[object]
+
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        Write-Host ("  ! Soubor neexistuje: {0}" -f $path)
+        return [object[]]@()
+    }
+    $len = (Get-Item -LiteralPath $path).Length
+    if ($len -lt 64) {
+        Write-Host ("  ! Soubor je moc maly ({0} B) — OneDrive asi nestahl obsah." -f $len)
+        return [object[]]@()
+    }
+    $fs = [System.IO.File]::OpenRead($path)
+    try {
+        $b0 = $fs.ReadByte(); $b1 = $fs.ReadByte()
+    } finally { $fs.Dispose() }
+    if ($b0 -ne 0x50 -or $b1 -ne 0x4B) {
+        Write-Host ("  ! Soubor neni platne xlsx/zip (chybi PK). OneDrive online-only?" -f $path)
+        return [object[]]@()
+    }
+
     $zip = $null
     try {
         $zip = [System.IO.Compression.ZipFile]::OpenRead($path)
     } catch {
-        Write-Host ("  ! Nelze otevrit (OneDrive offline / zamceno): {0}" -f $path)
-        Write-Host ("    {0}" -f $_.Exception.Message)
-        return @()
+        Write-Host ("  ! Nelze otevrit zip: {0}" -f $_.Exception.Message)
+        return [object[]]@()
     }
+
+    $xml = ""
+    $shared = [string[]]@()
     try {
-        $shared = @(Get-SharedStrings $zip)
-        $entry = $zip.GetEntry("xl/worksheets/sheet1.xml")
+        $shared = Get-SharedStrings $zip
+        if ($null -eq $shared) { $shared = [string[]]@() }
+
+        $entry = Get-ZipEntryCI $zip "xl/worksheets/sheet1.xml"
         if (-not $entry) {
-            $entry = $zip.Entries | Where-Object { $_.FullName -like "xl/worksheets/sheet*.xml" } |
-                Sort-Object FullName | Select-Object -First 1
+            $entry = $zip.Entries |
+                Where-Object { $_.FullName.Replace('\','/').ToLowerInvariant() -like 'xl/worksheets/sheet*.xml' } |
+                Sort-Object FullName |
+                Select-Object -First 1
         }
-        if (-not $entry) { return @() }
-        $sr = New-Object System.IO.StreamReader($entry.Open(), [System.Text.Encoding]::UTF8)
-        try { $xml = $sr.ReadToEnd() } finally { $sr.Dispose() }
+        if (-not $entry) {
+            Write-Host "  ! V xlsx chybi sheet XML"
+            return [object[]]@()
+        }
+        $xml = Read-ZipEntryText $entry
     }
     finally {
         if ($zip) { $zip.Dispose() }
     }
 
+    # strip ns prefixes for easier regex
+    $xml = [regex]::Replace($xml, '<([A-Za-z0-9._-]+):', '<')
+    $xml = [regex]::Replace($xml, '</([A-Za-z0-9._-]+):', '</')
+
+    $tCount = [regex]::Matches($xml, '<t\b').Count
+    $vCount = [regex]::Matches($xml, '<v\b').Count
+    Write-Host ("    (sharedStrings={0}, tagu <t>={1}, <v>={2}, size={3} B)" -f $shared.Length, $tCount, $vCount, $len)
+
     $rowMatches = [regex]::Matches($xml, '<row\b[^>]*>(.*?)</row>', 'IgnoreCase, Singleline')
+    # also self-closing empty rows ignored — OK
     foreach ($rm in $rowMatches) {
         $cells = @{}
         $styleA = $null
         $cellMatches = [regex]::Matches($rm.Groups[1].Value, '<c\b([^>]*?)(?:/>|>(.*?)</c>)', 'IgnoreCase, Singleline')
         foreach ($cm in $cellMatches) {
             $attrs = $cm.Groups[1].Value
-            $body = $cm.Groups[2].Value
-            if ($null -eq $body) { $body = "" }
-            $refM = [regex]::Match($attrs, 'r="([A-Z]+)\d+"', 'IgnoreCase')
+            $body = ""
+            if ($cm.Groups.Count -gt 2 -and $cm.Groups[2].Success) { $body = $cm.Groups[2].Value }
+            $refM = [regex]::Match($attrs, 'r\s*=\s*"([A-Z]+)\d+"', 'IgnoreCase')
             if (-not $refM.Success) { continue }
             $col = $refM.Groups[1].Value.ToUpperInvariant()
             $cells[$col] = Get-CellText $attrs $body $shared
             if ($col -eq "A") {
-                $sm = [regex]::Match($attrs, 's="(\d+)"')
+                $sm = [regex]::Match($attrs, 's\s*=\s*"(\d+)"')
                 if ($sm.Success) { $styleA = [int]$sm.Groups[1].Value }
             }
         }
-        $a = $(if ($cells.ContainsKey("A")) { $cells["A"] } else { "" })
-        $b = $(if ($cells.ContainsKey("B")) { $cells["B"] } else { "" })
-        $c = $(if ($cells.ContainsKey("C")) { $cells["C"] } else { "" })
-        $d = $(if ($cells.ContainsKey("D")) { $cells["D"] } else { "" })
+        $a = $(if ($cells.ContainsKey("A")) { [string]$cells["A"] } else { "" })
+        $b = $(if ($cells.ContainsKey("B")) { [string]$cells["B"] } else { "" })
+        $c = $(if ($cells.ContainsKey("C")) { [string]$cells["C"] } else { "" })
+        $d = $(if ($cells.ContainsKey("D")) { [string]$cells["D"] } else { "" })
 
         if (-not ($a -or $b -or $c -or $d)) {
             $role = "BLANK"
         }
-        elseif ($null -ne $styleA) {
-            if ($styleA -eq $STYLE_DATE) { $role = "DATE" }
-            elseif ($styleA -eq $STYLE_STATION) { $role = "STATION" }
-            elseif ($a -and -not ($b -or $c -or $d)) {
-                if ($rows.Count -eq 0 -or (Test-LooksLikeDate $a)) { $role = "DATE" }
-                else { $role = "STATION" }
-            }
-            else { $role = "DATA" }
+        elseif ($b -or $c -or $d) {
+            # Jakykoli B/C/D = mereni (nezavisle na stylu Excelu)
+            $role = "DATA"
         }
-        elseif ($a -and -not ($b -or $c -or $d)) {
-            if ($rows.Count -eq 0 -or (Test-LooksLikeDate $a)) { $role = "DATE" }
-            else { $role = "STATION" }
-        }
-        else { $role = "DATA" }
+        elseif ($null -ne $styleA -and $styleA -eq $STYLE_DATE) { $role = "DATE" }
+        elseif ($null -ne $styleA -and $styleA -eq $STYLE_STATION) { $role = "STATION" }
+        elseif (Test-LooksLikeDate $a) { $role = "DATE" }
+        elseif ($rows.Count -eq 0) { $role = "DATE" }
+        else { $role = "STATION" }
 
         [void]$rows.Add((New-Row $role $a $b $c $d))
     }
-    return ,$rows.ToArray()
+
+    # Diagnostika: ukaz prvni neprázdne radky
+    $shown = 0
+    foreach ($r in $rows) {
+        if ($r.Role -eq "BLANK") { continue }
+        Write-Host ("    priklad: [{0}] A='{1}' B='{2}' C='{3}' D='{4}'" -f $r.Role, $r.A, $r.B, $r.C, $r.D)
+        $shown++
+        if ($shown -ge 3) { break }
+    }
+    if ($shown -eq 0) {
+        Write-Host "    priklad: (zadne neprázdne bunky — soubor je prazdny nebo nečitelný)"
+    }
+
+    [object[]]$result = $rows.ToArray()
+    return $result
 }
 
 function Get-CellXml([string]$ref, [string]$value, [int]$style) {
@@ -490,8 +557,10 @@ try {
     $dataOut = @($out | Where-Object { $_.Role -eq "DATA" }).Count
     if ($dataOut -eq 0) {
         Write-Host ""
-        Write-Host "CHYBA: soubory jsem nasel, ale uvnitr nejsou citelna data."
-        Write-Host "Zkuste soubory v OneDrive nejdrive otevreit (stahnout lokalne) a znovu spustit."
+        Write-Host "CHYBA: soubory jsem nasel, ale uvnitr nejsou citelna DATA (koleje/vyhybky/...)."
+        Write-Host "1) V OneDrive u souboru zrusit online-only (Keep on this device)."
+        Write-Host "2) Kouknout vyse na radky sharedStrings / priklad A/B/C/D."
+        Write-Host "3) Soubory musi byt primo z appky (YYMMDD_N_MD1.xlsx), ne prazdny souhrn."
         exit 1
     }
 

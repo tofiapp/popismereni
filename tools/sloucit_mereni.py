@@ -152,6 +152,7 @@ def xml_unescape(s: str) -> str:
 
 
 def parse_shared_strings(xml: str) -> List[str]:
+    xml = re.sub(r"<(/?)([A-Za-z0-9._-]+):", r"<\1", xml)
     out: List[str] = []
     for m in SI_RE.finditer(xml):
         parts = T_RE.findall(m.group(1))
@@ -217,40 +218,44 @@ def parse_sheet(xml: str, shared: Optional[List[str]] = None) -> List[Row]:
         d = cells.get("D", "")
         if not (a or b or c or d):
             role = Role.BLANK
-        elif style_a is not None:
-            role = role_from_style(style_a)
-            # Po uložení v Excelu se indexy stylů změní — fallback podle obsahu
-            if role == Role.DATA and a and not (b or c or d):
-                role = (
-                    Role.DATE
-                    if (not rows or LOOKS_LIKE_DATE_RE.match(a))
-                    else Role.STATION
-                )
-        elif a and not (b or c or d):
-            role = Role.DATE if (not rows or LOOKS_LIKE_DATE_RE.match(a)) else Role.STATION
-        else:
+        elif b or c or d:
             role = Role.DATA
+        elif style_a == STYLE_DATE:
+            role = Role.DATE
+        elif style_a == STYLE_STATION:
+            role = Role.STATION
+        elif LOOKS_LIKE_DATE_RE.match(a):
+            role = Role.DATE
+        elif not rows:
+            role = Role.DATE
+        else:
+            role = Role.STATION
         rows.append(Row(a, b, c, d, role))
     return rows
 
 
 def read_xlsx(path: Path) -> List[Row]:
-    if not path.is_file() or path.stat().st_size == 0:
+    if not path.is_file() or path.stat().st_size < 64:
         return []
     try:
         with zipfile.ZipFile(path) as zf:
+            names = {n.replace("\\", "/").lower(): n for n in zf.namelist()}
             shared: List[str] = []
-            if "xl/sharedStrings.xml" in zf.namelist():
+            ss = names.get("xl/sharedstrings.xml")
+            if ss:
                 shared = parse_shared_strings(
-                    zf.read("xl/sharedStrings.xml").decode("utf-8", errors="replace")
+                    zf.read(ss).decode("utf-8", errors="replace")
                 )
-            name = "xl/worksheets/sheet1.xml"
-            if name not in zf.namelist():
-                sheets = [n for n in zf.namelist() if n.startswith("xl/worksheets/sheet")]
+            sheet_key = names.get("xl/worksheets/sheet1.xml")
+            if not sheet_key:
+                sheets = sorted(
+                    n for k, n in names.items() if k.startswith("xl/worksheets/sheet") and k.endswith(".xml")
+                )
                 if not sheets:
                     return []
-                name = sorted(sheets)[0]
-            xml = zf.read(name).decode("utf-8", errors="replace")
+                sheet_key = sheets[0]
+            xml = zf.read(sheet_key).decode("utf-8", errors="replace")
+            xml = re.sub(r"<(/?)([A-Za-z0-9._-]+):", r"<\1", xml)
             return parse_sheet(xml, shared)
     except (zipfile.BadZipFile, KeyError, OSError):
         return []
