@@ -48,7 +48,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import cz.mereni.app.ActiveField
-import cz.mereni.app.data.OneDriveExportMode
 import cz.mereni.app.data.PasportKey
 import cz.mereni.app.data.PasportKind
 import cz.mereni.app.data.SelectedToken
@@ -1073,8 +1072,6 @@ fun PasportSettingsButton(
     onPick: () -> Unit,
     onReload: () -> Unit,
     exportMessage: String? = null,
-    exportMode: OneDriveExportMode,
-    onExportModeChange: (OneDriveExportMode) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var open by remember { mutableStateOf(false) }
@@ -1133,23 +1130,11 @@ fun PasportSettingsButton(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    "Sdílením Intent (OneDrive / Files). Vyber režim souboru:",
+                    "Sdílením Intent (OneDrive / Files).\n" +
+                        "Soubor YYMMDD_N_MD1.xlsx (N = 1, 2, 3… ten den).\n" +
+                        "Po ANO se místní záznamy vymažou.",
                     color = MereniColors.TextMuted,
                     fontSize = 12.sp,
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                ExportModeOption(
-                    selected = exportMode == OneDriveExportMode.DAILY,
-                    title = "1 · Každý den jeden záznam",
-                    detail = "Soubory YYMMDD_N_MD1.xlsx (N=1,2,…) · po ANO se místní vymaže",
-                    onClick = { onExportModeChange(OneDriveExportMode.DAILY) },
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                ExportModeOption(
-                    selected = exportMode == OneDriveExportMode.REPLACE,
-                    title = "2 · Přepisující se soubor",
-                    detail = "Vždy mereni_MD1.xlsx · místní záznamy zůstávají",
-                    onClick = { onExportModeChange(OneDriveExportMode.REPLACE) },
                 )
 
                 Spacer(modifier = Modifier.height(14.dp))
@@ -1190,34 +1175,5 @@ fun PasportSettingsButton(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun ExportModeOption(
-    selected: Boolean,
-    title: String,
-    detail: String,
-    onClick: () -> Unit,
-) {
-    val border = if (selected) MereniColors.Vyhybka else MereniColors.ChipBorder
-    val bg = if (selected) MereniColors.Vyhybka.copy(alpha = 0.12f) else MereniColors.Surface
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(bg)
-            .border(2.dp, border, RoundedCornerShape(10.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-    ) {
-        Text(
-            title,
-            color = MereniColors.Text,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 14.sp,
-        )
-        Spacer(modifier = Modifier.height(2.dp))
-        Text(detail, color = MereniColors.TextMuted, fontSize = 12.sp)
     }
 }
