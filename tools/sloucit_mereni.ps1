@@ -1,5 +1,5 @@
 ﻿#Requires -Version 5.1
-# sloucit_mereni.ps1 — verze 2026-08-11i
+# sloucit_mereni.ps1 — verze 2026-08-11j
 # ASCII-only source (Windows PowerShell 5.1). Czech names via [char] codes.
 # Layout:
 #   Popis_mereni_MD1/
@@ -118,63 +118,53 @@ function Get-SheetRelsXml([string]$batPath) {
 "@
 }
 
-function Write-UpdateCmd([string]$dir) {
-    # ASCII-only launcher vedle souhrnu (volany z Excel tlacitka)
-    # POZOR: obsah CMD musi byt v single-quoted here-string — jinak PS rozbije uvozovky.
-    $cmdPath = Join-Path $dir $UPDATE_CMD_NAME
-    $body = @'
-@echo off
-setlocal
-chcp 65001 >nul
-REM Launcher pro Excel tlacitko Aktualizovat (ASCII nazev souboru)
-set "DIR=%~dp0"
-if not exist "%DIR%sloucit_mereni.ps1" (
-  echo CHYBA: chybi sloucit_mereni.ps1 vedle tohoto CMD
-  pause
-  exit /b 2
-)
-powershell -NoProfile -ExecutionPolicy Bypass -File "%DIR%sloucit_mereni.ps1" -Folder "%DIR%."
-set "ERR=%ERRORLEVEL%"
-if not "%ERR%"=="0" (
-  echo.
-  echo Chyba %ERR%
-  pause
-)
-endlocal & exit /b %ERR%
-'@
-    $utf8 = New-Object System.Text.UTF8Encoding $false
-    [System.IO.File]::WriteAllText($cmdPath, ($body -replace "`n", "`r`n"), $utf8)
-    return $cmdPath
-}
-
 function Resolve-UpdateBatPath([string]$summaryPath) {
+    # Zadny generator CMD v PS (historicky rozbil parser uvozovkami).
+    # Jen zkopiruj hotove soubory z $PSScriptRoot vedle souhrnu.
     $dir = Split-Path -Parent $summaryPath
     $here = $PSScriptRoot
-    if (-not $here) { $here = Split-Path -Parent $MyInvocation.MyCommand.Path }
+    if (-not $here) {
+        try { $here = Split-Path -Parent $MyInvocation.MyCommand.Path } catch { $here = $dir }
+    }
 
-    # Dopln bat+ps1 k souhrnu, pokud chybi
     $batDst = Join-Path $dir $UPDATE_BAT_NAME
+    $cmdDst = Join-Path $dir $UPDATE_CMD_NAME
     $ps1Dst = Join-Path $dir "sloucit_mereni.ps1"
     $batSrc = Join-Path $here $UPDATE_BAT_NAME
+    $cmdSrc = Join-Path $here $UPDATE_CMD_NAME
     $ps1Src = Join-Path $here "sloucit_mereni.ps1"
+
     try {
-        if ((Test-Path -LiteralPath $batSrc) -and -not (Test-Path -LiteralPath $batDst)) {
+        if (Test-Path -LiteralPath $batSrc) {
             Copy-Item -LiteralPath $batSrc -Destination $batDst -Force
         }
-        if ((Test-Path -LiteralPath $ps1Src)) {
-            # vzdy aktualizuj ps1 vedle souhrnu pri zapisu xlsx? ne — jen kdyz chybi
-            if (-not (Test-Path -LiteralPath $ps1Dst)) {
-                Copy-Item -LiteralPath $ps1Src -Destination $ps1Dst -Force
-            }
+        if (Test-Path -LiteralPath $cmdSrc) {
+            Copy-Item -LiteralPath $cmdSrc -Destination $cmdDst -Force
+        } elseif (-not (Test-Path -LiteralPath $cmdDst)) {
+            # Minimalni ASCII launcher, kdyz chybi vzor v tools/
+            $minimal = @(
+                '@echo off'
+                'setlocal'
+                'chcp 65001 >nul'
+                'set "DIR=%~dp0"'
+                'powershell -NoProfile -ExecutionPolicy Bypass -File "%DIR%sloucit_mereni.ps1" -Folder "%DIR%."'
+                'set "ERR=%ERRORLEVEL%"'
+                'if not "%ERR%"=="0" pause'
+                'endlocal & exit /b %ERR%'
+            )
+            $utf8 = New-Object System.Text.UTF8Encoding $false
+            [System.IO.File]::WriteAllLines($cmdDst, $minimal, $utf8)
         }
-    } catch { }
-
-    # Pro Excel hyperlink pouzij ASCII Aktualizovat.cmd (ne SloucitMereni.bat v Unicode ceste zobrazeni)
-    try {
-        return (Write-UpdateCmd $dir)
+        # ps1 vedle souhrnu: neprepisuj sam sebe behem behu (stejna cesta)
+        if ((Test-Path -LiteralPath $ps1Src) -and ($ps1Src -ne $ps1Dst)) {
+            Copy-Item -LiteralPath $ps1Src -Destination $ps1Dst -Force
+        }
     } catch {
-        return $batDst
+        Write-Host ("  ! Kopirovani launcheru: {0}" -f $_.Exception.Message)
     }
+
+    if (Test-Path -LiteralPath $cmdDst) { return $cmdDst }
+    return $batDst
 }
 
 $STYLES = @"
@@ -678,7 +668,7 @@ function Resolve-Layout([string]$folderPath) {
 
 # ---- main ----
 try {
-    Write-Host "sloucit_mereni.ps1 verze 2026-08-11i"
+    Write-Host "sloucit_mereni.ps1 verze 2026-08-11j"
     if (-not (Test-Path -LiteralPath $Folder)) {
         Write-Host "Slozka neexistuje:"
         Write-Host "  $Folder"
