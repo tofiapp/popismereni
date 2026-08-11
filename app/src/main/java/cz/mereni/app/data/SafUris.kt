@@ -141,8 +141,8 @@ object SafUris {
         }
         throw IllegalStateException(
             if (isOneDrive(uri)) {
-                "OneDrive nepustil zápis. Zkus znovu vybrat složku Dny " +
-                    "(⚙ → Vybrat složku Dny), ideálně přes OneDrive appku, ne Google Files."
+                "OneDrive nepustil zápis (ve Files / SAF na work profilu často chybí). " +
+                    "Použij Uložit na OneDrive → sdílení do appky OneDrive."
             } else {
                 "Nelze uložit soubor (chybí oprávnění)."
             },
