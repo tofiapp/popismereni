@@ -136,29 +136,33 @@ function New-UpdateRow {
     $stamp = Get-Date -Format "dd.MM.yyyy HH:mm"
     # "Naposledy aktualizováno:" — á = U+00E1
     $prefix = "Naposledy aktualizov" + [char]0x00E1 + "no:"
-    return (New-Row "UPDATED" ("{0} {1}" -f $prefix, $stamp))
+    return [pscustomobject]@{ Role = "UPDATED"; A = ("{0} {1}" -f $prefix, $stamp); B = ""; C = ""; D = "" }
 }
 
-function Strip-UpdateRows($rows) {
-    $list = New-Object System.Collections.Generic.List[object]
-    foreach ($r in @($rows)) { [void]$list.Add($r) }
-    while ($list.Count -gt 0) {
-        $first = $list[0]
-        $isUpd = ($first.Role -eq "UPDATED") -or (Test-IsUpdateText $first.A)
-        if (-not $isUpd) { break }
-        $list.RemoveAt(0)
-        if ($list.Count -gt 0 -and $list[0].Role -eq "BLANK") { $list.RemoveAt(0) }
-    }
-    return ,$list.ToArray()
+function Test-IsRowObject($obj) {
+    if ($null -eq $obj) { return $false }
+    if ($obj -is [string]) { return $false }
+    if ($obj -is [System.Array]) { return $false }
+    return ($null -ne $obj.PSObject -and $null -ne $obj.PSObject.Properties['Role'])
 }
 
-function Add-UpdateStamp($rows) {
-    $body = @(Strip-UpdateRows $rows)
+function Add-UpdateStampToList($rows) {
+    # Vraci List[object] radku — bez PowerShell array unwrap/comma triku.
     $list = New-Object System.Collections.Generic.List[object]
     [void]$list.Add((New-UpdateRow))
     [void]$list.Add((New-Row "BLANK"))
-    foreach ($r in $body) { [void]$list.Add($r) }
-    return ,$list.ToArray()
+
+    $skippingHead = $true
+    foreach ($r in @($rows)) {
+        if (-not (Test-IsRowObject $r)) { continue }
+        if ($skippingHead) {
+            if (($r.Role -eq "UPDATED") -or (Test-IsUpdateText ([string]$r.A))) { continue }
+            if ($r.Role -eq "BLANK") { continue }
+            $skippingHead = $false
+        }
+        [void]$list.Add($r)
+    }
+    return $list
 }
 
 function New-Row([string]$Role, [string]$A = "", [string]$B = "", [string]$C = "", [string]$D = "") {
