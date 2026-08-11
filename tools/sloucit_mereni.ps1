@@ -1,19 +1,9 @@
-#Requires -Version 5.1
-<#
-.SYNOPSIS
-  Slouci denni *_MD1.xlsx do Popis_mereni_MD1.xlsx.
-
-.DESCRIPTION
-  Bez instalace — Windows PowerShell.
-  Struktura:
-    Popis_měření_MD1/
-      Popis_měření_MD1.xlsx
-      MD1_popis_dny/YYMMDD_N_MD1.xlsx
-
-.EXAMPLE
-  .\sloucit_mereni.ps1
-  .\sloucit_mereni.ps1 -Folder "C:\Users\...\OneDrive\Popis_měření_MD1"
-#>
+﻿#Requires -Version 5.1
+# ASCII-only source (Windows PowerShell 5.1). Czech names via [char] codes.
+# Layout:
+#   Popis_mereni_MD1/
+#     Popis_mereni_MD1.xlsx
+#     MD1_popis_dny/YYMMDD_N_MD1.xlsx
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
@@ -25,9 +15,15 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$MAIN_FOLDER_NAME = "Popis_měření_MD1"
+# Popis_mereni_MD1 with diacritics: e caron, r caron, i acute
+$eCaron = [char]0x011B
+$rCaron = [char]0x0159
+$iAcute = [char]0x00ED
+$MAIN_FOLDER_NAME = "Popis_m" + $eCaron + $rCaron + "en" + $iAcute + "_MD1"
 $DAYS_SUBFOLDER_NAME = "MD1_popis_dny"
-$SUMMARY_XLSX_NAME = "Popis_měření_MD1.xlsx"
+$SUMMARY_XLSX_NAME = $MAIN_FOLDER_NAME + ".xlsx"
+$MAIN_FOLDER_ASCII = "Popis_mereni_MD1"
+$SUMMARY_ASCII = "Popis_mereni_MD1.xlsx"
 
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -140,8 +136,8 @@ function Get-DateFromFileName([string]$name) {
 function Get-SharedStrings([System.IO.Compression.ZipArchive]$zip) {
     $list = New-Object System.Collections.Generic.List[string]
     $entry = $zip.GetEntry("xl/sharedStrings.xml")
-    if (-not $entry) { return ,$list.ToArray() }
-    $sr = New-Object System.IO.StreamReader($entry.Open())
+    if (-not $entry) { return ,@() }
+    $sr = New-Object System.IO.StreamReader($entry.Open(), [System.Text.Encoding]::UTF8)
     try { $xml = $sr.ReadToEnd() } finally { $sr.Dispose() }
     $siMatches = [regex]::Matches($xml, '<si\b[^>]*>(.*?)</si>', 'IgnoreCase, Singleline')
     foreach ($sm in $siMatches) {
@@ -163,7 +159,7 @@ function Get-CellText([string]$attrs, [string]$body, [string[]]$shared) {
         if (-not $vm.Success) { return "" }
         $idx = 0
         if (-not [int]::TryParse($vm.Groups[1].Value.Trim(), [ref]$idx)) { return "" }
-        if ($idx -lt 0 -or $idx -ge $shared.Count) { return "" }
+        if ($null -eq $shared -or $idx -lt 0 -or $idx -ge $shared.Count) { return "" }
         return $shared[$idx]
     }
 
@@ -181,7 +177,14 @@ function Get-CellText([string]$attrs, [string]$body, [string[]]$shared) {
 
 function Read-XlsxRows([string]$path) {
     $rows = New-Object System.Collections.Generic.List[object]
-    $zip = [System.IO.Compression.ZipFile]::OpenRead($path)
+    $zip = $null
+    try {
+        $zip = [System.IO.Compression.ZipFile]::OpenRead($path)
+    } catch {
+        Write-Host ("  ! Nelze otevrit (OneDrive offline / zamceno): {0}" -f $path)
+        Write-Host ("    {0}" -f $_.Exception.Message)
+        return @()
+    }
     try {
         $shared = @(Get-SharedStrings $zip)
         $entry = $zip.GetEntry("xl/worksheets/sheet1.xml")
@@ -190,10 +193,12 @@ function Read-XlsxRows([string]$path) {
                 Sort-Object FullName | Select-Object -First 1
         }
         if (-not $entry) { return @() }
-        $sr = New-Object System.IO.StreamReader($entry.Open())
+        $sr = New-Object System.IO.StreamReader($entry.Open(), [System.Text.Encoding]::UTF8)
         try { $xml = $sr.ReadToEnd() } finally { $sr.Dispose() }
     }
-    finally { $zip.Dispose() }
+    finally {
+        if ($zip) { $zip.Dispose() }
+    }
 
     $rowMatches = [regex]::Matches($xml, '<row\b[^>]*>(.*?)</row>', 'IgnoreCase, Singleline')
     foreach ($rm in $rowMatches) {
@@ -280,32 +285,40 @@ function Get-SheetXml($rows) {
     return $sb.ToString()
 }
 
+function Write-ZipEntry([System.IO.Compression.ZipArchive]$zip, [string]$name, [string]$body) {
+    $e = $zip.CreateEntry($name, [System.IO.Compression.CompressionLevel]::Optimal)
+    $utf8 = New-Object System.Text.UTF8Encoding $false
+    $sw = New-Object System.IO.StreamWriter($e.Open(), $utf8)
+    try { $sw.Write($body) } finally { $sw.Dispose() }
+}
+
 function Write-Xlsx([string]$path, $rows) {
+    $dir = Split-Path -Parent $path
+    if ($dir -and -not (Test-Path -LiteralPath $dir)) {
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    }
     if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
     $zip = [System.IO.Compression.ZipFile]::Open($path, [System.IO.Compression.ZipArchiveMode]::Create)
     try {
-        function Add-Entry([string]$name, [string]$body) {
-            $e = $zip.CreateEntry($name, [System.IO.Compression.CompressionLevel]::Optimal)
-            $sw = New-Object System.IO.StreamWriter($e.Open())
-            try { $sw.Write($body) } finally { $sw.Dispose() }
-        }
-        Add-Entry "[Content_Types].xml" $CONTENT_TYPES
-        Add-Entry "_rels/.rels" $RELS_ROOT
-        Add-Entry "xl/workbook.xml" $WORKBOOK
-        Add-Entry "xl/_rels/workbook.xml.rels" $RELS_WB
-        Add-Entry "xl/styles.xml" $STYLES
-        Add-Entry "xl/worksheets/sheet1.xml" (Get-SheetXml $rows)
+        Write-ZipEntry $zip "[Content_Types].xml" $CONTENT_TYPES
+        Write-ZipEntry $zip "_rels/.rels" $RELS_ROOT
+        Write-ZipEntry $zip "xl/workbook.xml" $WORKBOOK
+        Write-ZipEntry $zip "xl/_rels/workbook.xml.rels" $RELS_WB
+        Write-ZipEntry $zip "xl/styles.xml" $STYLES
+        Write-ZipEntry $zip "xl/worksheets/sheet1.xml" (Get-SheetXml $rows)
     }
     finally { $zip.Dispose() }
 }
 
+function Test-IsDailyMd1Name([string]$name) {
+    return $name -match '^\d{6}(_\d+)?_MD1\.xlsx$'
+}
+
 function Get-Md1Files([string]$dir) {
-    Get-ChildItem -LiteralPath $dir -File -Filter "*_MD1.xlsx" |
+    if (-not (Test-Path -LiteralPath $dir -PathType Container)) { return @() }
+    Get-ChildItem -LiteralPath $dir -File -Filter "*.xlsx" |
         Where-Object {
-            $n = $_.Name.ToLowerInvariant()
-            $n -ne "popis_měření_md1.xlsx" -and
-            $n -ne "popis_mereni_md1.xlsx" -and
-            $n -ne "souhrn_mereni.xlsx" -and
+            (Test-IsDailyMd1Name $_.Name) -and
             $_.Name -notlike '~$*'
         } |
         Sort-Object { $_.Name.ToLowerInvariant() }
@@ -314,7 +327,7 @@ function Get-Md1Files([string]$dir) {
 function Resolve-Layout([string]$folderPath) {
     $daysSub = Join-Path $folderPath $DAYS_SUBFOLDER_NAME
     if (Test-Path -LiteralPath $daysSub -PathType Container) {
-        return @{
+        return [pscustomobject]@{
             Source = $daysSub
             Output = (Join-Path $folderPath $SUMMARY_XLSX_NAME)
         }
@@ -322,125 +335,178 @@ function Resolve-Layout([string]$folderPath) {
     $leaf = Split-Path -Leaf $folderPath
     if ($leaf -eq $DAYS_SUBFOLDER_NAME) {
         $parent = Split-Path -Parent $folderPath
-        return @{
+        return [pscustomobject]@{
             Source = $folderPath
             Output = (Join-Path $parent $SUMMARY_XLSX_NAME)
         }
     }
-    return @{
+    # Fallback: daily files directly in this folder
+    return [pscustomobject]@{
         Source = $folderPath
         Output = (Join-Path $folderPath $SUMMARY_XLSX_NAME)
     }
 }
 
 # ---- main ----
-$folderPath = (Resolve-Path -LiteralPath $Folder).Path
-if (-not (Test-Path -LiteralPath $folderPath -PathType Container)) {
-    Write-Error "Slozka neexistuje: $folderPath"
-    exit 2
-}
+try {
+    if (-not (Test-Path -LiteralPath $Folder)) {
+        Write-Host "Slozka neexistuje:"
+        Write-Host "  $Folder"
+        exit 2
+    }
+    $folderPath = (Resolve-Path -LiteralPath $Folder).Path
+    if (-not (Test-Path -LiteralPath $folderPath -PathType Container)) {
+        Write-Host "Cesta neni slozka:"
+        Write-Host "  $folderPath"
+        exit 2
+    }
 
-$layout = Resolve-Layout $folderPath
-$sourcePath = $layout.Source
-if ([string]::IsNullOrWhiteSpace($Output)) {
-    $outPath = $layout.Output
-}
-else {
-    if ([System.IO.Path]::IsPathRooted($Output)) {
-        $outPath = $Output
+    # Prefer days subfolder only when it actually has daily files
+    $daysSub = Join-Path $folderPath $DAYS_SUBFOLDER_NAME
+    $files = @()
+    $sourcePath = $folderPath
+
+    if (Test-Path -LiteralPath $daysSub -PathType Container) {
+        $inDays = @(Get-Md1Files $daysSub)
+        if ($inDays.Count -gt 0) {
+            $files = $inDays
+            $sourcePath = $daysSub
+        }
+    }
+
+    if ($files.Count -eq 0) {
+        $leaf = Split-Path -Leaf $folderPath
+        if ($leaf -eq $DAYS_SUBFOLDER_NAME) {
+            $files = @(Get-Md1Files $folderPath)
+            $sourcePath = $folderPath
+            $outPath = Join-Path (Split-Path -Parent $folderPath) $SUMMARY_XLSX_NAME
+        }
+        else {
+            $files = @(Get-Md1Files $folderPath)
+            $sourcePath = $folderPath
+            if ([string]::IsNullOrWhiteSpace($Output)) {
+                $outPath = Join-Path $folderPath $SUMMARY_XLSX_NAME
+            }
+        }
     }
     else {
-        $outPath = Join-Path (Split-Path -Parent $layout.Output) $Output
+        if ([string]::IsNullOrWhiteSpace($Output)) {
+            $outPath = Join-Path $folderPath $SUMMARY_XLSX_NAME
+        }
     }
-}
 
-$files = @(Get-Md1Files $sourcePath)
-Write-Host ("Hlavni / zadana slozka: {0}" -f $folderPath)
-Write-Host ("Denni soubory:          {0}" -f $sourcePath)
-Write-Host ("Souhrn:                 {0}" -f $outPath)
-Write-Host ("Nalezeno souboru *_MD1.xlsx: {0}" -f $files.Count)
-if ($files.Count -eq 0) {
-    Write-Host "Ve slozce nejsou zadne *_MD1.xlsx:"
-    Write-Host "  $sourcePath"
-    Write-Host "Ocekavana struktura:"
-    Write-Host ("  {0}/" -f $MAIN_FOLDER_NAME)
-    Write-Host ("    {0}" -f $SUMMARY_XLSX_NAME)
-    Write-Host ("    {0}/" -f $DAYS_SUBFOLDER_NAME)
-    Write-Host "      YYMMDD_N_MD1.xlsx"
-    Write-Host "Soubory .xlsx ve zdrojove slozce:"
-    Get-ChildItem -LiteralPath $sourcePath -File -Filter "*.xlsx" -ErrorAction SilentlyContinue |
-        ForEach-Object { Write-Host ("  - {0}" -f $_.Name) }
-    exit 1
-}
+    if (-not [string]::IsNullOrWhiteSpace($Output)) {
+        if ([System.IO.Path]::IsPathRooted($Output)) {
+            $outPath = $Output
+        }
+        else {
+            $outPath = Join-Path $folderPath $Output
+        }
+    }
 
-$out = New-Object System.Collections.Generic.List[object]
-$currentDate = ""
-$lastStation = ""
-$ok = 0
-$skipped = 0
+    Write-Host ("Hlavni / zadana slozka: {0}" -f $folderPath)
+    Write-Host ("Denni soubory:          {0}" -f $sourcePath)
+    Write-Host ("Souhrn:                 {0}" -f $outPath)
+    Write-Host ("Nalezeno YYMMDD_*_MD1.xlsx: {0}" -f $files.Count)
 
-foreach ($f in $files) {
-    $srcRows = @(Read-XlsxRows $f.FullName)
-    $dataN = @($srcRows | Where-Object { $_.Role -eq "DATA" -and ($_.A -or $_.B -or $_.C -or $_.D) }).Count
-    Write-Host ("  - {0}: {1} radku XML, z toho {2} datovych" -f $f.Name, $srcRows.Count, $dataN)
-    $wrote = $false
-    $guess = Get-DateFromFileName $f.Name
+    if ($files.Count -eq 0) {
+        Write-Host ""
+        Write-Host "CHYBA: nenasel jsem denni soubory (napr. 260811_1_MD1.xlsx)."
+        Write-Host "Dej je bud primo do hlavni slozky, nebo do podslozky MD1_popis_dny."
+        Write-Host ""
+        Write-Host "Co je ve slozce (xlsx):"
+        Get-ChildItem -LiteralPath $folderPath -File -Filter "*.xlsx" -ErrorAction SilentlyContinue |
+            ForEach-Object { Write-Host ("  - {0}" -f $_.Name) }
+        if (Test-Path -LiteralPath $daysSub) {
+            Write-Host ("Co je v {0}:" -f $DAYS_SUBFOLDER_NAME)
+            Get-ChildItem -LiteralPath $daysSub -File -ErrorAction SilentlyContinue |
+                ForEach-Object { Write-Host ("  - {0}" -f $_.Name) }
+        }
+        exit 1
+    }
 
-    foreach ($row in $srcRows) {
-        if ($row.Role -eq "BLANK" -or (-not ($row.A -or $row.B -or $row.C -or $row.D))) { continue }
+    $out = New-Object System.Collections.Generic.List[object]
+    $currentDate = ""
+    $lastStation = ""
+    $ok = 0
+    $skipped = 0
 
-        if ($row.Role -eq "DATE") {
-            if ($row.A -ne $currentDate) {
-                if ($out.Count -gt 0) { [void]$out.Add((New-Row "BLANK")) }
-                [void]$out.Add((New-Row "DATE" $row.A))
-                $currentDate = $row.A
-                $lastStation = ""
-                $wrote = $true
-            }
+    foreach ($f in $files) {
+        try {
+            $srcRows = @(Read-XlsxRows $f.FullName)
+        } catch {
+            Write-Host ("  ! Chyba cteni {0}: {1}" -f $f.Name, $_.Exception.Message)
+            $skipped++
             continue
         }
+        $dataN = @($srcRows | Where-Object { $_.Role -eq "DATA" -and ($_.A -or $_.B -or $_.C -or $_.D) }).Count
+        Write-Host ("  - {0}: {1} radku XML, z toho {2} datovych" -f $f.Name, $srcRows.Count, $dataN)
+        $wrote = $false
+        $guess = Get-DateFromFileName $f.Name
 
-        if ($row.Role -eq "STATION") {
+        foreach ($row in $srcRows) {
+            if ($row.Role -eq "BLANK" -or (-not ($row.A -or $row.B -or $row.C -or $row.D))) { continue }
+
+            if ($row.Role -eq "DATE") {
+                if ($row.A -ne $currentDate) {
+                    if ($out.Count -gt 0) { [void]$out.Add((New-Row "BLANK")) }
+                    [void]$out.Add((New-Row "DATE" $row.A))
+                    $currentDate = $row.A
+                    $lastStation = ""
+                    $wrote = $true
+                }
+                continue
+            }
+
+            if ($row.Role -eq "STATION") {
+                if (-not $currentDate -and $guess) {
+                    if ($out.Count -gt 0) { [void]$out.Add((New-Row "BLANK")) }
+                    [void]$out.Add((New-Row "DATE" $guess))
+                    $currentDate = $guess
+                    $lastStation = ""
+                }
+                if ($row.A -ne $lastStation) {
+                    [void]$out.Add((New-Row "BLANK"))
+                    [void]$out.Add((New-Row "STATION" $row.A))
+                    $lastStation = $row.A
+                    $wrote = $true
+                }
+                continue
+            }
+
             if (-not $currentDate -and $guess) {
                 if ($out.Count -gt 0) { [void]$out.Add((New-Row "BLANK")) }
                 [void]$out.Add((New-Row "DATE" $guess))
                 $currentDate = $guess
                 $lastStation = ""
             }
-            if ($row.A -ne $lastStation) {
-                [void]$out.Add((New-Row "BLANK"))
-                [void]$out.Add((New-Row "STATION" $row.A))
-                $lastStation = $row.A
-                $wrote = $true
-            }
-            continue
+            [void]$out.Add((New-Row "DATA" $row.A $row.B $row.C $row.D))
+            $wrote = $true
         }
 
-        if (-not $currentDate -and $guess) {
-            if ($out.Count -gt 0) { [void]$out.Add((New-Row "BLANK")) }
-            [void]$out.Add((New-Row "DATE" $guess))
-            $currentDate = $guess
-            $lastStation = ""
-        }
-        [void]$out.Add((New-Row "DATA" $row.A $row.B $row.C $row.D))
-        $wrote = $true
+        if ($wrote) { $ok++ } else { $skipped++ }
     }
 
-    if ($wrote) { $ok++ } else { $skipped++ }
-}
+    $dataOut = @($out | Where-Object { $_.Role -eq "DATA" }).Count
+    if ($dataOut -eq 0) {
+        Write-Host ""
+        Write-Host "CHYBA: soubory jsem nasel, ale uvnitr nejsou citelna data."
+        Write-Host "Zkuste soubory v OneDrive nejdrive otevreit (stahnout lokalne) a znovu spustit."
+        exit 1
+    }
 
-$dataOut = @($out | Where-Object { $_.Role -eq "DATA" }).Count
-if ($dataOut -eq 0) {
+    Write-Xlsx $outPath $out.ToArray()
+
+    Write-Host ("Soubory OK: {0}" -f $ok)
+    Write-Host ("Preskoceno: {0}" -f $skipped)
+    Write-Host ("Datovych radku: {0}" -f $dataOut)
+    Write-Host ("Ulozeno: {0}" -f $outPath)
+    exit 0
+}
+catch {
     Write-Host ""
-    Write-Host "CHYBA: do souhrnu se nedostala zadna data."
-    Write-Host ("Zkontroluj originalni soubory z appky v {0}/." -f $DAYS_SUBFOLDER_NAME)
-    exit 1
+    Write-Host "CHYBA skriptu:"
+    Write-Host $_.Exception.Message
+    Write-Host $_.ScriptStackTrace
+    exit 99
 }
-
-Write-Xlsx $outPath $out.ToArray()
-
-Write-Host ("Soubory OK: {0}" -f $ok)
-Write-Host ("Preskoceno: {0}" -f $skipped)
-Write-Host ("Datovych radku: {0}" -f $dataOut)
-Write-Host ("Ulozeno: {0}" -f $outPath)
-exit 0

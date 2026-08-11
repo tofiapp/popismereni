@@ -334,9 +334,7 @@ def list_md1_files(folder: Path) -> List[Path]:
         p
         for p in folder.iterdir()
         if p.is_file()
-        and p.suffix.lower() == ".xlsx"
-        and p.name.lower().endswith("_md1.xlsx")
-        and p.name.lower() not in SUMMARY_EXCLUDE
+        and DATE_NAME_RE.match(p.name)
         and not p.name.startswith("~$")
     ]
     return sorted(files, key=lambda p: p.name.lower())
@@ -346,18 +344,28 @@ def resolve_layout(folder: Path) -> Tuple[Path, Path]:
     """
     Vrátí (složka_s_denními, cesta_k_souhrnu).
 
-    1) Popis_měření_MD1/  → čte MD1_popis_dny/, píše Popis_měření_MD1.xlsx
-    2) …/MD1_popis_dny/   → čte tu, píše do rodiče Popis_měření_MD1.xlsx
-    3) jinak              → čte folder, píše folder/Popis_měření_MD1.xlsx
+    Preferuje MD1_popis_dny, pokud v ní něco je.
+    Jinak bere denní soubory přímo z hlavní složky.
     """
     folder = folder.resolve()
+    summary = folder / SUMMARY_XLSX_NAME
     days_sub = folder / DAYS_SUBFOLDER_NAME
-    if days_sub.is_dir():
-        return days_sub, folder / SUMMARY_XLSX_NAME
+
     if folder.name == DAYS_SUBFOLDER_NAME:
         parent = folder.parent
         return folder, parent / SUMMARY_XLSX_NAME
-    return folder, folder / SUMMARY_XLSX_NAME
+
+    if days_sub.is_dir() and list_md1_files(days_sub):
+        return days_sub, summary
+
+    if list_md1_files(folder):
+        return folder, summary
+
+    # Prázdná podsložka existuje → stejně na ni ukaž (jasná chyba)
+    if days_sub.is_dir():
+        return days_sub, summary
+
+    return folder, summary
 
 
 def merge_folder(folder: Path, verbose: bool = True) -> Tuple[List[Row], int, int]:

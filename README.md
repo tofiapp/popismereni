@@ -14,9 +14,12 @@ Denní soubor: `YYMMDD_N_MD1.xlsx` (N = 1, 2, 3… ten den). Po ANO se místní 
 ```
 Popis_měření_MD1/
   Popis_měření_MD1.xlsx      ← souhrn (skript)
-  MD1_popis_dny/
-    YYMMDD_N_MD1.xlsx       ← sem ukládej z appky
+  YYMMDD_N_MD1.xlsx         ← denní soubory sem
+  MD1_popis_dny/            ← nebo do této podsložky
 ```
+
+Merge tool bere soubory z `MD1_popis_dny`, pokud tam nějaké jsou;
+jinak z hlavní složky `Popis_měření_MD1`.
 
 ## Sloučení denních souborů na PC
 
