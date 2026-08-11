@@ -293,6 +293,9 @@ def parse_sheet(xml: str, shared: Optional[List[str]] = None) -> List[Row]:
             role = Role.BLANK
         elif is_update_text(a) or style_a == STYLE_UPDATED:
             role = Role.UPDATED
+        elif b == BUTTON_LABEL and not (c or d):
+            # samotné tlačítko / zbytek řádku aktualizace
+            role = Role.UPDATED
         elif b or c or d:
             role = Role.DATA
         elif style_a == STYLE_DATE:
