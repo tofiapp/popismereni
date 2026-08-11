@@ -11,15 +11,13 @@ import androidx.core.content.FileProvider
 import java.io.File
 
 /**
- * Sdílení na OneDrive bez Google Files / SAF.
+ * Starý (ověřený) způsob: ACTION_SEND + chooser „Uložit na OneDrive“.
  *
- * Na pracovním profilu Files často hlásí „administrátor nepovoluje ukládat
- * osobní věci…“ a OneDrive v pickeru chybí. Share Intent přímo do appky
- * OneDrive to typicky obejde (stejně jako dřív).
+ * Na pracovním profilu Files / SAF OneDrive často schová; share sheet
+ * OneDrive appku obvykle nabídne (stejně jako před v0.46).
  */
 object OneDriveShare {
 
-    /** Běžné balíčky OneDrive na Androidu. */
     private val ONEDRIVE_PACKAGES = listOf(
         "com.microsoft.skydrive",
         "com.microsoft.office.onedrive",
@@ -31,45 +29,44 @@ object OneDriveShare {
             "${context.packageName}.fileprovider",
             file,
         )
-        val send = buildSendIntent(context, uri, file.name)
-        val activityFlags = if (context is Activity) 0 else Intent.FLAG_ACTIVITY_NEW_TASK
-
-        for (pkg in ONEDRIVE_PACKAGES) {
-            if (!isPackageInstalled(context, pkg)) continue
-            val direct = Intent(send).apply { setPackage(pkg) }
-            if (direct.resolveActivity(context.packageManager) == null) continue
-            try {
-                context.grantUriPermission(
-                    pkg,
-                    uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
-                )
-            } catch (_: Exception) {
-            }
-            context.startActivity(direct.addFlags(activityFlags))
-            return
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = MeasurementStore.MIME_XLSX
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_SUBJECT, file.name)
+            putExtra(Intent.EXTRA_TITLE, file.name)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            clipData = ClipData.newUri(context.contentResolver, file.name, uri)
         }
 
-        // OneDrive appka nenalezena / nebere SEND → obecný chooser
-        val chooser = Intent.createChooser(
-            send,
-            "Uložit na OneDrive — vyber OneDrive (ne Files)",
-        ).apply {
+        // OneDrive nahoru v chooseru (když je nainstalovaný) — bez přímého startu,
+        // ať zůstane stejné chování jako dřív (uživatel klikne OneDrive).
+        val initial = ONEDRIVE_PACKAGES.mapNotNull { pkg ->
+            if (!isPackageInstalled(context, pkg)) return@mapNotNull null
+            Intent(send).apply { setPackage(pkg) }
+                .takeIf { it.resolveActivity(context.packageManager) != null }
+                ?.also {
+                    try {
+                        context.grantUriPermission(
+                            pkg,
+                            uri,
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                        )
+                    } catch (_: Exception) {
+                    }
+                }
+        }
+
+        val chooser = Intent.createChooser(send, "Uložit na OneDrive").apply {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(activityFlags)
+            if (context !is Activity) {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            if (initial.isNotEmpty()) {
+                putExtra(Intent.EXTRA_INITIAL_INTENTS, initial.toTypedArray())
+            }
         }
         context.startActivity(chooser)
     }
-
-    private fun buildSendIntent(context: Context, uri: Uri, fileName: String): Intent =
-        Intent(Intent.ACTION_SEND).apply {
-            type = MeasurementStore.MIME_XLSX
-            putExtra(Intent.EXTRA_STREAM, uri)
-            putExtra(Intent.EXTRA_SUBJECT, fileName)
-            putExtra(Intent.EXTRA_TITLE, fileName)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            clipData = ClipData.newUri(context.contentResolver, fileName, uri)
-        }
 
     private fun isPackageInstalled(context: Context, packageName: String): Boolean {
         return try {

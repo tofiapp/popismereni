@@ -1135,13 +1135,10 @@ fun PasportSettingsButton(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    "Tlačítko nahoře sdílí přímo do appky OneDrive\n" +
-                        "(obejde Google Files / pracovní profil).\n\n" +
-                        "Cíl: Popis_měření_MD1 / Dny\n" +
-                        "Soubor: YYMMDD_N_MD1.xlsx\n\n" +
-                        "Když Files hlásí „administrátor nepovoluje…“\n" +
-                        "nebo OneDrive v seznamu není — použij sdílení,\n" +
-                        "ne Uložit jako…\n\n" +
+                    "Stejně jako dřív: sdílení (share sheet).\n" +
+                        "Vyber OneDrive — ne Google Files.\n" +
+                        "Ulož YYMMDD_N_MD1.xlsx do\n" +
+                        "Popis_měření_MD1 / Dny\n" +
                         "Po ANO se místní záznamy vymažou.",
                     color = MereniColors.TextMuted,
                     fontSize = 12.sp,
@@ -1151,13 +1148,13 @@ fun PasportSettingsButton(
                     onShareFallback()
                     open = false
                 }) {
-                    Text("Sdílet do OneDrive…", color = MereniColors.Accent, fontWeight = FontWeight.SemiBold)
+                    Text("Sdílet na OneDrive…", color = MereniColors.Accent, fontWeight = FontWeight.SemiBold)
                 }
                 TextButton(onClick = {
                     onSaveViaSaf()
                     open = false
                 }) {
-                    Text("Uložit jako… (Files/SAF)", color = MereniColors.TextMuted, fontSize = 12.sp)
+                    Text("Uložit jako… (Files — často nejde)", color = MereniColors.TextMuted, fontSize = 12.sp)
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(

@@ -5,10 +5,8 @@
 adb install -r artifacts/mereni-v0.47.0-debug.apk
 ```
 
-## OneDrive (pracovní profil)
-Tlačítko **Uložit na OneDrive** sdílí přímo do appky OneDrive (ne přes Google Files).
-Na work profilu Files často OneDrive schová / hlásí zákaz osobního úložiště — sdílení to obejde.
+## OneDrive — starý způsob
+**Uložit na OneDrive** = share sheet (jako před v0.46).  
+Vyber **OneDrive**, ne Google Files → `Popis_měření_MD1 / Dny`.
 
-Cíl: `Popis_měření_MD1 / Dny` · soubor `YYMMDD_N_MD1.xlsx`
-
-⚙ → volitelně „Uložit jako… (Files/SAF)“ jen když Files OneDrive dovolí.
+Files v postranním panelu OneDrive často schová (work profil) — to je OK, přes sdílení to nepotřebuješ.

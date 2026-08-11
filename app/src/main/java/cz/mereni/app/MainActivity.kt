@@ -505,11 +505,10 @@ fun MereniApp(
                     }
                 }
                 else -> {
-                    // Výchozí: sdílení přímo do OneDrive appky (obejde Files / work profile)
+                    // Starý způsob: share sheet „Uložit na OneDrive“ (ne Files/SAF)
                     leftForOneDriveShare = true
                     onShareOneDrive(file)
-                    exportMessage =
-                        "Sdílení ${file.name} — vyber OneDrive (ne Files) → ${MeasurementStore.DNY_HINT_PATH}"
+                    exportMessage = "Sdílení ${file.name}…"
                 }
             }
         }
@@ -1041,7 +1040,7 @@ fun MereniApp(
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        "Uložil jsi denní soubor na OneDrive?",
+                        "Nahrál jsi denní soubor na OneDrive?",
                         color = MereniColors.Text,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 17.sp,
@@ -1050,11 +1049,9 @@ fun MereniApp(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "Vyber appku OneDrive (ne Google Files).\n" +
-                            "Cíl: ${MeasurementStore.DNY_HINT_PATH}\n" +
+                        "V share sheetu vyber OneDrive (ne Files)\n" +
+                            "a ulož do ${MeasurementStore.DNY_HINT_PATH}\n" +
                             "(YYMMDD_N_MD1.xlsx)\n\n" +
-                            "Na pracovním profilu Files OneDrive často schová —\n" +
-                            "proto používáme sdílení přímo do OneDrive.\n\n" +
                             "✕ — tlačítko zůstane červené.\n" +
                             "ANO — vymazat místní záznamy (zelená).",
                         color = MereniColors.TextMuted,
