@@ -11,7 +11,7 @@ import java.util.Locale
  *
  * Export na OneDrive přes sdílení: vždy `YYMMDD_N_MD1.xlsx`
  * (N = 1, 2, 3… ten den) do složky
- * `Popis_měření_MD1/MD1_popis_dny/`. Po ANO se lokál vymaže.
+ * `Popis_měření_MD1/Dny/`. Po ANO se lokál vymaže.
  */
 class MeasurementStore(context: Context) {
 

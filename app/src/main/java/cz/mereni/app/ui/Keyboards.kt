@@ -1132,7 +1132,7 @@ fun PasportSettingsButton(
                 Text(
                     "Sdílením Intent (OneDrive / Files).\n" +
                         "Soubor YYMMDD_N_MD1.xlsx ulož do\n" +
-                        "Popis_měření_MD1 (klidně do MD1_popis_dny).\n" +
+                        "Popis_měření_MD1 / Dny\n" +
                         "Po ANO se místní záznamy vymažou.",
                     color = MereniColors.TextMuted,
                     fontSize = 12.sp,

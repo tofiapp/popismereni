@@ -4,29 +4,22 @@
 
 ```
 Popis_měření_MD1/
-  Popis_měření_MD1.xlsx      ← souhrn (vytvoří skript)
-  260811_1_MD1.xlsx         ← denní soubory můžou být přímo tady
-  MD1_popis_dny/            ← NEBO v této podsložce
-    260811_2_MD1.xlsx
+  Popis_měření_MD1.xlsx      ← souhrn (skript, připojuje nová data)
+  Dny/
+    260811_1_MD1.xlsx       ← nové denní soubory z appky
+    sloučeno/
+      260810_1_MD1.xlsx     ← už sloučené (přesune skript)
 ```
 
-Skript nejdřív kouká do `MD1_popis_dny` (když tam něco je).  
-Když je podsložka prázdná / chybí, bere denní soubory **přímo z hlavní složky**.
-
-Souhrn: **`Popis_měření_MD1.xlsx`** (stejné jméno jako hlavní složka).
+Skript bere nové soubory z **`Dny/`**.  
+Po úspěchu je přesune do **`Dny/sloučeno/`**, do 1. řádku souhrnu napíše
+**Naposledy aktualizováno: …**, otevře Excel a zavře okno.
 
 ## Rychle (Windows)
 
-1. V OneDrive složka `Popis_měření_MD1` (+ volitelně `MD1_popis_dny`).
-2. Denní `YYMMDD_N_MD1.xlsx` z appky dej do hlavní složky nebo do `MD1_popis_dny`.
-3. Zkopíruj sem `SloucitMereni.bat` + `sloucit_mereni.ps1`.
-4. Dvojklik na bat → vznikne `Popis_měření_MD1.xlsx`, otevře se v Excelu a okno bat se samo zavře.
-   (Při chybě okno zůstane, ať jde přečíst hlášku.)
+1. V OneDrive: `Popis_měření_MD1/Dny/`
+2. Nové `YYMMDD_N_MD1.xlsx` z appky dej do `Dny/`
+3. Zkopíruj sem `SloucitMereni.bat` + `sloucit_mereni.ps1` (do `Popis_měření_MD1`)
+4. Dvojklik na bat
 
 Nepotřebuješ Python, VBA ani admin práva — PowerShell je součást Windows.
-
-## Ručně
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\sloucit_mereni.ps1 -Folder "C:\Users\...\OneDrive\Popis_měření_MD1"
-```

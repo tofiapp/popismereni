@@ -33,6 +33,7 @@ class Role(Enum):
     BLANK = "BLANK"
     STATION = "STATION"
     DATA = "DATA"
+    UPDATED = "UPDATED"  # radek 1: Naposledy aktualizovano
 
 
 @dataclass
@@ -50,6 +51,8 @@ class Row:
 STYLE_DATE = 1
 STYLE_STATION = 2
 STYLE_DATA_CENTER = 3
+STYLE_UPDATED = 4
+UPDATE_PREFIX = "Naposledy aktualizováno:"
 
 CONTENT_TYPES = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -81,22 +84,24 @@ WORKBOOK = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 STYLES = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <fonts count="3">
+  <fonts count="4">
     <font><sz val="14"/><color theme="1"/><name val="Calibri"/><family val="2"/></font>
     <font><sz val="16"/><b/><color theme="1"/><name val="Calibri"/><family val="2"/></font>
     <font><sz val="16"/><b/><color theme="1"/><name val="Calibri"/><family val="2"/></font>
+    <font><sz val="12"/><i/><color theme="1"/><name val="Calibri"/><family val="2"/></font>
   </fonts>
-  <fills count="4">
+  <fills count="5">
     <fill><patternFill patternType="none"/></fill>
     <fill><patternFill patternType="gray125"/></fill>
     <fill><patternFill patternType="solid"><fgColor rgb="FFBBDEFB"/></patternFill></fill>
     <fill><patternFill patternType="solid"><fgColor rgb="FFFFE0B2"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFE8F5E9"/></patternFill></fill>
   </fills>
   <borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
   <cellStyleXfs count="1">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>
   </cellStyleXfs>
-  <cellXfs count="4">
+  <cellXfs count="5">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
     <xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1">
       <alignment horizontal="left" vertical="center"/>
@@ -106,6 +111,9 @@ STYLES = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     </xf>
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1">
       <alignment horizontal="center" vertical="center"/>
+    </xf>
+    <xf numFmtId="0" fontId="3" fillId="4" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1">
+      <alignment horizontal="left" vertical="center"/>
     </xf>
   </cellXfs>
   <cellStyles count="1">
@@ -131,11 +139,15 @@ LOOKS_LIKE_DATE_RE = re.compile(r"^\d{1,2}[./]\d{1,2}[./]\d{4}$")
 # OneDrive layout:
 #   Popis_měření_MD1/
 #     Popis_měření_MD1.xlsx          ← souhrn
-#     MD1_popis_dny/
-#       YYMMDD_N_MD1.xlsx            ← denní dávky z appky
+#     Dny/
+#       YYMMDD_N_MD1.xlsx            ← nove denni davky
+#       sloučeno/
+#         YYMMDD_N_MD1.xlsx          ← uz sloučene
 MAIN_FOLDER_NAME = "Popis_měření_MD1"
-DAYS_SUBFOLDER_NAME = "MD1_popis_dny"
+DAYS_SUBFOLDER_NAME = "Dny"
+DAYS_SUBFOLDER_LEGACY = "MD1_popis_dny"
 SUMMARY_XLSX_NAME = "Popis_měření_MD1.xlsx"
+ARCHIVE_FOLDER_NAME = "sloučeno"
 SUMMARY_EXCLUDE = {
     SUMMARY_XLSX_NAME.lower(),
     "souhrn_mereni.xlsx",
@@ -192,7 +204,40 @@ def role_from_style(style: Optional[int]) -> Role:
         return Role.DATE
     if style == STYLE_STATION:
         return Role.STATION
+    if style == STYLE_UPDATED:
+        return Role.UPDATED
     return Role.DATA
+
+
+def is_update_text(text: str) -> bool:
+    return text.strip().lower().startswith(UPDATE_PREFIX.lower())
+
+
+def make_update_row() -> Row:
+    from datetime import datetime
+
+    stamp = datetime.now().strftime("%d.%m.%Y %H:%M")
+    return Row(a=f"{UPDATE_PREFIX} {stamp}", role=Role.UPDATED)
+
+
+def strip_update_rows(rows: List[Row]) -> List[Row]:
+    """Odstraní horní řádek(y) 'Naposledy aktualizováno' (+ volitelný blank pod nimi)."""
+    out = list(rows)
+    while out and (
+        out[0].role == Role.UPDATED
+        or is_update_text(out[0].a)
+    ):
+        out.pop(0)
+        if out and out[0].role == Role.BLANK:
+            out.pop(0)
+    return out
+
+
+def with_update_stamp(rows: List[Row]) -> List[Row]:
+    body = strip_update_rows(rows)
+    stamped = [make_update_row(), Row(role=Role.BLANK)]
+    stamped.extend(body)
+    return stamped
 
 
 def parse_sheet(xml: str, shared: Optional[List[str]] = None) -> List[Row]:
@@ -219,6 +264,8 @@ def parse_sheet(xml: str, shared: Optional[List[str]] = None) -> List[Row]:
         d = cells.get("D", "")
         if not (a or b or c or d):
             role = Role.BLANK
+        elif is_update_text(a) or style_a == STYLE_UPDATED:
+            role = Role.UPDATED
         elif b or c or d:
             role = Role.DATA
         elif style_a == STYLE_DATE:
@@ -275,6 +322,8 @@ def style_index(role: Role) -> int:
         return STYLE_DATE
     if role == Role.STATION:
         return STYLE_STATION
+    if role == Role.UPDATED:
+        return STYLE_UPDATED
     return STYLE_DATA_CENTER
 
 
@@ -296,7 +345,7 @@ def sheet_xml(rows: Iterable[Row]) -> str:
         parts.append(f'<row r="{r}" ht="{ht}" customHeight="1">')
         if row.role == Role.BLANK:
             pass
-        elif row.role in (Role.DATE, Role.STATION):
+        elif row.role in (Role.DATE, Role.STATION, Role.UPDATED):
             parts.append(cell_xml(f"A{r}", row.a, style_index(row.role)))
         else:
             parts.append(cell_xml(f"A{r}", row.a, STYLE_DATA_CENTER))
@@ -346,45 +395,68 @@ def list_md1_files(folder: Path) -> List[Path]:
     return sorted(files, key=lambda p: p.name.lower())
 
 
+def days_folder(main: Path) -> Path:
+    """Dny/ (nebo legacy MD1_popis_dny, pokud existuje a má soubory)."""
+    dny = main / DAYS_SUBFOLDER_NAME
+    legacy = main / DAYS_SUBFOLDER_LEGACY
+    if dny.is_dir():
+        return dny
+    if legacy.is_dir() and list_md1_files(legacy):
+        return legacy
+    return dny
+
+
 def resolve_layout(folder: Path) -> Tuple[Path, Path]:
     """
     Vrátí (složka_s_denními, cesta_k_souhrnu).
 
-    Preferuje MD1_popis_dny, pokud v ní něco je.
+    Preferuje Dny/ (popř. legacy MD1_popis_dny), pokud v ní něco je.
     Jinak bere denní soubory přímo z hlavní složky.
     """
     folder = folder.resolve()
     summary = folder / SUMMARY_XLSX_NAME
-    days_sub = folder / DAYS_SUBFOLDER_NAME
 
-    if folder.name == DAYS_SUBFOLDER_NAME:
+    if folder.name in (DAYS_SUBFOLDER_NAME, DAYS_SUBFOLDER_LEGACY):
         parent = folder.parent
         return folder, parent / SUMMARY_XLSX_NAME
 
+    days_sub = days_folder(folder)
     if days_sub.is_dir() and list_md1_files(days_sub):
         return days_sub, summary
 
     if list_md1_files(folder):
         return folder, summary
 
-    # Prázdná podsložka existuje → stejně na ni ukaž (jasná chyba)
     if days_sub.is_dir():
         return days_sub, summary
 
     return folder, summary
 
 
-def merge_folder(folder: Path, verbose: bool = True) -> Tuple[List[Row], int, int]:
-    out: List[Row] = []
+def merge_folder(
+    folder: Path,
+    verbose: bool = True,
+    base_rows: Optional[List[Row]] = None,
+) -> Tuple[List[Row], int, int, List[Path]]:
+    out: List[Row] = strip_update_rows(list(base_rows or []))
     current_date = ""
     last_station = ""
+    for row in out:
+        if row.role == Role.DATE and row.a:
+            current_date = row.a
+            last_station = ""
+        elif row.role == Role.STATION and row.a:
+            last_station = row.a
     ok = 0
     skipped = 0
+    processed: List[Path] = []
 
     files = list_md1_files(folder)
     if verbose:
         print(f"Složka: {folder}")
         print(f"Nalezeno souborů *_MD1.xlsx: {len(files)}")
+        if out:
+            print(f"Výchozí souhrn: {len(out)} řádků")
 
     for path in files:
         rows = read_xlsx(path)
@@ -434,10 +506,29 @@ def merge_folder(folder: Path, verbose: bool = True) -> Tuple[List[Row], int, in
 
         if wrote:
             ok += 1
+            processed.append(path)
         else:
             skipped += 1
 
-    return out, ok, skipped
+    return out, ok, skipped, processed
+
+
+def archive_merged_files(files: List[Path], summary_path: Path) -> Path:
+    """Přesune sloučené denní soubory do Popis_…/Dny/sloučeno/."""
+    archive = days_folder(summary_path.parent) / ARCHIVE_FOLDER_NAME
+    archive.mkdir(parents=True, exist_ok=True)
+    for src in files:
+        if not src.is_file():
+            continue
+        dest = archive / src.name
+        if dest.exists():
+            stem, suf = src.stem, src.suffix
+            n = 1
+            while dest.exists():
+                dest = archive / f"{stem}_{n}{suf}"
+                n += 1
+        src.rename(dest)
+    return archive
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -481,14 +572,20 @@ def main(argv: Optional[List[str]] = None) -> int:
             f"  {MAIN_FOLDER_NAME}/\n"
             f"    {SUMMARY_XLSX_NAME}\n"
             f"    {DAYS_SUBFOLDER_NAME}/\n"
-            f"      YYMMDD_N_MD1.xlsx",
+            f"      YYMMDD_N_MD1.xlsx\n"
+            f"      {ARCHIVE_FOLDER_NAME}/",
             file=sys.stderr,
         )
         return 1
 
     print(f"Denní soubory: {source}")
     print(f"Souhrn:        {out_path}")
-    rows, ok, skipped = merge_folder(source)
+    base_rows: List[Row] = []
+    if out_path.is_file() and out_path.stat().st_size > 64:
+        base_rows = strip_update_rows(read_xlsx(out_path))
+        if base_rows:
+            print(f"Načten existující souhrn: {len(base_rows)} řádků")
+    rows, ok, skipped, processed = merge_folder(source, base_rows=base_rows)
     data_out = sum(1 for r in rows if r.role == Role.DATA)
     if data_out == 0:
         print(
@@ -498,20 +595,27 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
         return 1
 
+    rows = with_update_stamp(rows)
     write_xlsx(out_path, rows)
+    print(f"Aktualizace: {rows[0].a}")
 
     print(f"Soubory OK: {ok}")
     print(f"Přeskočeno: {skipped}")
     print(f"Datových řádků: {data_out}")
     print(f"Uloženo: {out_path}")
+
+    archive = archive_merged_files(processed, out_path)
+    print(f"Přesunuto do {DAYS_SUBFOLDER_NAME}/{ARCHIVE_FOLDER_NAME}/: {len(processed)} souborů ({archive})")
+
     try:
         if sys.platform.startswith("win"):
             os.startfile(out_path)  # type: ignore[attr-defined]
-        else:
+            print("Otevírám Excel…")
+        elif os.environ.get("SLOUCIT_NO_OPEN") != "1":
             import subprocess
 
             subprocess.Popen(["xdg-open", str(out_path)])
-        print("Otevírám Excel…")
+            print("Otevírám Excel…")
     except OSError as exc:
         print(f"Nepodařilo se otevřít soubor: {exc}", file=sys.stderr)
     return 0
