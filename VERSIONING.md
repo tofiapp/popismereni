@@ -6,17 +6,17 @@ a číslo verze musí být i v názvu souboru**.
 ## Zdroj pravdy
 
 Soubor [`VERSION`](VERSION) v kořeni repa, formát `MAJOR.MINOR.PATCH`
-(aktuálně `0.48.0`).
+(aktuálně `0.49.1`).
 Z něj se odvozuje:
 
 | Místo | Forma |
 |---|---|
-| Android `versionName` | `0.48.0` |
+| Android `versionName` | `0.49.1` |
 | Android `versionCode` | `MAJOR*105000 + MINOR*1000 + PATCH + 70000` → `117000` |
-| APK artefakty | `mereni-v0.48.0-debug.apk`, `mereni-v0.48.0-release-unsigned.apk` |
-| Pasport JSON v assets | `pasport_tpi_v0.48.0.json` (nebo nejbližší dostupný fallback) |
-| Git tag / GitHub Release | `v0.48.0` |
-| UI | zobrazení `v0.48.0` vedle názvu aplikace |
+| APK artefakty | `mereni-v0.49.1-debug.apk`, `mereni-v0.49.1-release-unsigned.apk` |
+| Pasport JSON v assets | `pasport_tpi_v0.49.1.json` (nebo nejbližší dostupný fallback) |
+| Git tag / GitHub Release | `v0.49.1` |
+| UI | zobrazení `v0.49.1` vedle názvu aplikace |
 
 ## Aktualizace na tabletu (bez přeinstalace)
 
@@ -24,7 +24,7 @@ Debug APK se vždy podepisuje sdíleným klíčem `app/keystore/mereni-debug.jks
 (stejný v CI i lokálně). Instaluj **debug** přes **debug**:
 
 ```bash
-adb install -r artifacts/mereni-v0.48.0-debug.apk
+adb install -r artifacts/mereni-v0.49.1-debug.apk
 ```
 
 `applicationId` = `cz.mereni.app`, `versionCode` vždy roste s `VERSION`.

@@ -505,10 +505,19 @@ fun MereniApp(
                     }
                 }
                 else -> {
-                    // Starý způsob: share sheet „Uložit na OneDrive“ (ne Files/SAF)
-                    leftForOneDriveShare = true
-                    onShareOneDrive(file)
-                    exportMessage = "Sdílení ${file.name}…"
+                    // Nejdřív zapamatovaná složka Dny (plný výběr složek jednou v ⚙).
+                    // Jinak share sheet — OneDrive ukáže jen zjednodušené „uložit sem“
+                    // (bez Oblíbených); to dělá Microsoft, ne naše appka.
+                    if (onGetDnyTreeUri() != null && onTrySaveToDnyFolder(file)) {
+                        showOneDriveConfirm = true
+                        exportMessage = "Uloženo přímo do Dny: ${file.name}"
+                    } else {
+                        leftForOneDriveShare = true
+                        onShareOneDrive(file)
+                        exportMessage =
+                            "Sdílení ${file.name}… OneDrive ukáže zjednodušené uložení " +
+                                "(bez Oblíbených). Tip: v ⚙ nastav Složku Dny."
+                    }
                 }
             }
         }
@@ -1049,9 +1058,11 @@ fun MereniApp(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "V share sheetu vyber OneDrive (ne Files)\n" +
-                            "a ulož do ${MeasurementStore.DNY_HINT_PATH}\n" +
-                            "(YYMMDD_N_MD1.xlsx)\n\n" +
+                        "V share sheetu: OneDrive (uložit) nebo Edge (prohlížeč).\n" +
+                            "OneDrive ukáže zjednodušené uložení — bez Oblíbených " +
+                            "(omezení OneDrive při sdílení).\n" +
+                            "Cíl: ${MeasurementStore.DNY_HINT_PATH} / YYMMDD_N_MD1.xlsx\n\n" +
+                            "Tip: v ⚙ nastav Složku Dny → příště bez tohoto dialogu.\n\n" +
                             "✕ — tlačítko zůstane červené.\n" +
                             "ANO — vymazat místní záznamy (zelená).",
                         color = MereniColors.TextMuted,
