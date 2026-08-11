@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import shutil
 import sys
 import zipfile
 from dataclasses import dataclass
@@ -292,6 +293,9 @@ def parse_sheet(xml: str, shared: Optional[List[str]] = None) -> List[Row]:
             role = Role.BLANK
         elif is_update_text(a) or style_a == STYLE_UPDATED:
             role = Role.UPDATED
+        elif b == BUTTON_LABEL and not (c or d):
+            # samotné tlačítko / zbytek řádku aktualizace
+            role = Role.UPDATED
         elif b or c or d:
             role = Role.DATA
         elif style_a == STYLE_DATE:
@@ -309,8 +313,11 @@ def parse_sheet(xml: str, shared: Optional[List[str]] = None) -> List[Row]:
 
 
 def read_xlsx(path: Path) -> List[Row]:
-    if not path.is_file() or path.stat().st_size < 64:
+    if not path.is_file():
         return []
+    size = path.stat().st_size
+    if size < 64:
+        raise OSError(f"Soubor je moc malý ({size} B) — OneDrive asi nestáhl obsah: {path}")
     try:
         with zipfile.ZipFile(path) as zf:
             names = {n.replace("\\", "/").lower(): n for n in zf.namelist()}
@@ -326,13 +333,24 @@ def read_xlsx(path: Path) -> List[Row]:
                     n for k, n in names.items() if k.startswith("xl/worksheets/sheet") and k.endswith(".xml")
                 )
                 if not sheets:
-                    return []
+                    raise OSError(f"V xlsx chybí sheet XML: {path}")
                 sheet_key = sheets[0]
             xml = zf.read(sheet_key).decode("utf-8", errors="replace")
             xml = re.sub(r"<(/?)([A-Za-z0-9._-]+):", r"<\1", xml)
             return parse_sheet(xml, shared)
-    except (zipfile.BadZipFile, KeyError, OSError):
-        return []
+    except zipfile.BadZipFile as exc:
+        raise OSError(f"Soubor není platné xlsx/zip (zámek Excel/OneDrive?): {path}") from exc
+
+
+def backup_summary_before_write(path: Path) -> None:
+    if not path.is_file():
+        return
+    bak = path.with_suffix(path.suffix + ".bak")
+    try:
+        shutil.copy2(path, bak)
+        print(f"Záloha před zápisem: {bak}")
+    except OSError as exc:
+        print(f"  ! Záloha .bak se nepodařila: {exc}")
 
 
 def cell_xml(ref: str, value: str, style: int) -> str:
@@ -403,6 +421,7 @@ def sheet_xml(rows: Iterable[Row]) -> str:
 
 def write_xlsx(path: Path, rows: List[Row]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    backup_summary_before_write(path)
     bat = path.parent / UPDATE_BAT_NAME
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("[Content_Types].xml", CONTENT_TYPES)
@@ -641,9 +660,21 @@ def main(argv: Optional[List[str]] = None) -> int:
     print(f"Souhrn:        {out_path}")
     base_rows: List[Row] = []
     if out_path.is_file() and out_path.stat().st_size > 64:
-        base_rows = strip_update_rows(read_xlsx(out_path))
-        if base_rows:
-            print(f"Načten existující souhrn: {len(base_rows)} řádků")
+        summary_size = out_path.stat().st_size
+        try:
+            base_rows = strip_update_rows(read_xlsx(out_path))
+            if not base_rows and summary_size > 2500:
+                raise OSError(
+                    f"Souhrn má {summary_size} B, ale načetlo se 0 řádků. "
+                    "Soubor je pravděpodobně zamčený nebo poškozený."
+                )
+            if base_rows:
+                print(f"Načten existující souhrn: {len(base_rows)} řádků")
+        except OSError as exc:
+            print("CHYBA: Nelze bezpečně načíst existující souhrn.", file=sys.stderr)
+            print(f"  {exc}", file=sys.stderr)
+            print("  Soubor NEBUDE přepsán.", file=sys.stderr)
+            return 3
     rows, ok, skipped, processed = merge_folder(source, base_rows=base_rows)
     data_out = sum(1 for r in rows if r.role == Role.DATA)
     if data_out == 0:
