@@ -1,5 +1,5 @@
 ﻿#Requires -Version 5.1
-# sloucit_mereni.ps1 — verze 2026-08-11j
+# sloucit_mereni.ps1 — verze 2026-08-11l
 # ASCII-only source (Windows PowerShell 5.1). Czech names via [char] codes.
 # Layout:
 #   Popis_mereni_MD1/
@@ -77,8 +77,6 @@ $WORKBOOK = @"
 $STYLE_BUTTON = 5
 $BUTTON_LABEL = "Aktualizovat"
 $UPDATE_BAT_NAME = "SloucitMereni.bat"
-# ASCII nazev — Excel/odkazy nemaji problem s diakritikou v JMENU souboru
-$UPDATE_CMD_NAME = "Aktualizovat.cmd"
 
 function Get-ShortPathName([string]$path) {
     $full = [System.IO.Path]::GetFullPath($path)
@@ -103,9 +101,7 @@ public static class Win32ShortPath {
 }
 
 function Get-FileUri([string]$path) {
-    # file:/// + ideálně 8.3 cesta (OneDrive diakritika v Excelu jinak rozbije odkaz)
-    $full = Get-ShortPathName $path
-    return ([uri]$full).AbsoluteUri
+    return ([uri](Get-ShortPathName $path)).AbsoluteUri
 }
 
 function Get-SheetRelsXml([string]$batPath) {
@@ -118,53 +114,20 @@ function Get-SheetRelsXml([string]$batPath) {
 "@
 }
 
-function Resolve-UpdateBatPath([string]$summaryPath) {
-    # Zadny generator CMD v PS (historicky rozbil parser uvozovkami).
-    # Jen zkopiruj hotove soubory z $PSScriptRoot vedle souhrnu.
+function Ensure-BatBesideSummary([string]$summaryPath) {
+    # Potichu dopln SloucitMereni.bat vedle souhrnu (uzivatel s nim nemusi nic delat)
     $dir = Split-Path -Parent $summaryPath
+    $dst = Join-Path $dir $UPDATE_BAT_NAME
+    if (Test-Path -LiteralPath $dst -PathType Leaf) { return $dst }
     $here = $PSScriptRoot
     if (-not $here) {
         try { $here = Split-Path -Parent $MyInvocation.MyCommand.Path } catch { $here = $dir }
     }
-
-    $batDst = Join-Path $dir $UPDATE_BAT_NAME
-    $cmdDst = Join-Path $dir $UPDATE_CMD_NAME
-    $ps1Dst = Join-Path $dir "sloucit_mereni.ps1"
-    $batSrc = Join-Path $here $UPDATE_BAT_NAME
-    $cmdSrc = Join-Path $here $UPDATE_CMD_NAME
-    $ps1Src = Join-Path $here "sloucit_mereni.ps1"
-
-    try {
-        if (Test-Path -LiteralPath $batSrc) {
-            Copy-Item -LiteralPath $batSrc -Destination $batDst -Force
-        }
-        if (Test-Path -LiteralPath $cmdSrc) {
-            Copy-Item -LiteralPath $cmdSrc -Destination $cmdDst -Force
-        } elseif (-not (Test-Path -LiteralPath $cmdDst)) {
-            # Minimalni ASCII launcher, kdyz chybi vzor v tools/
-            $minimal = @(
-                '@echo off'
-                'setlocal'
-                'chcp 65001 >nul'
-                'set "DIR=%~dp0"'
-                'powershell -NoProfile -ExecutionPolicy Bypass -File "%DIR%sloucit_mereni.ps1" -Folder "%DIR%."'
-                'set "ERR=%ERRORLEVEL%"'
-                'if not "%ERR%"=="0" pause'
-                'endlocal & exit /b %ERR%'
-            )
-            $utf8 = New-Object System.Text.UTF8Encoding $false
-            [System.IO.File]::WriteAllLines($cmdDst, $minimal, $utf8)
-        }
-        # ps1 vedle souhrnu: neprepisuj sam sebe behem behu (stejna cesta)
-        if ((Test-Path -LiteralPath $ps1Src) -and ($ps1Src -ne $ps1Dst)) {
-            Copy-Item -LiteralPath $ps1Src -Destination $ps1Dst -Force
-        }
-    } catch {
-        Write-Host ("  ! Kopirovani launcheru: {0}" -f $_.Exception.Message)
+    $src = Join-Path $here $UPDATE_BAT_NAME
+    if (Test-Path -LiteralPath $src -PathType Leaf) {
+        try { Copy-Item -LiteralPath $src -Destination $dst -Force } catch { }
     }
-
-    if (Test-Path -LiteralPath $cmdDst) { return $cmdDst }
-    return $batDst
+    return $dst
 }
 
 $STYLES = @"
@@ -505,7 +468,7 @@ function Get-SheetXml($rows) {
     $sb = New-Object System.Text.StringBuilder
     [void]$sb.Append('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>')
     [void]$sb.Append('<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">')
-    # Zmrazeny 1. radek (razitko + tlacitko) — zustane viditelny pri scrollovani
+    # Zmrazeny 1. radek: razitko + tlacitko Aktualizovat (-> SloucitMereni.bat)
     [void]$sb.Append('<sheetViews><sheetView workbookViewId="0">')
     [void]$sb.Append('<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>')
     [void]$sb.Append('<selection pane="bottomLeft" activeCell="A2" sqref="A2"/>')
@@ -529,7 +492,6 @@ function Get-SheetXml($rows) {
             "STATION" { [void]$sb.Append((Get-CellXml ("A$r") $row.A $STYLE_STATION)) }
             "UPDATED" {
                 [void]$sb.Append((Get-CellXml ("A$r") $row.A $STYLE_UPDATED))
-                # Modre "tlacitko" — file:/// hyperlink na lokalni SloucitMereni.bat (bez VBA; ne https)
                 [void]$sb.Append((Get-CellXml ("B$r") $BUTTON_LABEL $STYLE_BUTTON))
                 if ($buttonRow -eq 0) { $buttonRow = $r }
             }
@@ -551,7 +513,7 @@ function Get-SheetXml($rows) {
 }
 
 function Close-WorkbookIfOpen([string]$path) {
-    # Aby slo prepsat souhrn po kliku na tlacitko v Excelu
+    # Aby slo prepsat souhrn, pokud je otevreny v Excelu
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $false }
     $full = $null
     try { $full = [System.IO.Path]::GetFullPath($path) } catch { return $false }
@@ -611,10 +573,9 @@ function Write-Xlsx([string]$path, $rows) {
         New-Item -ItemType Directory -Path $dir -Force | Out-Null
     }
     Close-WorkbookIfOpen $path | Out-Null
-    # Kratka pauza po Close, aby Windows uvolnil zamek
     Start-Sleep -Milliseconds 400
     if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
-    $batPath = Resolve-UpdateBatPath $path
+    $batPath = Ensure-BatBesideSummary $path
     $sheetRels = Get-SheetRelsXml $batPath
     $zip = [System.IO.Compression.ZipFile]::Open($path, [System.IO.Compression.ZipArchiveMode]::Create)
     try {
@@ -668,7 +629,7 @@ function Resolve-Layout([string]$folderPath) {
 
 # ---- main ----
 try {
-    Write-Host "sloucit_mereni.ps1 verze 2026-08-11j"
+    Write-Host "sloucit_mereni.ps1 verze 2026-08-11l"
     if (-not (Test-Path -LiteralPath $Folder)) {
         Write-Host "Slozka neexistuje:"
         Write-Host "  $Folder"

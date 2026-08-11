@@ -1,9 +1,8 @@
 @echo off
 REM Slouci denni *_MD1.xlsx do Popis_mereni_MD1.xlsx
-REM VERZE: 2026-08-11j
-REM
-REM Dulezite: musis mit NOVOU sloucit_mereni.ps1 (hledej 2026-08-11j uvnitr).
-REM Kdyz vidis chybu DIR=%~dp0, mas STARÝ ps1 — nahrej ho znovu z GitHubu tools/.
+REM VERZE: 2026-08-11l
+REM Soubory ve slozce: SloucitMereni.bat + sloucit_mereni.ps1 (+ souhrn xlsx)
+REM Excel tlacitko Aktualizovat odkazuje primo na tento BAT (zadny .cmd navic).
 
 setlocal
 chcp 65001 >nul
@@ -17,22 +16,7 @@ if not exist "%SCRIPT%" (
   exit /b 2
 )
 
-findstr /C:"2026-08-11j" "%SCRIPT%" >nul
-if errorlevel 1 (
-  echo.
-  echo CHYBA: STARY sloucit_mereni.ps1
-  echo V souboru musi byt retezec: 2026-08-11j
-  echo.
-  echo 1^) Stahni NOVY sloucit_mereni.ps1 z GitHubu ^[slozka tools/^]
-  echo 2^) Prepis soubor ve slozce Popis_mereni_MD1
-  echo 3^) Pockej na OneDrive sync ^(zelena fajfka^)
-  echo 4^) Spust tento BAT znovu
-  echo.
-  pause
-  exit /b 3
-)
-
-echo sloucit_mereni.ps1 verze OK ^(2026-08-11j^)
+echo Spoustim sloucit_mereni.ps1
 echo.
 
 powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT%" -Folder "%TARGET%"
