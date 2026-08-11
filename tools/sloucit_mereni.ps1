@@ -1,5 +1,5 @@
 ﻿#Requires -Version 5.1
-# sloucit_mereni.ps1 — verze 2026-08-11i
+# sloucit_mereni.ps1 — verze 2026-08-11l
 # ASCII-only source (Windows PowerShell 5.1). Czech names via [char] codes.
 # Layout:
 #   Popis_mereni_MD1/
@@ -77,8 +77,6 @@ $WORKBOOK = @"
 $STYLE_BUTTON = 5
 $BUTTON_LABEL = "Aktualizovat"
 $UPDATE_BAT_NAME = "SloucitMereni.bat"
-# ASCII nazev — Excel/odkazy nemaji problem s diakritikou v JMENU souboru
-$UPDATE_CMD_NAME = "Aktualizovat.cmd"
 
 function Get-ShortPathName([string]$path) {
     $full = [System.IO.Path]::GetFullPath($path)
@@ -103,9 +101,7 @@ public static class Win32ShortPath {
 }
 
 function Get-FileUri([string]$path) {
-    # file:/// + ideálně 8.3 cesta (OneDrive diakritika v Excelu jinak rozbije odkaz)
-    $full = Get-ShortPathName $path
-    return ([uri]$full).AbsoluteUri
+    return ([uri](Get-ShortPathName $path)).AbsoluteUri
 }
 
 function Get-SheetRelsXml([string]$batPath) {
@@ -118,63 +114,20 @@ function Get-SheetRelsXml([string]$batPath) {
 "@
 }
 
-function Write-UpdateCmd([string]$dir) {
-    # ASCII-only launcher vedle souhrnu (volany z Excel tlacitka)
-    # POZOR: obsah CMD musi byt v single-quoted here-string — jinak PS rozbije uvozovky.
-    $cmdPath = Join-Path $dir $UPDATE_CMD_NAME
-    $body = @'
-@echo off
-setlocal
-chcp 65001 >nul
-REM Launcher pro Excel tlacitko Aktualizovat (ASCII nazev souboru)
-set "DIR=%~dp0"
-if not exist "%DIR%sloucit_mereni.ps1" (
-  echo CHYBA: chybi sloucit_mereni.ps1 vedle tohoto CMD
-  pause
-  exit /b 2
-)
-powershell -NoProfile -ExecutionPolicy Bypass -File "%DIR%sloucit_mereni.ps1" -Folder "%DIR%."
-set "ERR=%ERRORLEVEL%"
-if not "%ERR%"=="0" (
-  echo.
-  echo Chyba %ERR%
-  pause
-)
-endlocal & exit /b %ERR%
-'@
-    $utf8 = New-Object System.Text.UTF8Encoding $false
-    [System.IO.File]::WriteAllText($cmdPath, ($body -replace "`n", "`r`n"), $utf8)
-    return $cmdPath
-}
-
-function Resolve-UpdateBatPath([string]$summaryPath) {
+function Ensure-BatBesideSummary([string]$summaryPath) {
+    # Potichu dopln SloucitMereni.bat vedle souhrnu (uzivatel s nim nemusi nic delat)
     $dir = Split-Path -Parent $summaryPath
+    $dst = Join-Path $dir $UPDATE_BAT_NAME
+    if (Test-Path -LiteralPath $dst -PathType Leaf) { return $dst }
     $here = $PSScriptRoot
-    if (-not $here) { $here = Split-Path -Parent $MyInvocation.MyCommand.Path }
-
-    # Dopln bat+ps1 k souhrnu, pokud chybi
-    $batDst = Join-Path $dir $UPDATE_BAT_NAME
-    $ps1Dst = Join-Path $dir "sloucit_mereni.ps1"
-    $batSrc = Join-Path $here $UPDATE_BAT_NAME
-    $ps1Src = Join-Path $here "sloucit_mereni.ps1"
-    try {
-        if ((Test-Path -LiteralPath $batSrc) -and -not (Test-Path -LiteralPath $batDst)) {
-            Copy-Item -LiteralPath $batSrc -Destination $batDst -Force
-        }
-        if ((Test-Path -LiteralPath $ps1Src)) {
-            # vzdy aktualizuj ps1 vedle souhrnu pri zapisu xlsx? ne — jen kdyz chybi
-            if (-not (Test-Path -LiteralPath $ps1Dst)) {
-                Copy-Item -LiteralPath $ps1Src -Destination $ps1Dst -Force
-            }
-        }
-    } catch { }
-
-    # Pro Excel hyperlink pouzij ASCII Aktualizovat.cmd (ne SloucitMereni.bat v Unicode ceste zobrazeni)
-    try {
-        return (Write-UpdateCmd $dir)
-    } catch {
-        return $batDst
+    if (-not $here) {
+        try { $here = Split-Path -Parent $MyInvocation.MyCommand.Path } catch { $here = $dir }
     }
+    $src = Join-Path $here $UPDATE_BAT_NAME
+    if (Test-Path -LiteralPath $src -PathType Leaf) {
+        try { Copy-Item -LiteralPath $src -Destination $dst -Force } catch { }
+    }
+    return $dst
 }
 
 $STYLES = @"
@@ -515,7 +468,7 @@ function Get-SheetXml($rows) {
     $sb = New-Object System.Text.StringBuilder
     [void]$sb.Append('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>')
     [void]$sb.Append('<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">')
-    # Zmrazeny 1. radek (razitko + tlacitko) — zustane viditelny pri scrollovani
+    # Zmrazeny 1. radek: razitko + tlacitko Aktualizovat (-> SloucitMereni.bat)
     [void]$sb.Append('<sheetViews><sheetView workbookViewId="0">')
     [void]$sb.Append('<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>')
     [void]$sb.Append('<selection pane="bottomLeft" activeCell="A2" sqref="A2"/>')
@@ -539,7 +492,6 @@ function Get-SheetXml($rows) {
             "STATION" { [void]$sb.Append((Get-CellXml ("A$r") $row.A $STYLE_STATION)) }
             "UPDATED" {
                 [void]$sb.Append((Get-CellXml ("A$r") $row.A $STYLE_UPDATED))
-                # Modre "tlacitko" — file:/// hyperlink na lokalni SloucitMereni.bat (bez VBA; ne https)
                 [void]$sb.Append((Get-CellXml ("B$r") $BUTTON_LABEL $STYLE_BUTTON))
                 if ($buttonRow -eq 0) { $buttonRow = $r }
             }
@@ -561,7 +513,7 @@ function Get-SheetXml($rows) {
 }
 
 function Close-WorkbookIfOpen([string]$path) {
-    # Aby slo prepsat souhrn po kliku na tlacitko v Excelu
+    # Aby slo prepsat souhrn, pokud je otevreny v Excelu
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $false }
     $full = $null
     try { $full = [System.IO.Path]::GetFullPath($path) } catch { return $false }
@@ -621,10 +573,9 @@ function Write-Xlsx([string]$path, $rows) {
         New-Item -ItemType Directory -Path $dir -Force | Out-Null
     }
     Close-WorkbookIfOpen $path | Out-Null
-    # Kratka pauza po Close, aby Windows uvolnil zamek
     Start-Sleep -Milliseconds 400
     if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
-    $batPath = Resolve-UpdateBatPath $path
+    $batPath = Ensure-BatBesideSummary $path
     $sheetRels = Get-SheetRelsXml $batPath
     $zip = [System.IO.Compression.ZipFile]::Open($path, [System.IO.Compression.ZipArchiveMode]::Create)
     try {
@@ -678,7 +629,7 @@ function Resolve-Layout([string]$folderPath) {
 
 # ---- main ----
 try {
-    Write-Host "sloucit_mereni.ps1 verze 2026-08-11i"
+    Write-Host "sloucit_mereni.ps1 verze 2026-08-11l"
     if (-not (Test-Path -LiteralPath $Folder)) {
         Write-Host "Slozka neexistuje:"
         Write-Host "  $Folder"

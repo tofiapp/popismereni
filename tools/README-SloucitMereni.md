@@ -1,11 +1,10 @@
 # Sloučení denních souborů (bez instalace)
 
-## Struktura na OneDrive
+## Struktura
 
 ```
-Popis_měření_MD1/          ← nebo Popis_mereni_MD1 (bez diakritiky)
-  Popis_měření_MD1.xlsx
-  Aktualizovat.cmd         ← ASCII launcher (tlačítko v Excelu)
+Popis_měření_MD1/
+  Popis_měření_MD1.xlsx   ← souhrn + tlačítko Aktualizovat (B1)
   SloucitMereni.bat
   sloucit_mereni.ps1
   Dny/
@@ -13,14 +12,13 @@ Popis_měření_MD1/          ← nebo Popis_mereni_MD1 (bez diakritiky)
     sloučeno/
 ```
 
-Správný název složky je **`Popis_měření_MD1`** (nebo ASCII `Popis_mereni_MD1`).  
-Když v cestě vidíš `SprĂˇva` / `mÄ›Ĺ™enĂ­`, je to jen **špatné zobrazení kódování** — skutečná složka má háčky.
+Jen **dva** skripty: `SloucitMereni.bat` + `sloucit_mereni.ps1`.  
+Žádný `Aktualizovat.cmd`.
 
-## Rychle (Windows)
+## Použití
 
-1. Bat + ps1 dej do `Popis_měření_MD1` (vedle souhrnu)
-2. Spusť `SloucitMereni.bat` (verze **2026-08-11h**) — vytvoří `Aktualizovat.cmd` a přepíše odkaz v Excelu
-3. Souhrn otevírej v **desktop Excelu**
-4. Klikni **Aktualizovat** (B1) — odkaz na `Aktualizovat.cmd` (ASCII), ne na web
+1. Bat + ps1 dej vedle souhrnu
+2. Spusť bat (nebo v desktop Excelu klikni **Aktualizovat**)
+3. Tlačítko míří přímo na `SloucitMereni.bat` (skript ho případně doplní sám)
 
-Nepotřebuješ Python, VBA ani admin práva.
+Verze: **2026-08-11l**
