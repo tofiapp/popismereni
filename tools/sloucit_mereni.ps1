@@ -1,5 +1,5 @@
 ﻿#Requires -Version 5.1
-# sloucit_mereni.ps1 — verze 2026-08-11r
+# sloucit_mereni.ps1 — verze 2026-08-11s
 # ASCII-only source (Windows PowerShell 5.1). Czech names via [char] codes.
 # Layout:
 #   Popis_mereni_MD1/
@@ -503,11 +503,16 @@ function Get-CellText([string]$attrs, [string]$body, [string[]]$shared) {
     return ""
 }
 
-function Read-XlsxRows([string]$path) {
+function Read-XlsxRows {
+    param(
+        [Parameter(Mandatory = $true, Position = 0)]
+        [string]$path,
+        [switch]$Quiet
+    )
     $rows = New-Object System.Collections.Generic.List[object]
 
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-        Write-Host ("  ! Soubor neexistuje: {0}" -f $path)
+        if (-not $Quiet) { Write-Host ("  ! Soubor neexistuje: {0}" -f $path) }
         return [object[]]@()
     }
     $len = (Get-Item -LiteralPath $path).Length
@@ -557,7 +562,9 @@ function Read-XlsxRows([string]$path) {
 
     $tCount = [regex]::Matches($xml, '<t\b').Count
     $vCount = [regex]::Matches($xml, '<v\b').Count
-    Write-Host ("    (sharedStrings={0}, tagu <t>={1}, <v>={2}, size={3} B)" -f $shared.Length, $tCount, $vCount, $len)
+    if (-not $Quiet) {
+        Write-Host ("    (sharedStrings={0}, tagu <t>={1}, <v>={2}, size={3} B)" -f $shared.Length, $tCount, $vCount, $len)
+    }
 
     $rowMatches = [regex]::Matches($xml, '<row\b[^>]*>(.*?)</row>', 'IgnoreCase, Singleline')
     # also self-closing empty rows ignored — OK
@@ -606,19 +613,171 @@ function Read-XlsxRows([string]$path) {
     }
 
     # Diagnostika: ukaz prvni neprázdne radky
-    $shown = 0
-    foreach ($r in $rows) {
-        if ($r.Role -eq "BLANK") { continue }
-        Write-Host ("    priklad: [{0}] A='{1}' B='{2}' C='{3}' D='{4}'" -f $r.Role, $r.A, $r.B, $r.C, $r.D)
-        $shown++
-        if ($shown -ge 3) { break }
-    }
-    if ($shown -eq 0) {
-        Write-Host "    priklad: (zadne neprázdne bunky — soubor je prazdny nebo nečitelný)"
+    if (-not $Quiet) {
+        $shown = 0
+        foreach ($r in $rows) {
+            if ($r.Role -eq "BLANK") { continue }
+            Write-Host ("    priklad: [{0}] A='{1}' B='{2}' C='{3}' D='{4}'" -f $r.Role, $r.A, $r.B, $r.C, $r.D)
+            $shown++
+            if ($shown -ge 3) { break }
+        }
+        if ($shown -eq 0) {
+            Write-Host "    priklad: (zadne neprázdne bunky — soubor je prazdny nebo nečitelný)"
+        }
     }
 
     [object[]]$result = $rows.ToArray()
     return $result
+}
+
+function Get-XlsxUsefulRowCount([string]$path) {
+    # Pocet radku bez razitka / prazdnych — pro vyber spravne OneDrive verze
+    try {
+        if (-not (Test-XlsxLooksValid $path)) { return -1 }
+        $rows = Read-XlsxRows -path $path -Quiet
+        $n = 0
+        foreach ($r in $rows) {
+            if (-not (Test-IsRowObject $r)) { continue }
+            if ($r.Role -eq "BLANK") { continue }
+            if ($r.Role -eq "UPDATED") { continue }
+            if (Test-IsUpdateText ([string]$r.A)) { continue }
+            $n++
+        }
+        return $n
+    } catch {
+        return -1
+    }
+}
+
+function Get-SummaryConflictFiles([string]$summaryPath) {
+    $sumDir = Split-Path -Parent $summaryPath
+    $sumLeaf = [System.IO.Path]::GetFileNameWithoutExtension($summaryPath)
+    $sumName = [System.IO.Path]::GetFileName($summaryPath)
+    if (-not $sumDir -or -not (Test-Path -LiteralPath $sumDir -PathType Container)) {
+        return @()
+    }
+    # OneDrive: Popis_…-PC.xlsx, …-kopie.xlsx, … (conflicted copy).xlsx, …
+    return @(Get-ChildItem -LiteralPath $sumDir -File -Filter "*.xlsx" -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.Name -ne $sumName -and
+            $_.Name -notlike '~$*' -and
+            $_.Name -notlike '.sloucit_tmp_*' -and
+            $_.Name -notlike '*.xlsx.bak' -and
+            -not (Test-IsDailyMd1Name $_.Name) -and
+            (
+                $_.BaseName -like ($sumLeaf + "*") -or
+                $_.Name -match '(?i)conflict|konflikt|kopie|copy|-PC|conflicted'
+            )
+        })
+}
+
+function Resolve-OneDriveSummaryConflicts([string]$summaryPath) {
+    # OneDrive casto necha STARSI verzi pod kanonickym jmenem a spravnou
+    # (lokalni / prave sloucenou) jako „konfliktni / nesloucenou“ kopii.
+    # Bereme verzi s vice uzitecnymi radky (pri remize vetsi / novejsi soubor).
+    $conflicts = @(Get-SummaryConflictFiles $summaryPath)
+    if ($conflicts.Count -eq 0) { return $summaryPath }
+
+    $sumName = [System.IO.Path]::GetFileName($summaryPath)
+    $candidates = New-Object System.Collections.Generic.List[object]
+    if (Test-Path -LiteralPath $summaryPath -PathType Leaf) {
+        $mainItem = Get-Item -LiteralPath $summaryPath
+        [void]$candidates.Add([pscustomobject]@{
+                Path     = $summaryPath
+                Name     = $sumName
+                IsMain   = $true
+                Size     = [long]$mainItem.Length
+                Mtime    = $mainItem.LastWriteTimeUtc
+                RowCount = (Get-XlsxUsefulRowCount $summaryPath)
+            })
+    }
+    foreach ($c in $conflicts) {
+        [void]$candidates.Add([pscustomobject]@{
+                Path     = $c.FullName
+                Name     = $c.Name
+                IsMain   = $false
+                Size     = [long]$c.Length
+                Mtime    = $c.LastWriteTimeUtc
+                RowCount = (Get-XlsxUsefulRowCount $c.FullName)
+            })
+    }
+
+    Write-Host ""
+    Write-Host "OneDrive konflikt — porovnavam verze souhrnu (vic radku = lepsi):" -ForegroundColor Yellow
+    foreach ($c in $candidates) {
+        $tag = if ($c.IsMain) { "kanonicky" } else { "konflikt/kopie" }
+        Write-Host ("  - {0}  [{1}]  radku={2}  {3} B  {4:yyyy-MM-dd HH:mm}" -f `
+                $c.Name, $tag, $c.RowCount, $c.Size, $c.Mtime.ToLocalTime()) -ForegroundColor Yellow
+    }
+
+    $winner = $candidates |
+        Sort-Object -Property `
+            @{ Expression = 'RowCount'; Descending = $true }, `
+            @{ Expression = 'Size'; Descending = $true }, `
+            @{ Expression = 'Mtime'; Descending = $true }, `
+            @{ Expression = 'IsMain'; Descending = $true } |
+        Select-Object -First 1
+
+    if ($null -eq $winner) { return $summaryPath }
+
+    if ($winner.IsMain) {
+        Write-Host ("  Beru kanonicky souhrn ({0} radku). Ostatni kopie nechavam — po kontrole smaz." -f $winner.RowCount) -ForegroundColor Yellow
+        Write-Host ""
+        return $summaryPath
+    }
+
+    Write-Host ("  Spravna je konfliktni/nesloucena verze: {0} ({1} radku) — povysuji na {2}" -f `
+            $winner.Name, $winner.RowCount, $sumName) -ForegroundColor Green
+
+    $dir = Split-Path -Parent $summaryPath
+    $bakDir = Join-Path $dir $BACKUP_FOLDER_NAME
+    if (-not (Test-Path -LiteralPath $bakDir -PathType Container)) {
+        New-Item -ItemType Directory -Path $bakDir -Force | Out-Null
+    }
+    $stamp = Get-Date -Format "yyyyMMdd_HHmmss"
+
+    # Slabsi kanonicky (pokud existuje) schovej do Zalohy
+    if (Test-Path -LiteralPath $summaryPath -PathType Leaf) {
+        $weakName = ("{0}_slabsi_{1}.xlsx" -f ([System.IO.Path]::GetFileNameWithoutExtension($sumName)), $stamp)
+        $weakPath = Join-Path $bakDir $weakName
+        try {
+            Close-WorkbookIfOpen $summaryPath | Out-Null
+            [System.IO.File]::Copy($summaryPath, $weakPath, $true)
+            Write-Host ("  Slabsi kanonicky schovan: Zalohy/{0}" -f $weakName)
+        } catch {
+            Write-Host ("  ! Nelze zalohovat slabi verzi: {0}" -f $_.Exception.Message) -ForegroundColor Red
+        }
+    }
+
+    try {
+        Close-WorkbookIfOpen $summaryPath | Out-Null
+        Close-WorkbookIfOpen $winner.Path | Out-Null
+        [System.IO.File]::Copy($winner.Path, $summaryPath, $true)
+        if (-not (Test-XlsxLooksValid $summaryPath)) {
+            throw "po povyseni neni kanonicky soubor platne xlsx"
+        }
+    } catch {
+        Write-Host ("  ! Povyseni konfliktni verze selhalo: {0}" -f $_.Exception.Message) -ForegroundColor Red
+        Write-Host ""
+        return $summaryPath
+    }
+
+    # Viteznou konfliktni kopii + ostatni conflict soubory uklid do Zalohy (ne mazat natvrdo)
+    foreach ($c in $candidates) {
+        if ($c.IsMain) { continue }
+        if (-not (Test-Path -LiteralPath $c.Path -PathType Leaf)) { continue }
+        $safe = ($c.Name -replace '[^\w\.\-]+', '_')
+        $dest = Join-Path $bakDir ("oneDrive_konflikt_{0}_{1}" -f $stamp, $safe)
+        try {
+            Close-WorkbookIfOpen $c.Path | Out-Null
+            Move-Item -LiteralPath $c.Path -Destination $dest -Force -ErrorAction Stop
+            Write-Host ("  Presunuto do Zalohy: {0}" -f ([System.IO.Path]::GetFileName($dest)))
+        } catch {
+            Write-Host ("  ! Nelze presunout {0}: {1}" -f $c.Name, $_.Exception.Message) -ForegroundColor Yellow
+        }
+    }
+    Write-Host ""
+    return $summaryPath
 }
 
 function Get-CellXml([string]$ref, [string]$value, [int]$style) {
@@ -968,7 +1127,7 @@ function Resolve-Layout([string]$folderPath) {
 # ---- main ----
 $script:MergeLock = $null
 try {
-    Write-Host "sloucit_mereni.ps1 verze 2026-08-11r"
+    Write-Host "sloucit_mereni.ps1 verze 2026-08-11s"
     if (-not (Test-Path -LiteralPath $Folder)) {
         Write-Host "Slozka neexistuje:"
         Write-Host "  $Folder"
@@ -1042,29 +1201,7 @@ try {
 
     $script:MergeLock = Acquire-MergeLock $outPath
     Remove-OrphanMergeJunk $outPath
-
-    # OneDrive conflict kopie souhrnu (…-PC.xlsx / …-kopie.xlsx) — nebrat, jen varovat
-    $sumDir = Split-Path -Parent $outPath
-    $sumLeaf = [System.IO.Path]::GetFileNameWithoutExtension($outPath)
-    if ($sumDir -and (Test-Path -LiteralPath $sumDir -PathType Container)) {
-        $conflicts = @(Get-ChildItem -LiteralPath $sumDir -File -Filter "*.xlsx" -ErrorAction SilentlyContinue |
-            Where-Object {
-                $_.Name -ne ([System.IO.Path]::GetFileName($outPath)) -and
-                $_.Name -notlike '~$*' -and
-                $_.Name -notlike '.sloucit_tmp_*' -and
-                -not (Test-IsDailyMd1Name $_.Name) -and
-                ($_.BaseName -like ($sumLeaf + "*") -or $_.Name -match 'conflict|kopie|copy|-PC')
-            })
-        if ($conflicts.Count -gt 0) {
-            Write-Host ""
-            Write-Host "POZOR: vedle souhrnu jsou navic xlsx (casto OneDrive conflict / stare .bak):" -ForegroundColor Yellow
-            foreach ($c in $conflicts) {
-                Write-Host ("  - {0}" -f $c.Name) -ForegroundColor Yellow
-            }
-            Write-Host "  Spravny souhrn je jen: Popis_mereni_MD1.xlsx — ostatni neotvirej / smaz po kontrole." -ForegroundColor Yellow
-            Write-Host ""
-        }
-    }
+    [void](Resolve-OneDriveSummaryConflicts $outPath)
 
     if ($files.Count -eq 0) {
         Write-Host ""

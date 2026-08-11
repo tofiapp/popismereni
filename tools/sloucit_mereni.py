@@ -428,6 +428,150 @@ def remove_orphan_merge_junk(summary_path: Path) -> None:
         print(f"Uklizeno dočasných/matoucích souborů: {n}")
 
 
+_CONFLICT_NAME_RE = re.compile(
+    r"(conflict|konflikt|kopie|copy|-PC|conflicted)", re.IGNORECASE
+)
+
+
+def useful_row_count(path: Path) -> int:
+    """Počet řádků bez razítka / prázdných — pro výběr správné OneDrive verze."""
+    try:
+        if not xlsx_looks_valid(path):
+            return -1
+        rows = read_xlsx(path)
+        n = 0
+        for r in rows:
+            if r.role in (Role.BLANK, Role.UPDATED):
+                continue
+            if is_update_text(r.a):
+                continue
+            n += 1
+        return n
+    except OSError:
+        return -1
+
+
+def summary_conflict_files(summary_path: Path) -> List[Path]:
+    parent = summary_path.parent
+    if not parent.is_dir():
+        return []
+    leaf = summary_path.stem
+    out: List[Path] = []
+    for p in parent.iterdir():
+        if not p.is_file() or p.suffix.lower() != ".xlsx":
+            continue
+        if p.name == summary_path.name:
+            continue
+        if p.name.startswith("~$") or p.name.startswith(".sloucit_tmp_"):
+            continue
+        if p.name.endswith(".xlsx.bak"):
+            continue
+        if DATE_NAME_RE.match(p.name):
+            continue
+        if p.stem.startswith(leaf) or _CONFLICT_NAME_RE.search(p.name):
+            out.append(p)
+    return out
+
+
+def resolve_onedrive_summary_conflicts(summary_path: Path) -> Path:
+    """
+    OneDrive často nechá starší verzi pod kanonickým jménem a správnou
+    (lokální / právě sloučenou) jako konfliktní / „nesloučenou“ kopii.
+    Bere verzi s více užitečnými řádky.
+    """
+    conflicts = summary_conflict_files(summary_path)
+    if not conflicts:
+        return summary_path
+
+    candidates: List[Tuple[Path, str, bool, int, int, float]] = []
+    # (path, name, is_main, row_count, size, mtime)
+    if summary_path.is_file():
+        st = summary_path.stat()
+        candidates.append(
+            (
+                summary_path,
+                summary_path.name,
+                True,
+                useful_row_count(summary_path),
+                st.st_size,
+                st.st_mtime,
+            )
+        )
+    for c in conflicts:
+        st = c.stat()
+        candidates.append(
+            (
+                c,
+                c.name,
+                False,
+                useful_row_count(c),
+                st.st_size,
+                st.st_mtime,
+            )
+        )
+
+    print()
+    print("OneDrive konflikt — porovnávám verze souhrnu (víc řádků = lepší):")
+    for path, name, is_main, rows, size, mtime in candidates:
+        tag = "kanonický" if is_main else "konflikt/kopie"
+        ts = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M")
+        print(f"  - {name}  [{tag}]  řádků={rows}  {size} B  {ts}")
+
+    # Sort: more rows, larger size, newer mtime, prefer main on full tie
+    candidates.sort(
+        key=lambda t: (t[3], t[4], t[5], 1 if t[2] else 0),
+        reverse=True,
+    )
+    winner = candidates[0]
+    w_path, w_name, w_main, w_rows, _, _ = winner
+
+    if w_main:
+        print(
+            f"  Beru kanonický souhrn ({w_rows} řádků). "
+            "Ostatní kopie nechávám — po kontrole smaž."
+        )
+        print()
+        return summary_path
+
+    print(
+        f"  Správná je konfliktní/nesloučená verze: {w_name} "
+        f"({w_rows} řádků) — povyšuji na {summary_path.name}"
+    )
+    bak_dir = summary_path.parent / BACKUP_FOLDER_NAME
+    bak_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    if summary_path.is_file():
+        weak = bak_dir / f"{summary_path.stem}_slabsi_{stamp}.xlsx"
+        try:
+            shutil.copy2(summary_path, weak)
+            print(f"  Slabší kanonický schován: Zalohy/{weak.name}")
+        except OSError as exc:
+            print(f"  ! Nelze zálohovat slabší verzi: {exc}")
+
+    try:
+        shutil.copy2(w_path, summary_path)
+        if not xlsx_looks_valid(summary_path):
+            raise OSError("po povýšení není kanonický soubor platné xlsx")
+    except OSError as exc:
+        print(f"  ! Povýšení konfliktní verze selhalo: {exc}")
+        print()
+        return summary_path
+
+    for path, name, is_main, *_rest in candidates:
+        if is_main or not path.is_file():
+            continue
+        safe = re.sub(r"[^\w.\-]+", "_", name)
+        dest = bak_dir / f"oneDrive_konflikt_{stamp}_{safe}"
+        try:
+            path.replace(dest)
+            print(f"  Přesunuto do Zalohy: {dest.name}")
+        except OSError as exc:
+            print(f"  ! Nelze přesunout {name}: {exc}")
+    print()
+    return summary_path
+
+
 def cell_xml(ref: str, value: str, style: int) -> str:
     s_attr = f' s="{style}"'
     if not value:
@@ -843,6 +987,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     try:
         lock.acquire()
         remove_orphan_merge_junk(out_path)
+        resolve_onedrive_summary_conflicts(out_path)
         return _main_locked(source, out_path, list_md1_files(source))
     except RuntimeError as exc:
         print(f"CHYBA: {exc}", file=sys.stderr)

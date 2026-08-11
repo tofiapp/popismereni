@@ -22,7 +22,7 @@ Popis_měření_MD1/
 | `Dny/*.xlsx` | ještě nesloučené denní z appky |
 | `Dny/sloučeno/*.xlsx` | už zpracované denní |
 | `*.xlsx.bak`, `.sloucit_tmp_*.xlsx` | odpad — skript je maže |
-| `…-PC.xlsx` / `…-kopie.xlsx` | OneDrive conflict — smazat po kontrole |
+| `…-PC.xlsx` / `…-kopie.xlsx` | OneDrive conflict — skript **porovná řádky** a povýší bohatší verzi (často je „konfliktní“ ta správná) |
 
 Složky a jména se **nemění**. Celou `Popis_měření_MD1/` dejte na **sdílený OneDrive / SharePoint**.
 
@@ -52,8 +52,10 @@ Jen **dva** skripty: `SloucitMereni.bat` + `sloucit_mereni.ps1`.
 - Souhrn nesmí mít mezitím otevřený někdo jiný v Excelu
 - OneDrive: **Keep on this device**
 - Po sloučení počkej na sync
-- Banner musí být `verze 2026-08-11r`
+- Banner musí být `verze 2026-08-11s`
 
-Verze: **2026-08-11r**
+Verze: **2026-08-11s**
+
+Při OneDrive konfliktu (kanonický souhrn + `…-PC` / `…-kopie`) skript **nebere slepě** `Popis_měření_MD1.xlsx` — spočítá užitečné řádky a **povýší bohatší verzi** (slabší a konfliktní kopie jdou do `Zalohy/`).
 
 Při chybě zápisu skript **nesmaže** souhrn (dřív OneDrive vrátil starou verzi z cloudu). Neplatný zápis se vrátí ze `Zalohy/` z tohoto běhu.
