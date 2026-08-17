@@ -1,0 +1,4 @@
+Vzorec do C2 na listu Přehled (formát Obecný).
+Po obnovení Dotaz1 / TabNove se přepočítá sám.
+
+=LET(souboryDotaz;KDYŽCHYBA(JEDINEČNÉ(FILTR(TabNove[ZdrojovySoubor];TabNove[ZdrojovySoubor]<>""));"");nDotaz;KDYŽCHYBA(ŘÁDKY(JEDINEČNÉ(FILTR(TabNove[ZdrojovySoubor];TabNove[ZdrojovySoubor]<>"")));0);znacky;KDYŽCHYBA(FILTR(E4:E50000;E4:E50000<>"");"");souboryPrehled;KDYŽCHYBA(JEDINEČNÉ(TEXTPŘED(znacky;"|"));"");ceka;KDYŽ(nDotaz=0;0;KDYŽCHYBA(SUMA(--JE.CHYBA(SHODA(souboryDotaz;souboryPrehled;0)));nDotaz));KDYŽ(nDotaz=0;"⚠ Žádná data v dotazu";KDYŽ(ceka=0;"✔ Aktuální";"⬤ Čeká "&ceka&KDYŽ(ceka=1;" nový soubor";KDYŽ(ceka<5;" nové soubory";" nových souborů")))))
