@@ -1,9 +1,10 @@
-C2 se nastaví samo skriptem Aktualizovat — nic do AA ručně nepisujte.
+C2 zapisuje skript Aktualizovat. Používá jen KDYŽ a POČET2.
 
-1. Automatizér → skript Aktualizovat → nahradit celý kód souborem
-   docs/office-scripts/aktualizovat.ts → Uložit
-2. Jednou kliknout 2. Aktualizovat
-3. Skript zapíše vzorce do AA a do C2
+1. Nahradit skript aktualizovat.ts, uložit
+2. Jednou 2. Aktualizovat
 
-Pak: nový soubor v Dotaz1 → C2 „Klikněte Aktualizovat“.
-Po dalším Aktualizovat → C2 „Aktuální“.
+AB1 = počet řádků v Dotaz1 v okamžiku aktualizace.
+C2 = KDYŽ(POČET2(Dotaz1!A2:A5000)>AB1; "Klikněte Aktualizovat"; "Aktuální")
+
+Nový soubor v Dotaz1 zvýší POČET2 → C2 se přepne samo.
+Po Aktualizovat se AB1 srovná → zase Aktuální.
