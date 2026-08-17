@@ -196,6 +196,8 @@ function main(workbook: ExcelScript.Workbook) {
   g.setValue(stavText);
   g.getFormat().getFont().setColor("#FFFFFF");
 
+  zapisStavVzorce(cil, t.getWorksheet().getName());
+
   cil.activate();
   cil.setPosition(0);
   cil.getFreezePanes().freezeRows(3);
@@ -357,6 +359,24 @@ function formatDatum(iso: string): string {
   const c = iso.split("-");
   if (c.length === 3) return `${Number(c[2])}.${Number(c[1])}.${c[0]}`;
   return iso;
+}
+
+function zapisStavVzorce(list: ExcelScript.Worksheet, listDat: string): void {
+  const odkaz = /[\s'()]/.test(listDat) ? "'" + listDat.replace(/'/g, "''") + "'" : listDat;
+  const vzorce: string[][] = [];
+  for (let r = 2; r <= 500; r++) {
+    const a = odkaz + "!A" + r;
+    vzorce.push([
+      "=KDYŽ(" + a + "=\"\";999;POČETKDYŽ($E$4:$E$50000;" + a + "&\"|*\"))"
+    ]);
+  }
+  const aa = list.getRangeByIndexes(1, 26, 499, 1);
+  aa.setFormulasLocal(vzorce);
+  aa.getFormat().getFont().setColor("#FFFFFF");
+  list.getRangeByIndexes(0, 26, 1, 1).getFormat().setColumnWidth(0);
+
+  const c2 = list.getRangeByIndexes(1, 2, 1, 1);
+  c2.setFormulaLocal("=KDYŽ(POČETKDYŽ(AA2:AA500;0)>0;\"Klikněte Aktualizovat\";\"Aktuální\")");
 }
 
 function txt(v: string | number | boolean): string {
