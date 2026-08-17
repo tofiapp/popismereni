@@ -1,17 +1,24 @@
-Stav u tlačítka Kontrola (C2) po obnovení Dotaz1.
+C2 na Přehledu — automaticky po obnovení Dotaz1 i po tlačítku Aktualizovat.
 
-Nepoužívat vzorec s JEDINEČNÉ / LET / počet řádků.
-Dotaz StavKontroly porovná soubory v TabNove s tabulkou TabArchiv.
+Pomocný sloupec musí být na Přehledu ve sloupci AA (ne na Dotaz1, ne v A–Z).
+Skript Aktualizovat maže jen A4:E, AA nechá být. Obnova Power Query list Dotaz1
+přepíše, proto se tam vzorce nedávají.
 
-1. Data → Načíst data → Z jiných zdrojů → Prázdný dotaz
-2. Rozšířený editor → vložit stav-kontroly.m
-3. Když hlásí, že nezná TabNove: vlevo v editoru je název vašeho dotazu
-   (často Dotaz1) — v první řádce `Nove = TabNove` ten název dosaďte
-4. Název dotazu: StavKontroly
-5. Zavřít a načíst do… → Existující list → Přehled, buňka X1
-6. C2 smazat, napsat =X2  (formát Obecný)
-7. Sloupec X: šířka 0
-8. Vlastnosti dotazu StavKontroly: aktualizovat při otevření, bez na pozadí
+Jednou:
 
-Když vyskočí Firewall: Možnosti dotazu → Ochrana osobních údajů →
-Vždycky ignorovat úroveň ochrany osobních údajů.
+1. Přehled, buňka AA2:
+
+=KDYŽ(Dotaz1!A2="";999;POČETKDYŽ($E$4:$E$50000;Dotaz1!A2&"|*"))
+
+2. Stáhnout dolů po AA500.
+
+3. C2 (formát Obecný):
+
+=KDYŽ(POČETKDYŽ(AA2:AA500;0)>0;"Klikněte Aktualizovat";"Aktuální")
+
+4. Sloupec AA šířka 0.
+
+5. C2 nesmí odkazovat na list Dotaz1 (2).
+
+Dotaz1 přibude soubor → v AA je u něj 0 → C2 Klikněte Aktualizovat.
+Po 2. Aktualizovat se do E zapíše značka → AA není 0 → C2 Aktuální.
