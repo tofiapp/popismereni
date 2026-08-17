@@ -239,11 +239,12 @@ Postup běhu:
 1. Pauza 20 s, když N2 říká, že právě běželo
 2. Najít tabulku **TabNove** (ne TabArchiv — proto se nebere `getTables()[0]`)
 3. Načíst Archiv; když je prázdný, jednorázově naplnit z Přehledu (sl. E)
-4. Přidat jen soubory, které Archiv ještě nezná
+4. Přidat jen soubory, které Archiv ještě nezná (všechny jejich řádky)
 5. Doplnit datum, seřadit
 6. **Zapsat Archiv** (až sem jsou data v bezpečí i při chybě kreslení)
 7. Smazat Přehled od řádku 4 a vykreslit z Archivu
-8. Razítko + stav
+8. Znovu načíst Dotaz1 — stejné pravidlo: jen neznámé soubory, nic v Archivu se nepřepisuje
+9. Razítko + stav
 
 Vložení: Automatizér → otevřít stávající skript Aktualizovat → nahradit celý
 obsah souborem `aktualizovat.ts` → Uložit. Tlačítko v listu přemapovat nemusíte,
@@ -266,19 +267,17 @@ Kategorie nálezů:
   Stačí Aktualizovat — Archiv se nemaže.
 - **Řádky bez značky souboru** → jen když Archiv ještě není a čte se starý Přehled
 
-### Volitelný vzorec v C2
+### Stav v C2 — kdy zmáčknout Aktualizovat
 
-Pokud skripty píší stav do G2 (jako výše), C2 může obsahovat vzorec, který
-při otevření souboru pozná zastaralý údaj:
+C2 hlásí **Klikněte Aktualizovat**, když je v Dotaz1 soubor, který ještě není
+ve sloupci E na Přehledu. Po tlačítku 2. Aktualizovat zase **Aktuální**.
 
-```
-=KDYŽ(F2="";"Neověřeno - klikněte na Kontrolu stavu";KDYŽ(DNES()-F2>=1;"Stav z minula - klikněte na Kontrolu stavu";G2))
-```
+Vzorce jsou jen na Přehledu ve sloupci **AA** (mimo A–Z, skript je nemaže).
+Na list Dotaz1 se nedávají — Power Query ho při obnovení přepíše.
+List Dotaz1 (2) se k C2 nepřipojuje.
 
-C2 musí mít formát **Obecný**, ne Text.
-
-**Přínos je malý** — jen odliší dnešní stav od staršího. Pokud to nepotřebujete,
-nechte skripty psát barevný text přímo do C2 a vzorec vynechte (viz sekce 8).
+Postup: [`formulas/C2-stav.txt`](formulas/C2-stav.txt).
+Skript `aktualizovat.ts` maže jen `A4:E`, ne celý list.
 
 ---
 
@@ -371,9 +370,16 @@ Nemá smysl to zkoušet znovu:
 **Běžné použití:**
 
 1. Otevřít soubor (data se natáhnou samy, pokud je zapnuto
-   *Aktualizovat data při otevírání souboru* ve vlastnostech dotazu)
-2. Kliknout **2. Aktualizovat**
-3. Uložit (nebo mít zapnuté Automatické ukládání)
+   *Aktualizovat data při otevírání souboru* ve vlastnostech dotazu).
+   U dotazu **vypnout** *Povolit obnovení na pozadí* — Excel počká na načtení
+   a uživatel nemůže kliknout do rozpracovaného souboru.
+2. Když je Dotaz1 prázdný, A1 hlásí načítání a Aktualizovat se nespustí.
+3. Kliknout **2. Aktualizovat**
+4. Uložit (nebo mít zapnuté Automatické ukládání)
+
+**Když soubor zůstal v Dotaz1 a není v Přehledu ani Archivu:** data se nenačetla
+včas. Počkat až Dotaz1 drží řádky, znovu **2. Aktualizovat**. Archiv se
+nepřepisuje — jen se doplní soubory, které tam ještě nejsou.
 
 **Když tlačítko nereaguje:** Automatizér → skript → Spustit.
 

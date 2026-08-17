@@ -45,8 +45,22 @@ function main(workbook: ExcelScript.Workbook) {
     return;
   }
 
-  const rNove = t.getRangeBetweenHeaderAndTotal();
-  const dNove = rNove ? rNove.getValues() : [];
+  if (cil) zapisNacitani(cil, t.getWorksheet().getName());
+
+  let dNove = nactiTeloTabulky(t);
+  let nDotaz = pocetNepradnych(dNove, idx[0]);
+  if (nDotaz === 0) {
+    if (cil) hlaska(cil, "Počkejte na načtení dat a klikněte znovu", "#C00000");
+    return;
+  }
+  const dNoveHned = nactiTeloTabulky(t);
+  const nHned = pocetNepradnych(dNoveHned, idx[0]);
+  if (nHned !== nDotaz) {
+    if (cil) hlaska(cil, "Počkejte na načtení dat a klikněte znovu", "#C00000");
+    return;
+  }
+  dNove = dNoveHned;
+  nDotaz = nHned;
 
   // --- Archiv = zdroj pravdy; prazdny Archiv = jednorazova migrace z Prehledu ---
   let zaznamy = nactiArchiv(workbook, SLOUPCE);
@@ -65,20 +79,110 @@ function main(workbook: ExcelScript.Workbook) {
     }
   }
 
-  // --- pridat jen soubory, ktere Archiv jeste nezna ---
-  let pridano = 0;
-  for (const r of dNove) {
-    const radek = idx.map(i => txt(r[i]));
-    if (radek[0] === "") continue;
-    if (znamSoubory.has(radek[0])) continue;
-    zaznamy.push(radek);
-    znamSoubory.add(radek[0]);
-    pridano++;
-  }
+  // --- pridat jen soubory, ktere Archiv jeste nezna (vsechny jejich radky) ---
+  let pridano = pridejNoveSoubory(zaznamy, znamSoubory, dNove, idx);
 
   if (zaznamy.length === 0) { if (cil) hlaska(cil, "⚠ Žádná data", "#C00000"); return; }
 
-  // --- doplnit chybejici datum (z jineho zaznamu nebo z nazvu souboru) ---
+  doplnDatum(zaznamy);
+  seradZaznamy(zaznamy);
+
+  // --- Archiv zapsat driv nez Prehled, at se pri chybe kresleni neztrati ---
+  zapisArchiv(workbook, SLOUPCE, zaznamy);
+
+  if (!cil) cil = workbook.addWorksheet("Přehled");
+  vykresliPrehled(cil, zaznamy);
+
+  // Druhé čtení: jen soubory, které Archiv pořád nezná. Už uložené se nepřepisují.
+  // Když Dotaz1 mezitím zmenšil (obnova ještě běží), neslučovat — AB1 zůstane z 1. snímku.
+  const dPozde = nactiTeloTabulky(t);
+  const nPozde = pocetNepradnych(dPozde, idx[0]);
+  if (nPozde > 0 && nPozde >= nDotaz) {
+    const jeste = pridejNoveSoubory(zaznamy, znamSoubory, dPozde, idx);
+    if (jeste > 0) {
+      pridano += jeste;
+      doplnDatum(zaznamy);
+      seradZaznamy(zaznamy);
+      zapisArchiv(workbook, SLOUPCE, zaznamy);
+      vykresliPrehled(cil, zaznamy);
+    }
+    dNove = dPozde;
+  }
+
+  const ted = new Date();
+  const razitko = "Aktualizováno " + dvojcifry(ted.getDate()) + "." +
+    dvojcifry(ted.getMonth() + 1) + ". v " +
+    dvojcifry(ted.getHours()) + ":" + dvojcifry(ted.getMinutes()) +
+    "   (nově: " + pridano + ")";
+
+  hlaska(cil, razitko, "#808080");
+  cil.getRangeByIndexes(1, SL_CAS, 1, 1).setValue(ted.toISOString());
+  cil.getRangeByIndexes(1, SL_CAS, 1, 1).getFormat().getFont().setColor("#FFFFFF");
+
+  zapisStavVzorce(cil, t.getWorksheet().getName(), dNove, idx[0]);
+
+  cil.activate();
+  cil.setPosition(0);
+  cil.getFreezePanes().freezeRows(3);
+  console.log("Novych souboru: " + pridano + ", celkem radku v Archivu: " + zaznamy.length);
+}
+
+function najdiTabulkuDat(workbook: ExcelScript.Workbook, sloupce: string[]): ExcelScript.Table | null {
+  const tabulky = workbook.getTables();
+  let kandidat: ExcelScript.Table | null = null;
+  for (let i = 0; i < tabulky.length; i++) {
+    const tab = tabulky[i];
+    const nazev = tab.getName();
+    if (nazev === "TabArchiv") continue;
+    if (nazev === "TabNove") return tab;
+    const list = tab.getWorksheet().getName();
+    if (list === "Dotaz1") {
+      kandidat = tab;
+      continue;
+    }
+    if (kandidat !== null) continue;
+    const hlavicky = tab.getHeaderRowRange().getValues()[0].map(v => String(v));
+    if (sloupce.every(s => hlavicky.indexOf(s) >= 0)) kandidat = tab;
+  }
+  return kandidat;
+}
+
+function nactiTeloTabulky(t: ExcelScript.Table): (string | number | boolean)[][] {
+  const r = t.getRangeBetweenHeaderAndTotal();
+  return r ? r.getValues() : [];
+}
+
+function pocetNepradnych(data: (string | number | boolean)[][], idxSoubor: number): number {
+  let n = 0;
+  for (let i = 0; i < data.length; i++) {
+    if (String(data[i][idxSoubor] ?? "").trim() !== "") n++;
+  }
+  return n;
+}
+
+function pridejNoveSoubory(
+  zaznamy: string[][],
+  znamSoubory: Set<string>,
+  data: (string | number | boolean)[][],
+  idx: number[],
+): number {
+  const uzVArchivu = new Set<string>();
+  znamSoubory.forEach(s => { uzVArchivu.add(s); });
+  let pridano = 0;
+  for (let i = 0; i < data.length; i++) {
+    const radek = idx.map(j => txt(data[i][j]));
+    if (radek[0] === "") continue;
+    if (uzVArchivu.has(radek[0])) continue;
+    zaznamy.push(radek);
+    if (!znamSoubory.has(radek[0])) {
+      znamSoubory.add(radek[0]);
+      pridano++;
+    }
+  }
+  return pridano;
+}
+
+function doplnDatum(zaznamy: string[][]): void {
   const datumSouboru = new Map<string, string>();
   for (const r of zaznamy) if (r[1] !== "" && r[0] !== "") datumSouboru.set(r[0], r[1]);
   for (const r of zaznamy) {
@@ -88,8 +192,9 @@ function main(workbook: ExcelScript.Workbook) {
       else if (r[0].length >= 6) r[1] = "20" + r[0].substring(0, 2) + "-" + r[0].substring(2, 4) + "-" + r[0].substring(4, 6);
     }
   }
+}
 
-  // --- razeni: datum, poradi souboru, puvodni poradi v souboru ---
+function seradZaznamy(zaznamy: string[][]): void {
   const poradiVstupu = new Map<string[], number>();
   zaznamy.forEach((r, i) => poradiVstupu.set(r, i));
   zaznamy.sort((x, y) => {
@@ -99,12 +204,10 @@ function main(workbook: ExcelScript.Workbook) {
     if (px !== py) return px - py;
     return (poradiVstupu.get(x) ?? 0) - (poradiVstupu.get(y) ?? 0);
   });
+}
 
-  // --- Archiv zapsat driv nez Prehled, at se pri chybe kresleni neztrati ---
-  zapisArchiv(workbook, SLOUPCE, zaznamy);
-
-  if (!cil) cil = workbook.addWorksheet("Přehled");
-  else cil.getRange("A4:Z100000").clear(ExcelScript.ClearApplyTo.all);
+function vykresliPrehled(cil: ExcelScript.Worksheet, zaznamy: string[][]): void {
+  cil.getRange("A4:E100000").clear(ExcelScript.ClearApplyTo.all);
 
   const START = 3;
   const SIRKA = 5;
@@ -137,8 +240,10 @@ function main(workbook: ExcelScript.Workbook) {
     out.push([r[4], r[5], r[6], r[7], r[0] + "|" + r[2]]);
   }
 
+  if (out.length === 0) return;
+
   const rng = cil.getRangeByIndexes(START, 0, out.length, SIRKA);
-  rng.setNumberFormatLocal("@");   // DULEZITE: jinak Excel udela z "19.X" datum
+  rng.setNumberFormatLocal("@");
   rng.setValues(out);
 
   const viditelne = cil.getRangeByIndexes(START, 0, out.length, 4);
@@ -157,69 +262,6 @@ function main(workbook: ExcelScript.Workbook) {
   cil.getRangeByIndexes(START, 3, out.length, 1).getFormat().setColumnWidth(160);
   cil.getRangeByIndexes(START, 4, out.length, 1).getFormat().setColumnWidth(0);
   cil.getRangeByIndexes(START, 0, out.length, SIRKA).getFormat().setRowHeight(22);
-
-  const ted = new Date();
-  const cas = " (" + dvojcifry(ted.getHours()) + ":" + dvojcifry(ted.getMinutes()) + ")";
-  const razitko = "Aktualizováno " + dvojcifry(ted.getDate()) + "." +
-    dvojcifry(ted.getMonth() + 1) + ". v " +
-    dvojcifry(ted.getHours()) + ":" + dvojcifry(ted.getMinutes()) +
-    "   (nově: " + pridano + ")";
-
-  hlaska(cil, razitko, "#808080");
-  cil.getRangeByIndexes(1, SL_CAS, 1, 1).setValue(ted.toISOString());
-  cil.getRangeByIndexes(1, SL_CAS, 1, 1).getFormat().getFont().setColor("#FFFFFF");
-
-  // --- rovnou i vysledek kontroly (Archiv × dotaz) ---
-  const vDotazu = new Set<string>();
-  for (const r of dNove) {
-    const s = String(r[idx[0]] ?? "").trim();
-    if (s !== "") vDotazu.add(s);
-  }
-  const vArchivu = new Set<string>();
-  for (const r of zaznamy) if (r[0] !== "") vArchivu.add(r[0]);
-
-  let nezpracovano = 0;
-  vDotazu.forEach(s => { if (!vArchivu.has(s)) nezpracovano++; });
-
-  const stavText = nezpracovano === 0
-    ? "✔ Aktuální" + cas
-    : "⬤ Čeká " + nezpracovano +
-      (nezpracovano === 1 ? " nový soubor" : nezpracovano < 5 ? " nové soubory" : " nových souborů") + cas;
-
-  const f = cil.getRangeByIndexes(1, 5, 1, 1);
-  f.setNumberFormatLocal("0,00000");
-  f.setValue(25569 + (ted.getTime() - ted.getTimezoneOffset() * 60000) / 86400000);
-  f.getFormat().getFont().setColor("#FFFFFF");
-
-  const g = cil.getRangeByIndexes(1, 6, 1, 1);
-  g.setNumberFormatLocal("@");
-  g.setValue(stavText);
-  g.getFormat().getFont().setColor("#FFFFFF");
-
-  cil.activate();
-  cil.setPosition(0);
-  cil.getFreezePanes().freezeRows(3);
-  console.log("Novych souboru: " + pridano + ", celkem radku v Archivu: " + zaznamy.length);
-}
-
-function najdiTabulkuDat(workbook: ExcelScript.Workbook, sloupce: string[]): ExcelScript.Table | null {
-  const tabulky = workbook.getTables();
-  let kandidat: ExcelScript.Table | null = null;
-  for (let i = 0; i < tabulky.length; i++) {
-    const tab = tabulky[i];
-    const nazev = tab.getName();
-    if (nazev === "TabArchiv") continue;
-    if (nazev === "TabNove") return tab;
-    const list = tab.getWorksheet().getName();
-    if (list === "Dotaz1") {
-      kandidat = tab;
-      continue;
-    }
-    if (kandidat !== null) continue;
-    const hlavicky = tab.getHeaderRowRange().getValues()[0].map(v => String(v));
-    if (sloupce.every(s => hlavicky.indexOf(s) >= 0)) kandidat = tab;
-  }
-  return kandidat;
 }
 
 function nactiArchiv(workbook: ExcelScript.Workbook, sloupce: string[]): string[][] {
@@ -317,16 +359,18 @@ function zapisArchiv(workbook: ExcelScript.Workbook, sloupce: string[], zaznamy:
 }
 
 function hlaska(list: ExcelScript.Worksheet, text: string, barva: string) {
-  const r = list.getRangeByIndexes(1, 10, 1, 3); // K2:M2
+  const r = list.getRange("F2:H2");
   r.clear(ExcelScript.ClearApplyTo.contents);
   r.setNumberFormatLocal("@");
-  list.getRangeByIndexes(1, 10, 1, 1).setValue(text);
+  list.getRange("F2").setValue(text);
   r.getFormat().getFont().setName("Calibri");
   r.getFormat().getFont().setSize(11);
   r.getFormat().getFont().setBold(barva === "#C00000");
   r.getFormat().getFont().setItalic(barva !== "#C00000");
   r.getFormat().getFont().setColor(barva);
   r.getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.left);
+  r.getFormat().setVerticalAlignment(ExcelScript.VerticalAlignment.center);
+  list.getRange("F:F").getFormat().setColumnWidth(220);
 }
 
 function obarvi(list: ExcelScript.Worksheet, radek: number, barva: string) {
@@ -357,6 +401,60 @@ function formatDatum(iso: string): string {
   const c = iso.split("-");
   if (c.length === 3) return `${Number(c[2])}.${Number(c[1])}.${c[0]}`;
   return iso;
+}
+
+function zapisNacitani(list: ExcelScript.Worksheet, listDat: string): void {
+  const odkaz = /[\s'()]/.test(listDat) ? "'" + listDat.replace(/'/g, "''") + "'" : listDat;
+  const a1 = list.getRange("A1");
+  a1.setFormulaLocal(
+    "=KDYŽ(POČET2(" + odkaz + "!A2:A5000)=0;\"Načítají se data — neklikejte na Aktualizovat\";\"\")"
+  );
+  a1.getFormat().getFont().setName("Calibri");
+  a1.getFormat().getFont().setSize(18);
+  a1.getFormat().getFont().setBold(true);
+  a1.getFormat().getFont().setColor("#C00000");
+}
+
+function zapisStavVzorce(
+  list: ExcelScript.Worksheet,
+  listDat: string,
+  dNove: (string | number | boolean)[][],
+  idxSoubor: number,
+): void {
+  let n = 0;
+  for (const r of dNove) {
+    if (String(r[idxSoubor] ?? "").trim() !== "") n++;
+  }
+
+  const ab = list.getRange("AB1");
+  ab.setValue(n);
+  ab.getFormat().getFont().setColor("#FFFFFF");
+  list.getRange("AB:AB").getFormat().setColumnWidth(0);
+
+  const odkaz = /[\s'()]/.test(listDat) ? "'" + listDat.replace(/'/g, "''") + "'" : listDat;
+  const c2 = list.getRange("C2");
+  c2.setFormulaLocal(
+    "=KDYŽ(POČET2(" + odkaz + "!A2:A5000)>AB1;\"Klikněte Aktualizovat\";\"Aktuální\")"
+  );
+  c2.getFormat().getFont().setName("Calibri");
+  c2.getFormat().getFont().setSize(18);
+  c2.getFormat().getFont().setBold(true);
+  c2.getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.left);
+  c2.getFormat().setVerticalAlignment(ExcelScript.VerticalAlignment.center);
+  list.getRange("C:C").getFormat().setColumnWidth(280);
+
+  const stare = c2.getConditionalFormats();
+  for (let i = stare.length - 1; i >= 0; i--) stare[i].delete();
+
+  const zelena = c2.addConditionalFormat(ExcelScript.ConditionalFormatType.custom);
+  zelena.getCustom().getRule().setFormula("=C2=\"Aktuální\"");
+  zelena.getCustom().getFormat().getFont().setColor("#217346");
+  zelena.getCustom().getFormat().getFont().setBold(true);
+
+  const cervena = c2.addConditionalFormat(ExcelScript.ConditionalFormatType.custom);
+  cervena.getCustom().getRule().setFormula("=C2=\"Klikněte Aktualizovat\"");
+  cervena.getCustom().getFormat().getFont().setColor("#C00000");
+  cervena.getCustom().getFormat().getFont().setBold(true);
 }
 
 function txt(v: string | number | boolean): string {
