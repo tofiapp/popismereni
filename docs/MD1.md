@@ -369,9 +369,12 @@ Nemá smysl to zkoušet znovu:
 **Běžné použití:**
 
 1. Otevřít soubor (data se natáhnou samy, pokud je zapnuto
-   *Aktualizovat data při otevírání souboru* ve vlastnostech dotazu)
-2. Kliknout **2. Aktualizovat**
-3. Uložit (nebo mít zapnuté Automatické ukládání)
+   *Aktualizovat data při otevírání souboru* ve vlastnostech dotazu).
+   U dotazu **vypnout** *Povolit obnovení na pozadí* — Excel počká na načtení
+   a uživatel nemůže kliknout do rozpracovaného souboru.
+2. Když je Dotaz1 prázdný, A1 hlásí načítání a Aktualizovat se nespustí.
+3. Kliknout **2. Aktualizovat**
+4. Uložit (nebo mít zapnuté Automatické ukládání)
 
 **Když tlačítko nereaguje:** Automatizér → skript → Spustit.
 
