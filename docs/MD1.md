@@ -280,14 +280,9 @@ Porovná soubory v dotazu se značkami ve sloupci E na Přehledu.
 3. Vložit **krátký** vzorec, Enter
 4. Skripty do C2 **nesmí zapisovat** (stav píšou do G2)
 
-Nejdřív jen ověření, že C2 sleduje Dotaz1:
-
-```
-="Dotaz: "&POČET2(Dotaz1!A2:A9999)&" řádků"
-```
-
-Po obnovení Dotaz1 se číslo musí změnit. Až tohle funguje, „aktuální / čeká“ je v
-[`formulas/C2-stav.txt`](formulas/C2-stav.txt) přes pomocné buňky P2 a Q2.
+Nejdřív jen ověření, že C2 sleduje Dotaz1. **Nepsat název tabulky** — v C2
+smazat vše, napsat `=POČET2(`, přepnout na list Dotaz1, myší označit sloupec
+souborů, uzavřít `)`. Když `#NÁZEV?`, totéž s `COUNTA` místo `POČET2`.
 
 Tlačítko Kontrola dál slouží jen k detailu na listu Kontrola (různý počet
 řádků, archivované soubory). Běžný stav „aktuální / čeká N souborů“ už
