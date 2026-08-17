@@ -382,6 +382,27 @@ function zapisStavVzorce(
   c2.setFormulaLocal(
     "=KDYŽ(POČET2(" + odkaz + "!A2:A5000)>AB1;\"Klikněte Aktualizovat\";\"Aktuální\")"
   );
+  c2.getFormat().getFont().setName("Calibri");
+  c2.getFormat().getFont().setSize(18);
+  c2.getFormat().getFont().setBold(true);
+  c2.getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.left);
+  c2.getFormat().setVerticalAlignment(ExcelScript.VerticalAlignment.center);
+  list.getRange("C:C").getFormat().setColumnWidth(280);
+
+  const stare = c2.getConditionalFormats();
+  for (let i = stare.length - 1; i >= 0; i--) stare[i].delete();
+
+  const zelena = c2.addConditionalFormat(ExcelScript.ConditionalFormatType.custom);
+  zelena.getCustom().getRule().setFormula("=C2=\"Aktuální\"");
+  zelena.getCustom().getFormat().getFont().setColor("#217346");
+  zelena.getCustom().getFormat().getFont().setSize(18);
+  zelena.getCustom().getFormat().getFont().setBold(true);
+
+  const cervena = c2.addConditionalFormat(ExcelScript.ConditionalFormatType.custom);
+  cervena.getCustom().getRule().setFormula("=C2=\"Klikněte Aktualizovat\"");
+  cervena.getCustom().getFormat().getFont().setColor("#C00000");
+  cervena.getCustom().getFormat().getFont().setSize(18);
+  cervena.getCustom().getFormat().getFont().setBold(true);
 }
 
 function txt(v: string | number | boolean): string {
