@@ -1,18 +1,17 @@
-C2 na listu Přehled, formát Obecný.
+Stav u tlačítka Kontrola (C2) po obnovení Dotaz1.
 
-Nejdřív tento krátký vzorec (list Dotaz1, sloupec A = ZdrojovySoubor):
+Nepoužívat vzorec s JEDINEČNÉ / LET / počet řádků.
+Dotaz StavKontroly porovná soubory v TabNove s tabulkou TabArchiv.
 
-="Dotaz: "&POČET2(Dotaz1!A2:A9999)&" řádků"
+1. Data → Načíst data → Z jiných zdrojů → Prázdný dotaz
+2. Rozšířený editor → vložit stav-kontroly.m
+3. Když hlásí, že nezná TabNove: vlevo v editoru je název vašeho dotazu
+   (často Dotaz1) — v první řádce `Nove = TabNove` ten název dosaďte
+4. Název dotazu: StavKontroly
+5. Zavřít a načíst do… → Existující list → Přehled, buňka X1
+6. C2 smazat, napsat =X2  (formát Obecný)
+7. Sloupec X: šířka 0
+8. Vlastnosti dotazu StavKontroly: aktualizovat při otevření, bez na pozadí
 
-Když to ukáže číslo, obnovte Dotaz1 — číslo se musí změnit.
-
-Až tohle poběží, volitelně „čeká / aktuální“ přes pomocné buňky:
-
-P2:
-=JEDINEČNÉ(Dotaz1!A2:A9999)
-
-Q2 (zkopírovat dolů po sloupcí P):
-=KDYŽ(P2="";"";POČETKDYŽ($E$4:$E$50000;P2&"|*"))
-
-C2:
-=KDYŽ(POČET2(P2#)=0;"Žádná data v dotazu";KDYŽ(POČETKDYŽ(Q2:Q500;0)=0;"Aktuální";"Čeká "&POČETKDYŽ(Q2:Q500;0)&" nových souborů"))
+Když vyskočí Firewall: Možnosti dotazu → Ochrana osobních údajů →
+Vždycky ignorovat úroveň ochrany osobních údajů.

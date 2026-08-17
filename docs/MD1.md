@@ -268,25 +268,19 @@ Kategorie nálezů:
 
 ### Stav v C2 — aktualizuje se s Dotaz1
 
-Skript Kontrola **nejde** spustit sám, když se obnoví Power Query. Excel to neumí.
-Spojení je vzorec v **C2**: odkazuje na tabulku na listu Dotaz1, takže po každém
-obnovení dotazu (včetně obnovení při otevření souboru) se text u tlačítka
-přepočítá sám.
+Skript Kontrola se při obnovení dotazu nespustí. Stav u tlačítka počítá
+dotaz **StavKontroly** (`power-query/stav-kontroly.m`): soubory v TabNove,
+které ještě nejsou v TabArchiv. Výsledek je v X2, C2 ukazuje `=X2`.
 
-Porovná soubory v dotazu se značkami ve sloupci E na Přehledu.
+1. Data → Načíst data → Z jiných zdrojů → Prázdný dotaz
+2. Rozšířený editor → vložit [`power-query/stav-kontroly.m`](power-query/stav-kontroly.m)
+3. Když nezná `TabNove`, dosaďte v první řádce název vašeho dotazu z levého panelu
+4. Dotaz pojmenovat **StavKontroly** → Zavřít a načíst do Přehled, buňka **X1**
+5. C2 (formát Obecný): `=X2` — pryč s počtem řádků
+6. Sloupec X šířka 0. Vlastnosti: aktualizovat při otevření, ne na pozadí
 
-1. Kliknout na **C2** (vedle tlačítka Kontrola)
-2. Formát buňky: **Obecný**, ne Text
-3. Vložit **krátký** vzorec, Enter
-4. Skripty do C2 **nesmí zapisovat** (stav píšou do G2)
-
-Nejdřív jen ověření, že C2 sleduje Dotaz1. **Nepsat název tabulky** — v C2
-smazat vše, napsat `=POČET2(`, přepnout na list Dotaz1, myší označit sloupec
-souborů, uzavřít `)`. Když `#NÁZEV?`, totéž s `COUNTA` místo `POČET2`.
-
-Tlačítko Kontrola dál slouží jen k detailu na listu Kontrola (různý počet
-řádků, archivované soubory). Běžný stav „aktuální / čeká N souborů“ už
-nemusí nikdo mačkat.
+C2 pak ukáže **✔ Aktuální** nebo **⬤ Čeká N souborů**. Tlačítko Kontrola
+zůstává na detaily (různý počet řádků).
 
 ---
 
