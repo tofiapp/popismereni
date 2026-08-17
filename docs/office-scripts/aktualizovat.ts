@@ -48,6 +48,17 @@ function main(workbook: ExcelScript.Workbook) {
   const rNove = t.getRangeBetweenHeaderAndTotal();
   const dNove = rNove ? rNove.getValues() : [];
 
+  if (cil) zapisNacitani(cil, t.getWorksheet().getName());
+
+  let nDotaz = 0;
+  for (const r of dNove) {
+    if (String(r[idx[0]] ?? "").trim() !== "") nDotaz++;
+  }
+  if (nDotaz === 0) {
+    if (cil) hlaska(cil, "Počkejte na načtení dat a klikněte znovu", "#C00000");
+    return;
+  }
+
   // --- Archiv = zdroj pravdy; prazdny Archiv = jednorazova migrace z Prehledu ---
   let zaznamy = nactiArchiv(workbook, SLOUPCE);
   const znamSoubory = new Set<string>();
@@ -333,6 +344,18 @@ function formatDatum(iso: string): string {
   const c = iso.split("-");
   if (c.length === 3) return `${Number(c[2])}.${Number(c[1])}.${c[0]}`;
   return iso;
+}
+
+function zapisNacitani(list: ExcelScript.Worksheet, listDat: string): void {
+  const odkaz = /[\s'()]/.test(listDat) ? "'" + listDat.replace(/'/g, "''") + "'" : listDat;
+  const a1 = list.getRange("A1");
+  a1.setFormulaLocal(
+    "=KDYŽ(POČET2(" + odkaz + "!A2:A5000)=0;\"Načítají se data — neklikejte na Aktualizovat\";\"\")"
+  );
+  a1.getFormat().getFont().setName("Calibri");
+  a1.getFormat().getFont().setSize(18);
+  a1.getFormat().getFont().setBold(true);
+  a1.getFormat().getFont().setColor("#C00000");
 }
 
 function zapisStavVzorce(
