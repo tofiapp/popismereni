@@ -104,7 +104,7 @@ function main(workbook: ExcelScript.Workbook) {
   zapisArchiv(workbook, SLOUPCE, zaznamy);
 
   if (!cil) cil = workbook.addWorksheet("Přehled");
-  else cil.getRange("A4:Z100000").clear(ExcelScript.ClearApplyTo.all);
+  else cil.getRange("A4:E100000").clear(ExcelScript.ClearApplyTo.all);
 
   const START = 3;
   const SIRKA = 5;

@@ -266,21 +266,17 @@ Kategorie nálezů:
   Stačí Aktualizovat — Archiv se nemaže.
 - **Řádky bez značky souboru** → jen když Archiv ještě není a čte se starý Přehled
 
-### Stav v C2 — aktualizuje se s Dotaz1
+### Stav v C2 — kdy zmáčknout Aktualizovat
 
-Skript Kontrola se při obnovení dotazu nespustí. Stav u tlačítka počítá
-dotaz **StavKontroly** (`power-query/stav-kontroly.m`): soubory v TabNove,
-které ještě nejsou v TabArchiv. Výsledek je v X2, C2 ukazuje `=X2`.
+C2 hlásí **Klikněte Aktualizovat**, když je v Dotaz1 soubor, který ještě není
+ve sloupci E na Přehledu. Po tlačítku 2. Aktualizovat zase **Aktuální**.
 
-1. Data → Načíst data → Z jiných zdrojů → Prázdný dotaz
-2. Rozšířený editor → vložit [`power-query/stav-kontroly.m`](power-query/stav-kontroly.m)
-3. Když nezná `TabNove`, dosaďte v první řádce název vašeho dotazu z levého panelu
-4. Dotaz pojmenovat **StavKontroly** → Zavřít a načíst do Přehled, buňka **X1**
-5. C2 (formát Obecný): `=X2` — pryč s počtem řádků
-6. Sloupec X šířka 0. Vlastnosti: aktualizovat při otevření, ne na pozadí
+Vzorce jsou jen na Přehledu ve sloupci **AA** (mimo A–Z, skript je nemaže).
+Na list Dotaz1 se nedávají — Power Query ho při obnovení přepíše.
+List Dotaz1 (2) se k C2 nepřipojuje.
 
-C2 pak ukáže **✔ Aktuální** nebo **⬤ Čeká N souborů**. Tlačítko Kontrola
-zůstává na detaily (různý počet řádků).
+Postup: [`formulas/C2-stav.txt`](formulas/C2-stav.txt).
+Skript `aktualizovat.ts` maže jen `A4:E`, ne celý list.
 
 ---
 
