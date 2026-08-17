@@ -266,19 +266,31 @@ Kategorie nálezů:
   Stačí Aktualizovat — Archiv se nemaže.
 - **Řádky bez značky souboru** → jen když Archiv ještě není a čte se starý Přehled
 
-### Volitelný vzorec v C2
+### Stav v C2 — aktualizuje se s Dotaz1
 
-Pokud skripty píší stav do G2 (jako výše), C2 může obsahovat vzorec, který
-při otevření souboru pozná zastaralý údaj:
+Skript Kontrola **nejde** spustit sám, když se obnoví Power Query. Excel to neumí.
+Spojení je vzorec v **C2**: odkazuje na tabulku na listu Dotaz1, takže po každém
+obnovení dotazu (včetně obnovení při otevření souboru) se text u tlačítka
+přepočítá sám.
+
+Porovná soubory v dotazu se značkami ve sloupci E na Přehledu.
+
+1. Kliknout na **C2** (vedle tlačítka Kontrola)
+2. Formát buňky: **Obecný**, ne Text
+3. Vložit vzorec níže, Enter
+4. Skripty do C2 **nesmí zapisovat** (stav píšou do G2)
 
 ```
-=KDYŽ(F2="";"Neověřeno - klikněte na Kontrolu stavu";KDYŽ(DNES()-F2>=1;"Stav z minula - klikněte na Kontrolu stavu";G2))
+=LET(souboryDotaz;KDYŽCHYBA(JEDINEČNÉ(FILTR(TabNove[ZdrojovySoubor];TabNove[ZdrojovySoubor]<>""));"");nDotaz;KDYŽCHYBA(ŘÁDKY(JEDINEČNÉ(FILTR(TabNove[ZdrojovySoubor];TabNove[ZdrojovySoubor]<>"")));0);znacky;KDYŽCHYBA(FILTR(E4:E50000;E4:E50000<>"");"");souboryPrehled;KDYŽCHYBA(JEDINEČNÉ(TEXTPŘED(znacky;"|"));"");ceka;KDYŽ(nDotaz=0;0;KDYŽCHYBA(SUMA(--JE.CHYBA(SHODA(souboryDotaz;souboryPrehled;0)));nDotaz));KDYŽ(nDotaz=0;"⚠ Žádná data v dotazu";KDYŽ(ceka=0;"✔ Aktuální";"⬤ Čeká "&ceka&KDYŽ(ceka=1;" nový soubor";KDYŽ(ceka<5;" nové soubory";" nových souborů")))))
 ```
 
-C2 musí mít formát **Obecný**, ne Text.
+Když C2 ukáže `#NÁZEV?`, tabulka na listu Dotaz1 se nejmenuje `TabNove`.
+Klikněte do tabulky na Dotaz1 → karta **Návrh tabulky** → **Název tabulky**.
+V vzorci nahraďte `TabNove` tímto názvem (často `Dotaz1`).
 
-**Přínos je malý** — jen odliší dnešní stav od staršího. Pokud to nepotřebujete,
-nechte skripty psát barevný text přímo do C2 a vzorec vynechte (viz sekce 8).
+Tlačítko Kontrola dál slouží jen k detailu na listu Kontrola (různý počet
+řádků, archivované soubory). Běžný stav „aktuální / čeká N souborů“ už
+nemusí nikdo mačkat.
 
 ---
 
