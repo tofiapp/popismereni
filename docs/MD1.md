@@ -239,11 +239,12 @@ Postup běhu:
 1. Pauza 20 s, když N2 říká, že právě běželo
 2. Najít tabulku **TabNove** (ne TabArchiv — proto se nebere `getTables()[0]`)
 3. Načíst Archiv; když je prázdný, jednorázově naplnit z Přehledu (sl. E)
-4. Přidat jen soubory, které Archiv ještě nezná
+4. Přidat jen soubory, které Archiv ještě nezná (všechny jejich řádky)
 5. Doplnit datum, seřadit
 6. **Zapsat Archiv** (až sem jsou data v bezpečí i při chybě kreslení)
 7. Smazat Přehled od řádku 4 a vykreslit z Archivu
-8. Razítko + stav
+8. Znovu načíst Dotaz1 — stejné pravidlo: jen neznámé soubory, nic v Archivu se nepřepisuje
+9. Razítko + stav
 
 Vložení: Automatizér → otevřít stávající skript Aktualizovat → nahradit celý
 obsah souborem `aktualizovat.ts` → Uložit. Tlačítko v listu přemapovat nemusíte,
@@ -375,6 +376,10 @@ Nemá smysl to zkoušet znovu:
 2. Když je Dotaz1 prázdný, A1 hlásí načítání a Aktualizovat se nespustí.
 3. Kliknout **2. Aktualizovat**
 4. Uložit (nebo mít zapnuté Automatické ukládání)
+
+**Když soubor zůstal v Dotaz1 a není v Přehledu ani Archivu:** data se nenačetla
+včas. Počkat až Dotaz1 drží řádky, znovu **2. Aktualizovat**. Archiv se
+nepřepisuje — jen se doplní soubory, které tam ještě nejsou.
 
 **Když tlačítko nereaguje:** Automatizér → skript → Spustit.
 
