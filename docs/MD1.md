@@ -277,16 +277,17 @@ Porovná soubory v dotazu se značkami ve sloupci E na Přehledu.
 
 1. Kliknout na **C2** (vedle tlačítka Kontrola)
 2. Formát buňky: **Obecný**, ne Text
-3. Vložit vzorec níže, Enter
+3. Vložit **krátký** vzorec, Enter
 4. Skripty do C2 **nesmí zapisovat** (stav píšou do G2)
 
+Nejdřív jen ověření, že C2 sleduje Dotaz1:
+
 ```
-=LET(souboryDotaz;KDYŽCHYBA(JEDINEČNÉ(FILTR(TabNove[ZdrojovySoubor];TabNove[ZdrojovySoubor]<>""));"");nDotaz;KDYŽCHYBA(ŘÁDKY(JEDINEČNÉ(FILTR(TabNove[ZdrojovySoubor];TabNove[ZdrojovySoubor]<>"")));0);znacky;KDYŽCHYBA(FILTR(E4:E50000;E4:E50000<>"");"");souboryPrehled;KDYŽCHYBA(JEDINEČNÉ(TEXTPŘED(znacky;"|"));"");ceka;KDYŽ(nDotaz=0;0;KDYŽCHYBA(SUMA(--JE.CHYBA(SHODA(souboryDotaz;souboryPrehled;0)));nDotaz));KDYŽ(nDotaz=0;"⚠ Žádná data v dotazu";KDYŽ(ceka=0;"✔ Aktuální";"⬤ Čeká "&ceka&KDYŽ(ceka=1;" nový soubor";KDYŽ(ceka<5;" nové soubory";" nových souborů")))))
+="Dotaz: "&POČET2(Dotaz1!A2:A9999)&" řádků"
 ```
 
-Když C2 ukáže `#NÁZEV?`, tabulka na listu Dotaz1 se nejmenuje `TabNove`.
-Klikněte do tabulky na Dotaz1 → karta **Návrh tabulky** → **Název tabulky**.
-V vzorci nahraďte `TabNove` tímto názvem (často `Dotaz1`).
+Po obnovení Dotaz1 se číslo musí změnit. Až tohle funguje, „aktuální / čeká“ je v
+[`formulas/C2-stav.txt`](formulas/C2-stav.txt) přes pomocné buňky P2 a Q2.
 
 Tlačítko Kontrola dál slouží jen k detailu na listu Kontrola (různý počet
 řádků, archivované soubory). Běžný stav „aktuální / čeká N souborů“ už
