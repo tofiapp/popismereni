@@ -247,11 +247,6 @@ function pocetDatovychVPrehledu(cil: ExcelScript.Worksheet): number {
 function vysledek(list: ExcelScript.Worksheet, text: string) {
   const ted = new Date();
 
-  const f = list.getRangeByIndexes(1, 5, 1, 1);
-  f.setNumberFormatLocal("0,00000");   // ceska desetinna carka!
-  f.setValue(25569 + (ted.getTime() - ted.getTimezoneOffset() * 60000) / 86400000);
-  f.getFormat().getFont().setColor("#FFFFFF");
-
   const g = list.getRangeByIndexes(1, 6, 1, 1);
   g.setNumberFormatLocal("@");
   g.setValue(text);

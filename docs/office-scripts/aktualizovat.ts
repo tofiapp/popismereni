@@ -159,7 +159,6 @@ function main(workbook: ExcelScript.Workbook) {
   cil.getRangeByIndexes(START, 0, out.length, SIRKA).getFormat().setRowHeight(22);
 
   const ted = new Date();
-  const cas = " (" + dvojcifry(ted.getHours()) + ":" + dvojcifry(ted.getMinutes()) + ")";
   const razitko = "Aktualizováno " + dvojcifry(ted.getDate()) + "." +
     dvojcifry(ted.getMonth() + 1) + ". v " +
     dvojcifry(ted.getHours()) + ":" + dvojcifry(ted.getMinutes()) +
@@ -168,33 +167,6 @@ function main(workbook: ExcelScript.Workbook) {
   hlaska(cil, razitko, "#808080");
   cil.getRangeByIndexes(1, SL_CAS, 1, 1).setValue(ted.toISOString());
   cil.getRangeByIndexes(1, SL_CAS, 1, 1).getFormat().getFont().setColor("#FFFFFF");
-
-  // --- rovnou i vysledek kontroly (Archiv × dotaz) ---
-  const vDotazu = new Set<string>();
-  for (const r of dNove) {
-    const s = String(r[idx[0]] ?? "").trim();
-    if (s !== "") vDotazu.add(s);
-  }
-  const vArchivu = new Set<string>();
-  for (const r of zaznamy) if (r[0] !== "") vArchivu.add(r[0]);
-
-  let nezpracovano = 0;
-  vDotazu.forEach(s => { if (!vArchivu.has(s)) nezpracovano++; });
-
-  const stavText = nezpracovano === 0
-    ? "✔ Aktuální" + cas
-    : "⬤ Čeká " + nezpracovano +
-      (nezpracovano === 1 ? " nový soubor" : nezpracovano < 5 ? " nové soubory" : " nových souborů") + cas;
-
-  const f = cil.getRangeByIndexes(1, 5, 1, 1);
-  f.setNumberFormatLocal("0,00000");
-  f.setValue(25569 + (ted.getTime() - ted.getTimezoneOffset() * 60000) / 86400000);
-  f.getFormat().getFont().setColor("#FFFFFF");
-
-  const g = cil.getRangeByIndexes(1, 6, 1, 1);
-  g.setNumberFormatLocal("@");
-  g.setValue(stavText);
-  g.getFormat().getFont().setColor("#FFFFFF");
 
   zapisStavVzorce(cil, t.getWorksheet().getName(), dNove, idx[0]);
 
@@ -319,16 +291,18 @@ function zapisArchiv(workbook: ExcelScript.Workbook, sloupce: string[], zaznamy:
 }
 
 function hlaska(list: ExcelScript.Worksheet, text: string, barva: string) {
-  const r = list.getRangeByIndexes(1, 10, 1, 3); // K2:M2
+  const r = list.getRange("F2:H2");
   r.clear(ExcelScript.ClearApplyTo.contents);
   r.setNumberFormatLocal("@");
-  list.getRangeByIndexes(1, 10, 1, 1).setValue(text);
+  list.getRange("F2").setValue(text);
   r.getFormat().getFont().setName("Calibri");
   r.getFormat().getFont().setSize(11);
   r.getFormat().getFont().setBold(barva === "#C00000");
   r.getFormat().getFont().setItalic(barva !== "#C00000");
   r.getFormat().getFont().setColor(barva);
   r.getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.left);
+  r.getFormat().setVerticalAlignment(ExcelScript.VerticalAlignment.center);
+  list.getRange("F:F").getFormat().setColumnWidth(220);
 }
 
 function obarvi(list: ExcelScript.Worksheet, radek: number, barva: string) {
