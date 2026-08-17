@@ -1,5 +1,8 @@
 # Sloučení denních souborů (bez instalace)
 
+> **Aktuální provoz** je Power Query + Office Scripts, viz [`docs/MD1.md`](../docs/MD1.md).
+> Tento PowerShell postup je starší lokální varianta — k novému sešitu ho nepřidávejte.
+
 ## Struktura (stejná i na sdíleném místě)
 
 ```
