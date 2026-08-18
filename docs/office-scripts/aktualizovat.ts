@@ -410,18 +410,14 @@ function zapisArchiv(workbook: ExcelScript.Workbook, sloupce: string[], zaznamy:
 }
 
 function hlaska(list: ExcelScript.Worksheet, text: string, barva: string) {
-  const r = list.getRange("G2:H2");
-  r.clear(ExcelScript.ClearApplyTo.contents);
-  r.setNumberFormatLocal("@");
-  list.getRange("G2").setValue(text);
-  r.getFormat().getFont().setName("Calibri");
-  r.getFormat().getFont().setSize(11);
-  r.getFormat().getFont().setBold(barva === "#C00000");
-  r.getFormat().getFont().setItalic(barva !== "#C00000");
-  r.getFormat().getFont().setColor(barva);
-  r.getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.left);
-  r.getFormat().setVerticalAlignment(ExcelScript.VerticalAlignment.center);
-  list.getRange("G:G").getFormat().setColumnWidth(220);
+  // G2 je skryté úložiště — viditelný nápis je jen F2 (vzorec nebo razítko).
+  const g = list.getRange("G2");
+  g.clear(ExcelScript.ClearApplyTo.contents);
+  g.setNumberFormatLocal("@");
+  g.setValue(text);
+  g.getFormat().getFont().setColor("#FFFFFF");
+  list.getRange("G:G").getFormat().setColumnWidth(0);
+  list.getRange("H:H").getFormat().setColumnWidth(0);
 }
 
 function obarvi(list: ExcelScript.Worksheet, radek: number, barva: string) {
@@ -458,16 +454,21 @@ function zapisNacitani(list: ExcelScript.Worksheet, listDat: string): void {
   const odkaz = /[\s'()]/.test(listDat) ? "'" + listDat.replace(/'/g, "''") + "'" : listDat;
   list.getRange("A1").clear(ExcelScript.ClearApplyTo.all);
 
+  // Jen F2 je vidět. G2 je skryté (razítko).
+  // Prázdný Dotaz1 po smazání zdrojů ≠ načítání: když AB1>0, ukaž razítko.
   const f2 = list.getRange("F2");
   f2.setFormulaLocal(
-    "=KDYŽ(POČET2(" + odkaz + "!A2:A5000)=0;\"Načítají se data — neklikejte na Aktualizovat\";G2)"
+    "=KDYŽ(POČET2(" + odkaz + "!A2:A5000)=0;KDYŽ(AB1=0;\"Načítají se data — neklikejte na Aktualizovat\";G2);G2)"
   );
   f2.getFormat().getFont().setName("Calibri");
   f2.getFormat().getFont().setSize(18);
   f2.getFormat().getFont().setBold(true);
+  f2.getFormat().getFont().setColor("#808080");
   f2.getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.left);
   f2.getFormat().setVerticalAlignment(ExcelScript.VerticalAlignment.center);
   list.getRange("F:F").getFormat().setColumnWidth(340);
+  list.getRange("G:G").getFormat().setColumnWidth(0);
+  list.getRange("H:H").getFormat().setColumnWidth(0);
 
   const stare = f2.getConditionalFormats();
   for (let i = stare.length - 1; i >= 0; i--) stare[i].delete();
@@ -476,13 +477,6 @@ function zapisNacitani(list: ExcelScript.Worksheet, listDat: string): void {
   cervena.getCustom().getRule().setFormula("=F2=\"Načítají se data — neklikejte na Aktualizovat\"");
   cervena.getCustom().getFormat().getFont().setColor("#C00000");
   cervena.getCustom().getFormat().getFont().setBold(true);
-
-  const seda = f2.addConditionalFormat(ExcelScript.ConditionalFormatType.custom);
-  seda.getCustom().getRule().setFormula("=F2<>\"Načítají se data — neklikejte na Aktualizovat\"");
-  seda.getCustom().getFormat().getFont().setColor("#808080");
-  seda.getCustom().getFormat().getFont().setBold(false);
-  seda.getCustom().getFormat().getFont().setItalic(true);
-  seda.getCustom().getFormat().getFont().setSize(11);
 }
 
 function zapisStavVzorce(
