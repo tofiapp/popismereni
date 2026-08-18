@@ -6,9 +6,10 @@
  *
  * První běh: když Archiv ještě není, načte se stávající Přehled (sloupec E).
  * Než sloučí, počká jen když je DataALL/Dotaz1 prázdný nebo se ještě mění.
- * A1 = varování při prázdném zdroji. F2 = razítko/hláška. C2 = Aktuální.
- * Zámek N2 jen během běhu (max ~25 s při pádu). Po úspěchu se N2 smaže —
- * žádné „počkejte 53 s“ po hotové aktualizaci.
+ * A1 = vzorec „Aktualizace běží“ když je zdroj prázdný (PQ) NEBO N2 zámek.
+ *   (Excel přepočítá živě — u skriptu samotného UI uprostřed běhu nespolehlivé.)
+ * F2 = razítko / chybová hláška. C2 = Aktuální.
+ * Zámek N2 jen během běhu (max ~25 s při pádu). Po úspěchu se N2 smaže.
  *
  * Vložit do Excelu: Automatizér → Nový skript → nahradit obsah.
  */
@@ -33,19 +34,19 @@ function main(workbook: ExcelScript.Workbook) {
             console.log("Preruseno: zamek, razitko uz je.");
             return;
           }
-          hlaska(cil, "⚠ Aktualizace ještě běží — neklikejte znovu", "#C00000");
+          // A1 už hlásí „běží“ přes N2 — F2 nepřepisuj
           console.log("Preruseno: zamek N2, pred " + Math.round(rozdil) + " s.");
           return;
         }
       }
     }
     zapisZamek(cil, SL_CAS);
-    hlaska(cil, "Aktualizace běží — neklikejte znovu", "#C00000");
   }
 
   const t = najdiTabulkuDat(workbook, SLOUPCE);
   if (!t) {
     if (cil) {
+      zapisNacitani(workbook, cil, "DataALL");
       hlaska(cil, "⚠ Chybí tabulka s daty", "#C00000");
       uvolniZamek(cil, SL_CAS);
     }
@@ -55,6 +56,7 @@ function main(workbook: ExcelScript.Workbook) {
   const idx = SLOUPCE.map(s => h.indexOf(s));
   if (idx.some(i => i < 0)) {
     if (cil) {
+      zapisNacitani(workbook, cil, t.getWorksheet().getName());
       hlaska(cil, "⚠ Chybí sloupce v datech", "#C00000");
       uvolniZamek(cil, SL_CAS);
     }
@@ -62,7 +64,10 @@ function main(workbook: ExcelScript.Workbook) {
     return;
   }
 
-  if (cil) zapisNacitani(cil, t.getWorksheet().getName());
+  // A1 vzorec hned (N2 už je) → Excel ukáže „Aktualizace běží“ živě přes N2 / prázdný dotaz
+  if (cil) {
+    zapisNacitani(workbook, cil, t.getWorksheet().getName());
+  }
 
   if (!cil) cil = workbook.addWorksheet("Přehled");
   let dNove = pockejNaNacteni(cil, t, idx[0]);
@@ -198,7 +203,6 @@ function pockejNaNacteni(
     const n = pocetNepradnych(data, idxSoubor);
 
     if (n === 0) {
-      hlaska(cil, "Načítají se data — neklikejte na Aktualizovat", "#C00000");
       lastN = 0;
       stable = 0;
       continue;
@@ -207,7 +211,6 @@ function pockejNaNacteni(
       stable++;
       if (stable >= 2) return data;
     } else {
-      if (lastN > 0) hlaska(cil, "Načítají se data — neklikejte na Aktualizovat", "#C00000");
       lastN = n;
       stable = 1;
     }
@@ -490,19 +493,33 @@ function formatDatum(iso: string): string {
   return iso;
 }
 
-function zapisNacitani(list: ExcelScript.Worksheet, listDat: string): void {
-  // Varování při prázdném DataALL/Dotaz1 (typicky při otevírání). Tlačítko Excel neumí vypnout.
+/**
+ * A1 = živý nápis „Aktualizace běží“:
+ * - prázdný DataALL/Dotaz1 (Power Query se načítá) — Excel to přepočítá sám
+ * - nebo N2 vyplněné (skript běží) — po zápisu zámku hned vidět
+ * F2 drží jen razítko / chybu; tenhle text sem nepiseme (UI skriptu uprostřed běhu nespolehlivé).
+ */
+function zapisNacitani(
+  workbook: ExcelScript.Workbook,
+  list: ExcelScript.Worksheet,
+  listDat: string,
+): void {
   const odkaz = odkazListu(listDat);
   const a1 = list.getRange("A1");
   a1.clear(ExcelScript.ClearApplyTo.all);
   a1.setNumberFormat("General");
+  // NEBO: prázdný dotaz (PQ) nebo zámek N2 (běh skriptu)
   a1.setFormulaLocal(
-    "=KDYŽ(POČET2(" + odkaz + "!A2:A5000)=0;\"Načítají se data — neklikejte na Aktualizovat\";\"\")"
+    "=KDYŽ(NEBO(POČET2(" + odkaz + "!A2:A5000)=0;N2<>\"\");" +
+      "\"Aktualizace běží — neklikejte znovu\";\"\")"
   );
   a1.getFormat().getFont().setName("Calibri");
   a1.getFormat().getFont().setSize(18);
   a1.getFormat().getFont().setBold(true);
   a1.getFormat().getFont().setColor("#C00000");
+  try {
+    workbook.getApplication().calculate(ExcelScript.CalculationType.full);
+  } catch (_e) { /* ignore */ }
 }
 
 /**
@@ -595,6 +612,9 @@ function zapisStavVzorce(
   } else if (ted !== "Aktuální") {
     console.log("C2 neocekavana hodnota po vzorci: " + ted + " (list=" + listDat + ")");
   }
+
+  // Obnov A1 (po uvolnění N2 zmizí „běží“, při příštím prázdném PQ zase naskočí)
+  zapisNacitani(workbook, list, listDat);
 }
 
 function odkazListu(listDat: string): string {

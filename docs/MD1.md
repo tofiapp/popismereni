@@ -249,9 +249,9 @@ Postup běhu:
 1. Kontrola N2; hned zápis zámku + F2 *Aktualizace běží* (po úspěchu N2 pryč)
 2. Najít tabulku dat (ne TabArchiv) — preferuje list **DataALL**, pak Dotaz1
 3. Když je zdroj prázdný nebo se počet řádků ještě mění, počkat / skončit.
-   A1 ukáže *Načítají se data — neklikejte na Aktualizovat* (vzorec).
-   F2 je razítko nebo hláška ze skriptu (jeden nápis). C2 sleduje DataALL.
-   Tlačítko Excel neumí vypnout — ochrana je N2 jen během běhu.
+   **A1** (vzorec): *Aktualizace běží — neklikejte znovu*, když je DataALL
+   prázdný (PQ) **nebo** je vyplněné N2 (běh skriptu). Přepočet živě jako u dotazu.
+   F2 = razítko / chyba. C2 sleduje DataALL.
 4. Načíst Archiv; když je prázdný, jednorázově naplnit z Přehledu (sl. E)
 5. Přidat soubory, které Archiv ještě nezná; u už známých souborů jen
    **chybějící řádky** (stejný název, v Dotaz1 víc měření — např. kliknutí

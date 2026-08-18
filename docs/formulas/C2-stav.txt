@@ -1,16 +1,17 @@
-C2 a A1 zapisuje skript Aktualizovat. Používá jen KDYŽ a POČET2.
+C2 a A1 zapisuje skript Aktualizovat. Používá KDYŽ, NEBO, POČET2.
 List zdroje = DataALL (dříve Dotaz1) — skript vezme skutečné jméno listu.
 
 1. Nahradit skript aktualizovat.ts, uložit
 2. Jednou 2. Aktualizovat
 
-A1 = KDYŽ(POČET2(DataALL!A2:A5000)=0; "Načítají se data — neklikejte na Aktualizovat"; "")
+A1 = KDYŽ(NEBO(POČET2(DataALL!A2:A5000)=0; N2<>""); "Aktualizace běží — neklikejte znovu"; "")
+     → prázdný dotaz (PQ se načítá) NEBO zámek N2 (skript běží)
+     Excel přepočítá živě — proto je nápis navázaný na dotaz, ne jen na F2 ze skriptu.
+
 C2 = KDYŽ(POČET2(DataALL!A2:A5000)>AB1; "Přehled není aktuální"; "Aktuální")
-F2 = razítko / hláška ze skriptu (hodnota, ne vzorec)
+F2 = razítko / chyba ze skriptu (hodnota, ne vzorec)
+N2 = ISO čas zámku během běhu (skryté); po úspěchu prázdné
+AB1 = stejné číslo jako POČET2(DataALL!A2:A5000) v okamžiku sloučení
 
-AB1 = přesně stejné číslo jako POČET2(DataALL!A2:A5000) v okamžiku sloučení
-(skript ho načte stejným vzorcem, ne počítáním těla tabulky — to dřív
-způsobovalo falešné „Přehled není aktuální“.)
-
-Nový soubor v DataALL → POČET2 vzroste nad AB1 → C2 se přepne samo.
-Tlačítko Excel neumí vypnout — při prázdném zdroji skript nic nesloučí.
+Nový soubor v DataALL → C2 se přepne samo.
+Při otevírání / obnově PQ (prázdný DataALL) → A1 „Aktualizace běží“.
