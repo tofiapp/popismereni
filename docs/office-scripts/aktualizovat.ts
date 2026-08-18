@@ -5,8 +5,8 @@
  * Přehled se z Archivu jen vykreslí. Zdrojové .xlsx lze mazat.
  *
  * První běh: když Archiv ještě není, načte se stávající Přehled (sloupec E).
- * Než sloučí, počká až Power Query dojede (F2: Čekám na načtení dat…).
- * Archiv se při čekání nemění. Už uložené soubory se nepřepisují.
+ * Než sloučí, počká jen když je Dotaz1 prázdný nebo se ještě mění.
+ * Když už v Dotaz1 řádky jsou, sloučí hned. Už uložené soubory se nepřepisují.
  *
  * Vložit do Excelu: Automatizér → Nový skript → nahradit obsah.
  */
@@ -50,7 +50,7 @@ function main(workbook: ExcelScript.Workbook) {
   if (cil) zapisNacitani(cil, t.getWorksheet().getName());
 
   if (!cil) cil = workbook.addWorksheet("Přehled");
-  let dNove = pockejNaNacteni(workbook, cil, t, idx[0], SL_CAS);
+  let dNove = pockejNaNacteni(cil, t, idx[0]);
   if (!dNove) {
     hlaska(cil, "Počkejte na načtení dat a klikněte znovu", "#C00000");
     return;
@@ -74,7 +74,7 @@ function main(workbook: ExcelScript.Workbook) {
     }
   }
 
-  // --- pridat jen soubory, ktere Archiv jeste nezna (vsechny jejich radky) ---
+  // --- nove soubory + chybejici radky u uz znamych (Archiv se neprepisuje) ---
   let pridano = pridejNoveSoubory(zaznamy, znamSoubory, dNove, idx);
 
   if (zaznamy.length === 0) { if (cil) hlaska(cil, "⚠ Žádná data", "#C00000"); return; }
@@ -153,117 +153,37 @@ function pocetNepradnych(data: (string | number | boolean)[][], idxSoubor: numbe
   return n;
 }
 
-function casDotazu(hodnota: Date | string | number | boolean): number {
-  if (hodnota === null || hodnota === undefined || hodnota === "" || typeof hodnota === "boolean") return 0;
-  if (typeof hodnota === "number") {
-    if (hodnota > 20000 && hodnota < 80000) return Math.round((hodnota - 25569) * 86400000);
-    return hodnota;
-  }
-  const t = Date.parse(String(hodnota));
-  return isNaN(t) ? 0 : t;
-}
-
-function najdiDotazTabulky(workbook: ExcelScript.Workbook): ExcelScript.Query | null {
-  try {
-    const queries = workbook.getQueries();
-    if (!queries || queries.length === 0) return null;
-    let nej: ExcelScript.Query | null = null;
-    let nejRadku = -1;
-    for (let i = 0; i < queries.length; i++) {
-      const q = queries[i];
-      let kam = ExcelScript.LoadToType.connectionOnly;
-      try { kam = q.getLoadedTo(); } catch (e) { continue; }
-      if (kam !== ExcelScript.LoadToType.table) continue;
-      if (q.getName() === "Zdroj_MD1") return q;
-      const n = q.getRowsLoadedCount();
-      if (n > nejRadku) {
-        nejRadku = n;
-        nej = q;
-      }
-    }
-    return nej;
-  } catch (e) {
-    return null;
-  }
-}
-
-function zapisAc1(list: ExcelScript.Worksheet, ms: number): void {
-  const ac = list.getRange("AC1");
-  ac.setValue(ms > 0 ? new Date(ms).toISOString() : "");
-  ac.getFormat().getFont().setColor("#FFFFFF");
-  list.getRange("AC:AC").getFormat().setColumnWidth(0);
-}
-
-function oznacBezi(list: ExcelScript.Worksheet, slCas: number): void {
-  list.getRangeByIndexes(1, slCas, 1, 1).setValue(new Date().toISOString());
-  list.getRangeByIndexes(1, slCas, 1, 1).getFormat().getFont().setColor("#FFFFFF");
-}
-
 function pockejNaNacteni(
-  workbook: ExcelScript.Workbook,
   cil: ExcelScript.Worksheet,
   t: ExcelScript.Table,
   idxSoubor: number,
-  slCas: number,
 ): (string | number | boolean)[][] | null {
-  const MAX_MS = 55000;
-  const CESTVE_MS = 180000;
-  const start = Date.now();
-  const minuly = casDotazu(cil.getRange("AC1").getValue());
-  const ab1 = Number(cil.getRange("AB1").getValue()) || 0;
-  const q0 = najdiDotazTabulky(workbook);
-  const startRefresh = q0 ? casDotazu(q0.getRefreshDate()) : 0;
-  const maDotaz = q0 !== null && startRefresh > 0;
-
+  const MAX_POKUSU = 10;
   let lastN = -1;
   let stable = 0;
   let data: (string | number | boolean)[][] = [];
-  let refreshTed = startRefresh;
 
-  while (Date.now() - start < MAX_MS) {
-    oznacBezi(cil, slCas);
-    hlaska(cil, "Čekám na načtení dat…", "#C00000");
-
-    const q = najdiDotazTabulky(workbook);
-    if (q) {
-      refreshTed = casDotazu(q.getRefreshDate());
-      if (q.getRowsLoadedCount() < 0) return null;
-    }
-
+  for (let i = 0; i < MAX_POKUSU; i++) {
     data = nactiTeloTabulky(t);
     const n = pocetNepradnych(data, idxSoubor);
-    if (n > 0 && n === lastN) stable++;
-    else {
+
+    if (n === 0) {
+      hlaska(cil, "Čekám na načtení dat…", "#C00000");
+      lastN = 0;
+      stable = 0;
+      continue;
+    }
+    if (n === lastN) {
+      stable++;
+      if (stable >= 2) return data;
+    } else {
+      if (lastN > 0) hlaska(cil, "Čekám na načtení dat…", "#C00000");
       lastN = n;
-      stable = n > 0 ? 1 : 0;
-    }
-
-    const tabulkaStabilni = n > 0 && stable >= 2;
-    const cerstvy = refreshTed > 0 && Math.abs(Date.now() - refreshTed) < CESTVE_MS;
-    const nactenoNove = refreshTed > 0 && (
-      (minuly > 0 && refreshTed > minuly + 500) ||
-      (minuly === 0 && cerstvy) ||
-      (startRefresh > 0 && refreshTed > startRefresh + 500)
-    );
-    const praveZpracovano = minuly > 0 &&
-      Math.abs(refreshTed - minuly) < 2000 &&
-      Date.now() - minuly < 600000;
-
-    if (tabulkaStabilni && (nactenoNove || n > ab1 || praveZpracovano)) {
-      zapisAc1(cil, refreshTed);
-      return data;
-    }
-    if (tabulkaStabilni && !maDotaz && (n > ab1 || Date.now() - start >= 25000)) {
-      zapisAc1(cil, refreshTed);
-      return data;
+      stable = 1;
     }
   }
 
-  data = nactiTeloTabulky(t);
-  if (pocetNepradnych(data, idxSoubor) > 0) {
-    zapisAc1(cil, refreshTed);
-    return data;
-  }
+  if (pocetNepradnych(data, idxSoubor) > 0) return data;
   return null;
 }
 
