@@ -1,12 +1,16 @@
 C2 a A1 zapisuje skript Aktualizovat. Používá jen KDYŽ a POČET2.
+List se zdrojem = DataALL (dříve Dotaz1) — skript vezme skutečné jméno listu.
 
 1. Nahradit skript aktualizovat.ts, uložit
 2. Jednou 2. Aktualizovat
 
-A1 = KDYŽ(POČET2(Dotaz1!A2:A5000)=0; "Načítají se data — neklikejte na Aktualizovat"; "")
-C2 = KDYŽ(POČET2(Dotaz1!A2:A5000)>AB1; "Přehled není aktuální"; "Aktuální")
+A1 = KDYŽ(POČET2(DataALL!A2:A5000)=0; "Načítají se data — neklikejte na Aktualizovat"; "")
+C2 = KDYŽ(POČET2(DataALL!A2:A5000)>AB1; "Přehled není aktuální"; "Aktuální")
 F2 = razítko / hláška ze skriptu (hodnota, ne vzorec)
-AB1 = počet řádků v Dotaz1 ve snímku, který se sloučil
+AB1 = počet řádků ve snímku, který se sloučil
 
-Nový soubor v Dotaz1 → C2 se přepne samo.
-Tlačítko Excel neumí vypnout — při prázdném Dotaz1 skript nic nesloučí.
+Když C2 pořád ukazuje Dotaz1!… (starý vzorec), stačí znovu Aktualizovat
+po nahrání nového skriptu — přepíše odkaz na DataALL.
+
+Nový soubor v DataALL → C2 se přepne samo.
+Tlačítko Excel neumí vypnout — při prázdném zdroji skript nic nesloučí.

@@ -171,7 +171,8 @@ function najdiTabulkuDat(workbook: ExcelScript.Workbook, sloupce: string[]): Exc
     if (nazev === "TabArchiv") continue;
     if (nazev === "TabNove") return tab;
     const list = tab.getWorksheet().getName();
-    if (list === "Dotaz1") {
+    if (list === "DataALL" || list === "DataAll" || list === "Dotaz1") {
+      if (list === "DataALL" || list === "DataAll") return tab;
       kandidat = tab;
       continue;
     }
