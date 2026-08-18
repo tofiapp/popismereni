@@ -120,6 +120,19 @@ class MeasurementStore(context: Context) {
         prefs.getString(KEY_PENDING_EXPORT_NAME, null)?.takeIf { it.isNotBlank() }
             ?: lastExportFile?.name.orEmpty()
 
+    /**
+     * Shrnutí dávky k potvrzení OneDrive: stanice a počty záznamů
+     * (pořadí první návštěvy), např. „Nymburk — 3“ a „Unhošť — 1“ na dalších řádcích.
+     */
+    fun pendingExportSummary(): String {
+        prefs.getString(KEY_PENDING_EXPORT_SUMMARY, null)?.takeIf { it.isNotBlank() }?.let {
+            return it
+        }
+        val fromExport = lastExportFile?.takeIf { it.isFile }?.let { SimpleXlsx.read(it) }
+        if (fromExport != null) return summarizeBatch(fromExport)
+        return summarizeBatch(SimpleXlsx.read(workingFile))
+    }
+
     fun getDnyTreeUri(): Uri? =
         prefs.getString(KEY_DNY_TREE_URI, null)?.takeIf { it.isNotBlank() }?.let(Uri::parse)
 
@@ -173,10 +186,12 @@ class MeasurementStore(context: Context) {
         SimpleXlsx.write(workingFile, rows)
         workingFile.copyTo(dest, overwrite = true)
         lastExportFile = dest
+        val summary = summarizeBatch(rows)
         prefs.edit()
             .putBoolean(KEY_PENDING_CONFIRM, true)
             .putBoolean(KEY_SYNCED, false)
             .putString(KEY_PENDING_EXPORT_NAME, name)
+            .putString(KEY_PENDING_EXPORT_SUMMARY, summary)
             .apply()
         return dest
     }
@@ -212,6 +227,7 @@ class MeasurementStore(context: Context) {
         prefs.edit()
             .putBoolean(KEY_PENDING_CONFIRM, false)
             .remove(KEY_PENDING_EXPORT_NAME)
+            .remove(KEY_PENDING_EXPORT_SUMMARY)
             .apply()
     }
 
@@ -222,6 +238,7 @@ class MeasurementStore(context: Context) {
             .putBoolean(KEY_SYNCED, true)
             .putBoolean(KEY_PENDING_CONFIRM, false)
             .remove(KEY_PENDING_EXPORT_NAME)
+            .remove(KEY_PENDING_EXPORT_SUMMARY)
             .remove(KEY_LAST_STATION_UDU)
             .apply()
     }
@@ -308,6 +325,25 @@ class MeasurementStore(context: Context) {
     private fun hasMeasurement(row: SimpleXlsx.Row): Boolean =
         row.a.isNotBlank() || row.b.isNotBlank() || row.c.isNotBlank() || row.d.isNotBlank()
 
+    /** Stanice v pořadí první návštěvy + počet DATA řádků u každé. */
+    private fun summarizeBatch(rows: List<SimpleXlsx.Row>): String {
+        val counts = linkedMapOf<String, Int>()
+        var station = ""
+        for (row in rows) {
+            when (row.role) {
+                SimpleXlsx.Role.STATION -> station = row.a.trim()
+                SimpleXlsx.Role.DATA -> {
+                    if (station.isNotEmpty() && hasMeasurement(row)) {
+                        counts[station] = (counts[station] ?: 0) + 1
+                    }
+                }
+                else -> Unit
+            }
+        }
+        if (counts.isEmpty()) return ""
+        return counts.entries.joinToString("\n") { (name, n) -> "$name — $n" }
+    }
+
     companion object {
         private const val PREFS = "measurement_xlsx"
         private const val WORKING_NAME = "mereni_working.xlsx"
@@ -316,6 +352,7 @@ class MeasurementStore(context: Context) {
         private const val KEY_SYNCED = "synced_onedrive"
         private const val KEY_PENDING_CONFIRM = "pending_onedrive_confirm"
         private const val KEY_PENDING_EXPORT_NAME = "pending_onedrive_export_name"
+        private const val KEY_PENDING_EXPORT_SUMMARY = "pending_onedrive_export_summary"
         private const val KEY_DAY_COUNT_PREFIX = "export_count_"
         private const val KEY_DNY_TREE_URI = "dny_tree_uri"
         private const val KEY_DNY_FOLDER_LABEL = "dny_folder_label"
