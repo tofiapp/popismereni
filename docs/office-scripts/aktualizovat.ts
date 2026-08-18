@@ -267,6 +267,10 @@ function pockejNaNacteni(
   return null;
 }
 
+function klicRadku(r: string[]): string {
+  return r[0] + "|" + r[3] + "|" + r[4] + "|" + r[5] + "|" + r[6];
+}
+
 function pridejNoveSoubory(
   zaznamy: string[][],
   znamSoubory: Set<string>,
@@ -274,13 +278,31 @@ function pridejNoveSoubory(
   idx: number[],
 ): number {
   const uzVArchivu = new Set<string>();
+  const klice = new Set<string>();
   znamSoubory.forEach(s => { uzVArchivu.add(s); });
+  for (let i = 0; i < zaznamy.length; i++) {
+    klice.add(klicRadku(zaznamy[i]));
+  }
+
   let pridano = 0;
+  const doplnene = new Set<string>();
   for (let i = 0; i < data.length; i++) {
     const radek = idx.map(j => txt(data[i][j]));
+    radek[0] = radek[0].trim();
     if (radek[0] === "") continue;
-    if (uzVArchivu.has(radek[0])) continue;
+    const klic = klicRadku(radek);
+    if (klice.has(klic)) continue;
+    if (uzVArchivu.has(radek[0])) {
+      zaznamy.push(radek);
+      klice.add(klic);
+      if (!doplnene.has(radek[0])) {
+        doplnene.add(radek[0]);
+        pridano++;
+      }
+      continue;
+    }
     zaznamy.push(radek);
+    klice.add(klic);
     if (!znamSoubory.has(radek[0])) {
       znamSoubory.add(radek[0]);
       pridano++;
