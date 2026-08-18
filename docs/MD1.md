@@ -242,7 +242,9 @@ Postup běhu:
    F2: *Čekám na načtení dat…*. N2 se během čekání obnovuje, druhé kliknutí
    nespustí druhý běh. Archiv se zatím nemění.
 4. Načíst Archiv; když je prázdný, jednorázově naplnit z Přehledu (sl. E)
-5. Přidat jen soubory, které Archiv ještě nezná (všechny jejich řádky)
+5. Přidat soubory, které Archiv ještě nezná; u už známých souborů jen
+   **chybějící řádky** (stejný název, v Dotaz1 víc měření — např. kliknutí
+   uprostřed načítání). Uložené řádky se nepřepisují.
 6. Doplnit datum, seřadit
 7. **Zapsat Archiv** (až sem jsou data v bezpečí i při chybě kreslení)
 8. Smazat Přehled od řádku 4 a vykreslit z Archivu
@@ -420,11 +422,7 @@ ostrém sešitu nechat v Archivu jen aktuální rok. Jeden přehled za všechny
 roky tím zanikne; prohledávání staršího roku = otevřít ten soubor. Dřív
 to nedělat — zbytečné stěhování dat.
 
-**Různý počet řádků i v tlačítku Aktualizovat.** Dnes to hlásí jen Kontrola.
-Scénář: soubor `260814_1_MD1.xlsx` se jednou zpracuje (8 měření), pak ho
-někdo ve zdroji přepíše opravou (10 měření, stejný název). Aktualizovat ho
-přeskočí, protože jméno už v Archivu je. Kontrola ukáže „různý počet řádků“.
-Kdo mačká jen Aktualizovat, nesrovnalost nevidí. Až to bude vadit, stačí
-do razítka přidat větu „1 soubor má jiný počet řádků — Kontrola“.
-Záměrně to v Aktualizovat není: přepsat už archivovaný soubor bez ptaní
-by bylo horší než ho přeskočit.
+**Různý počet řádků i v tlačítku Aktualizovat.** Když má Dotaz1 u stejného
+souboru víc řádků než Archiv (typicky kliknutí během načítání), Aktualizovat
+**doplní chybějící řádky**. Řádky, které v Archivu už jsou, se nepřepisují.
+Když má zdroj naopak méně řádků, Archiv se nemění — to hlásí jen Kontrola.
