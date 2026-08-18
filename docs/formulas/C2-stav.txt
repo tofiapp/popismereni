@@ -1,5 +1,5 @@
 C2 a F2 zapisuje skript Aktualizovat. Používá jen KDYŽ a POČET2.
-Formát buněk musí být Obecný — při textu (@) Excel vzorec ukáže jako text.
+Formát buněk musí být General (ne text @) — jinak Excel vzorec ukáže jako text.
 
 1. Nahradit skript aktualizovat.ts, uložit
 2. Jednou 2. Aktualizovat

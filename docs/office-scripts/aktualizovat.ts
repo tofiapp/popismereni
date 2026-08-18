@@ -458,9 +458,9 @@ function zapisNacitani(list: ExcelScript.Worksheet, listDat: string): void {
   const stare = f2.getConditionalFormats();
   for (let i = stare.length - 1; i >= 0; i--) stare[i].delete();
 
-  // Nejdřív Obecný formát — při @ se setFormulaLocal zapíše jako text.
+  // Nejdřív General — při textovém formátu (@) se setFormulaLocal zapíše jako text.
   f2.clear(ExcelScript.ClearApplyTo.all);
-  f2.setNumberFormatLocal("Obecný");
+  f2.setNumberFormat("General");
   f2.setFormulaLocal(
     "=KDYŽ(POČET2(" + odkaz + "!A2:A5000)=0;KDYŽ(AB1=0;\"Načítají se data — neklikejte na Aktualizovat\";G2);G2)"
   );
@@ -501,7 +501,7 @@ function zapisStavVzorce(
   const stare = c2.getConditionalFormats();
   for (let i = stare.length - 1; i >= 0; i--) stare[i].delete();
   c2.clear(ExcelScript.ClearApplyTo.formats);
-  c2.setNumberFormatLocal("Obecný");
+  c2.setNumberFormat("General");
   c2.setFormulaLocal(
     "=KDYŽ(POČET2(" + odkaz + "!A2:A5000)>AB1;\"Přehled není aktuální\";\"Aktuální\")"
   );
