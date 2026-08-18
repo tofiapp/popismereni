@@ -130,7 +130,7 @@ function main(workbook: ExcelScript.Workbook) {
   hlaska(cil, razitko, "#808080");
   uvolniZamek(cil, SL_CAS);
 
-  zapisStavVzorce(cil, t.getWorksheet().getName(), dNove, idx[0]);
+  zapisStavVzorce(workbook, cil, t, dNove, idx[0]);
 
   cil.activate();
   cil.setPosition(0);
@@ -492,7 +492,7 @@ function formatDatum(iso: string): string {
 
 function zapisNacitani(list: ExcelScript.Worksheet, listDat: string): void {
   // Varování při prázdném DataALL/Dotaz1 (typicky při otevírání). Tlačítko Excel neumí vypnout.
-  const odkaz = /[\s'()]/.test(listDat) ? "'" + listDat.replace(/'/g, "''") + "'" : listDat;
+  const odkaz = odkazListu(listDat);
   const a1 = list.getRange("A1");
   a1.clear(ExcelScript.ClearApplyTo.all);
   a1.setNumberFormat("General");
@@ -505,30 +505,55 @@ function zapisNacitani(list: ExcelScript.Worksheet, listDat: string): void {
   a1.getFormat().getFont().setColor("#C00000");
 }
 
+/**
+ * C2 = Aktuální, když POČET2(zdroj) <= AB1.
+ * AB1 musí být přesně hodnota stejného POČET2 v okamžiku sloučení —
+ * dřív se bral počet z těla tabulky a POČET2 na listu byl vyšší → pořád „není aktuální“.
+ */
 function zapisStavVzorce(
+  workbook: ExcelScript.Workbook,
   list: ExcelScript.Worksheet,
-  listDat: string,
-  dNove: (string | number | boolean)[][],
-  idxSoubor: number,
+  t: ExcelScript.Table,
+  _dNove: (string | number | boolean)[][],
+  _idxSoubor: number,
 ): void {
-  let n = 0;
-  for (const r of dNove) {
-    if (String(r[idxSoubor] ?? "").trim() !== "") n++;
+  const listDat = t.getWorksheet().getName();
+  const odkaz = odkazListu(listDat);
+  const vzorecPocet = "POČET2(" + odkaz + "!A2:A5000)";
+
+  // Spočítej stejným vzorcem jako C2 (ne přes tělo tabulky)
+  const tmp = list.getRange("AB2");
+  tmp.setNumberFormat("General");
+  tmp.setFormulaLocal("=" + vzorecPocet);
+  try {
+    workbook.getApplication().calculate(ExcelScript.CalculationType.full);
+  } catch (_e) { /* některé klienty calculate nemají */ }
+
+  let n = Number(tmp.getValue());
+  if (isNaN(n) || n < 0) {
+    // fallback: spočítat z listu A2:A5000
+    n = 0;
+    const vals = t.getWorksheet().getRange("A2:A5000").getValues();
+    for (let i = 0; i < vals.length; i++) {
+      if (String(vals[i][0] ?? "").trim() !== "") n++;
+    }
   }
+  tmp.clear(ExcelScript.ClearApplyTo.contents);
 
   const ab = list.getRange("AB1");
+  ab.setNumberFormat("General");
   ab.setValue(n);
   ab.getFormat().getFont().setColor("#FFFFFF");
   list.getRange("AB:AB").getFormat().setColumnWidth(0);
 
-  const odkaz = /[\s'()]/.test(listDat) ? "'" + listDat.replace(/'/g, "''") + "'" : listDat;
   const c2 = list.getRange("C2");
   const stare = c2.getConditionalFormats();
   for (let i = stare.length - 1; i >= 0; i--) stare[i].delete();
   c2.clear(ExcelScript.ClearApplyTo.formats);
+  c2.clear(ExcelScript.ClearApplyTo.contents);
   c2.setNumberFormat("General");
   c2.setFormulaLocal(
-    "=KDYŽ(POČET2(" + odkaz + "!A2:A5000)>AB1;\"Přehled není aktuální\";\"Aktuální\")"
+    "=KDYŽ(" + vzorecPocet + ">AB1;\"Přehled není aktuální\";\"Aktuální\")"
   );
   c2.getFormat().getFont().setName("Calibri");
   c2.getFormat().getFont().setSize(18);
@@ -546,6 +571,34 @@ function zapisStavVzorce(
   cervena.getCustom().getRule().setFormula("=C2=\"Přehled není aktuální\"");
   cervena.getCustom().getFormat().getFont().setColor("#C00000");
   cervena.getCustom().getFormat().getFont().setBold(true);
+
+  try {
+    workbook.getApplication().calculate(ExcelScript.CalculationType.full);
+  } catch (_e) { /* ignore */ }
+
+  // Když Excel ještě hlásí „není aktuální“, dorovnej AB1 znovu na živý POČET2 (bez přepsání vzorce).
+  const ted = String(c2.getValue() ?? "");
+  if (ted === "Přehled není aktuální") {
+    tmp.setFormulaLocal("=" + vzorecPocet);
+    try {
+      workbook.getApplication().calculate(ExcelScript.CalculationType.full);
+    } catch (_e2) { /* ignore */ }
+    const n2 = Number(tmp.getValue());
+    tmp.clear(ExcelScript.ClearApplyTo.contents);
+    if (!isNaN(n2) && n2 >= 0) {
+      ab.setValue(n2);
+      try {
+        workbook.getApplication().calculate(ExcelScript.CalculationType.full);
+      } catch (_e3) { /* ignore */ }
+    }
+    console.log("C2 dorovnani AB1 na POČET2=" + n2 + " (list=" + listDat + ")");
+  } else if (ted !== "Aktuální") {
+    console.log("C2 neocekavana hodnota po vzorci: " + ted + " (list=" + listDat + ")");
+  }
+}
+
+function odkazListu(listDat: string): string {
+  return /[\s'()]/.test(listDat) ? "'" + listDat.replace(/'/g, "''") + "'" : listDat;
 }
 
 function txt(v: string | number | boolean): string {
