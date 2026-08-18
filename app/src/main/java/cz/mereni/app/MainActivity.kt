@@ -167,6 +167,9 @@ class MainActivity : ComponentActivity() {
                 onIsPendingOneDriveConfirm = {
                     store.isPendingOneDriveConfirm()
                 },
+                onPendingExportName = {
+                    store.pendingExportFileName()
+                },
                 onShareOneDrive = { file ->
                     OneDriveShare.shareExport(this@MainActivity, file)
                 },
@@ -201,6 +204,7 @@ fun MereniApp(
     onConfirmOneDriveSaved: () -> Pair<Int, Int>,
     onCancelOneDriveConfirm: () -> Unit,
     onIsPendingOneDriveConfirm: () -> Boolean,
+    onPendingExportName: () -> String,
     onShareOneDrive: (File) -> Unit,
     onReload: suspend () -> PasportLoadResult,
     onKeysForStation: suspend (Station?, List<PasportKey>) -> List<PasportKey>,
@@ -228,6 +232,7 @@ fun MereniApp(
     var oneDriveSynced by remember { mutableStateOf(initialOneDriveSynced) }
     var leftForOneDriveShare by remember { mutableStateOf(false) }
     var showOneDriveConfirm by remember { mutableStateOf(false) }
+    var pendingExportName by remember { mutableStateOf(onPendingExportName()) }
     var reorderPole1 by remember { mutableStateOf(false) }
     var reorderPole2 by remember { mutableStateOf(false) }
     var usedPole1A by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -244,6 +249,7 @@ fun MereniApp(
 
     LaunchedEffect(Unit) {
         if (onIsPendingOneDriveConfirm()) {
+            pendingExportName = onPendingExportName()
             showOneDriveConfirm = true
         }
     }
@@ -254,6 +260,7 @@ fun MereniApp(
             if (event == Lifecycle.Event.ON_RESUME && leftForOneDriveShare) {
                 leftForOneDriveShare = false
                 if (onIsPendingOneDriveConfirm()) {
+                    pendingExportName = onPendingExportName()
                     showOneDriveConfirm = true
                 }
             }
@@ -411,6 +418,7 @@ fun MereniApp(
         scope.launch {
             val file = onPrepareOneDriveFile()
             oneDriveSynced = false
+            pendingExportName = file.name
             // Work profil: OneDrive ve Files / SAF není — jen share sheet → appka OneDrive.
             leftForOneDriveShare = true
             onShareOneDrive(file)
@@ -719,21 +727,20 @@ fun MereniApp(
                     },
                 )
                 val dalsiShape = RoundedCornerShape(10.dp)
+                val cas = if (timeChosen) timeLabel() else ""
+                val noteText = note.trim()
+                val hasContent = pole1.isNotEmpty() || pole2.isNotEmpty() ||
+                    cas.isNotBlank() || noteText.isNotBlank()
+                val dalsiAccent = if (hasContent) MereniColors.Vyhybka else MereniColors.TextMuted
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
                         .height(48.dp)
                         .widthIn(min = 168.dp)
                         .clip(dalsiShape)
-                        .background(MereniColors.Vyhybka.copy(alpha = 0.12f))
-                        .border(2.5.dp, MereniColors.Vyhybka, dalsiShape)
-                        .clickable {
-                            val cas = if (timeChosen) timeLabel() else ""
-                            val noteText = note.trim()
-                            val hasContent = pole1.isNotEmpty() || pole2.isNotEmpty() ||
-                                cas.isNotBlank() || noteText.isNotBlank()
-                            if (!hasContent) return@clickable
-
+                        .background(dalsiAccent.copy(alpha = if (hasContent) 0.12f else 0.06f))
+                        .border(2.5.dp, dalsiAccent, dalsiShape)
+                        .clickable(enabled = hasContent) {
                             fun saveFor(
                                 station: Station?,
                                 p1: List<SelectedToken>,
@@ -787,7 +794,7 @@ fun MereniApp(
                 ) {
                     Text(
                         "Další záznam",
-                        color = MereniColors.Vyhybka,
+                        color = dalsiAccent,
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp,
                     )
@@ -934,7 +941,11 @@ fun MereniApp(
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        "Nahrál jsi denní soubor na OneDrive?",
+                        if (pendingExportName.isNotBlank()) {
+                            "Soubor $pendingExportName — je v OneDrive / MD1?"
+                        } else {
+                            "Soubor — je v OneDrive / MD1?"
+                        },
                         color = MereniColors.Text,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 17.sp,
@@ -943,10 +954,9 @@ fun MereniApp(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "Ve Files OneDrive neuvidíš — ulož přes appku OneDrive.\n" +
-                            "OneDrive = xlsx → ${MeasurementStore.DNY_HINT_PATH}\n" +
-                            "Edge = ZIP (xlsx v prohlížeči nejde).\n\n" +
-                            "✕ — tlačítko zůstane červené.\n" +
+                        "Ulož přes appku OneDrive do ${MeasurementStore.DNY_HINT_PATH}.\n" +
+                            "OneDrive = xlsx · Edge = ZIP.\n\n" +
+                            "✕ — nic se nesmaže, tlačítko zůstane červené.\n" +
                             "ANO — vymazat místní záznamy (zelená).",
                         color = MereniColors.TextMuted,
                         fontSize = 12.sp,
