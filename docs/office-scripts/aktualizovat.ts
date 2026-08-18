@@ -7,18 +7,18 @@
  * První běh: když Archiv ještě není, načte se stávající Přehled (sloupec E).
  * Než sloučí, počká jen když je Dotaz1 prázdný nebo se ještě mění.
  * A1 = varování při prázdném Dotaz1. F2 = razítko/hláška. C2 = Aktuální.
- * Tlačítko Excel neumí vypnout — při prázdném Dotaz1 skript skončí hned.
+ * Tlačítko Excel neumí vypnout — zámek N2 hned po startu (60 s), druhé kliknutí skončí.
  *
  * Vložit do Excelu: Automatizér → Nový skript → nahradit obsah.
  */
 function main(workbook: ExcelScript.Workbook) {
   const SLOUPCE = ["ZdrojovySoubor", "Datum", "Poradi", "Stanice", "Hodnota", "Rozsah", "Cas", "Popis"];
-  const PAUZA_S = 20;
+  const PAUZA_S = 60;
   const SL_CAS = 13; // N2
 
   let cil = workbook.getWorksheet("Přehled");
 
-  // --- ochrana proti soubehu dvou uzivatelu ---
+  // --- zámek: nejdřív zkontrolovat, hned zapsat N2 (dvojklik jinak stihne oba běhy) ---
   if (cil) {
     const posledniIso = String(cil.getRangeByIndexes(1, SL_CAS, 1, 1).getValue() ?? "").trim();
     if (posledniIso !== "") {
@@ -27,39 +27,42 @@ function main(workbook: ExcelScript.Workbook) {
         const rozdil = (Date.now() - then) / 1000;
         if (rozdil >= 0 && rozdil < PAUZA_S) {
           const zbyva = Math.ceil(PAUZA_S - rozdil);
-          hlaska(cil, "⚠ Počkejte " + zbyva + " s a klikněte znovu", "#C00000");
-          console.log("Preruseno: aktualizace probehla pred " + Math.round(rozdil) + " s.");
+          hlaska(cil, "⚠ Aktualizace už běží / právě doběhla — počkejte " + zbyva + " s", "#C00000");
+          console.log("Preruseno: zamek N2, pred " + Math.round(rozdil) + " s.");
           return;
         }
       }
     }
+    zapisZamek(cil, SL_CAS);
+    hlaska(cil, "Aktualizace běží — neklikejte znovu", "#C00000");
   }
 
   const t = najdiTabulkuDat(workbook, SLOUPCE);
   if (!t) {
-    if (cil) hlaska(cil, "⚠ Chybí tabulka s daty", "#C00000");
+    if (cil) {
+      hlaska(cil, "⚠ Chybí tabulka s daty", "#C00000");
+      uvolniZamekBrzy(cil, SL_CAS, PAUZA_S);
+    }
     return;
   }
   const h = t.getHeaderRowRange().getValues()[0].map(v => String(v));
   const idx = SLOUPCE.map(s => h.indexOf(s));
   if (idx.some(i => i < 0)) {
-    if (cil) hlaska(cil, "⚠ Chybí sloupce v datech", "#C00000");
+    if (cil) {
+      hlaska(cil, "⚠ Chybí sloupce v datech", "#C00000");
+      uvolniZamekBrzy(cil, SL_CAS, PAUZA_S);
+    }
     console.log("Hlavicky: " + h.join(", "));
     return;
   }
 
   if (cil) zapisNacitani(cil, t.getWorksheet().getName());
 
-  // Během běhu zablokovat druhé kliknutí (20s pauza přes N2).
-  if (cil) {
-    cil.getRangeByIndexes(1, SL_CAS, 1, 1).setValue(new Date().toISOString());
-    cil.getRangeByIndexes(1, SL_CAS, 1, 1).getFormat().getFont().setColor("#FFFFFF");
-  }
-
   if (!cil) cil = workbook.addWorksheet("Přehled");
   let dNove = pockejNaNacteni(cil, t, idx[0]);
   if (!dNove) {
     hlaska(cil, "Počkejte na načtení dat a klikněte znovu", "#C00000");
+    uvolniZamekBrzy(cil, SL_CAS, PAUZA_S);
     return;
   }
   const nDotaz = pocetNepradnych(dNove, idx[0]);
@@ -84,7 +87,11 @@ function main(workbook: ExcelScript.Workbook) {
   // --- nove soubory + chybejici radky u uz znamych (Archiv se neprepisuje) ---
   let pridano = pridejNoveSoubory(zaznamy, znamSoubory, dNove, idx);
 
-  if (zaznamy.length === 0) { if (cil) hlaska(cil, "⚠ Žádná data", "#C00000"); return; }
+  if (zaznamy.length === 0) {
+    hlaska(cil, "⚠ Žádná data", "#C00000");
+    uvolniZamekBrzy(cil, SL_CAS, PAUZA_S);
+    return;
+  }
 
   doplnDatum(zaznamy);
   seradZaznamy(zaznamy);
@@ -94,7 +101,6 @@ function main(workbook: ExcelScript.Workbook) {
   vykresliPrehled(cil, zaznamy);
 
   // Druhé čtení: jen soubory, které Archiv pořád nezná. Už uložené se nepřepisují.
-  // Když Dotaz1 mezitím zmenšil (obnova ještě běží), neslučovat — AB1 zůstane z 1. snímku.
   const dPozde = nactiTeloTabulky(t);
   const nPozde = pocetNepradnych(dPozde, idx[0]);
   if (nPozde > 0 && nPozde >= nDotaz) {
@@ -116,8 +122,7 @@ function main(workbook: ExcelScript.Workbook) {
     "   (nově: " + pridano + ")";
 
   hlaska(cil, razitko, "#808080");
-  cil.getRangeByIndexes(1, SL_CAS, 1, 1).setValue(ted.toISOString());
-  cil.getRangeByIndexes(1, SL_CAS, 1, 1).getFormat().getFont().setColor("#FFFFFF");
+  zapisZamek(cil, SL_CAS);
 
   zapisStavVzorce(cil, t.getWorksheet().getName(), dNove, idx[0]);
 
@@ -125,6 +130,18 @@ function main(workbook: ExcelScript.Workbook) {
   cil.setPosition(0);
   cil.getFreezePanes().freezeRows(3);
   console.log("Novych souboru: " + pridano + ", celkem radku v Archivu: " + zaznamy.length);
+}
+
+function zapisZamek(list: ExcelScript.Worksheet, slCas: number): void {
+  list.getRangeByIndexes(1, slCas, 1, 1).setValue(new Date().toISOString());
+  list.getRangeByIndexes(1, slCas, 1, 1).getFormat().getFont().setColor("#FFFFFF");
+}
+
+/** Po chybném startu — ať jde kliknout znovu za ~3 s, ne až po celé pauze. */
+function uvolniZamekBrzy(list: ExcelScript.Worksheet, slCas: number, pauzaS: number): void {
+  const uvolneni = new Date(Date.now() - (pauzaS - 3) * 1000);
+  list.getRangeByIndexes(1, slCas, 1, 1).setValue(uvolneni.toISOString());
+  list.getRangeByIndexes(1, slCas, 1, 1).getFormat().getFont().setColor("#FFFFFF");
 }
 
 function najdiTabulkuDat(workbook: ExcelScript.Workbook, sloupce: string[]): ExcelScript.Table | null {

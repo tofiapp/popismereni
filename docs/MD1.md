@@ -59,10 +59,11 @@ jednorázové migrace.
 (nebo je prázdný), načte stávající Přehled ze sloupce E a zapíše ho do Archivu.
 Stará data se neztratí. Další běhy už Přehled jako zdroj nepoužívají.
 
-**Souběh Aktualizovat:** 20s pauza (`PAUZA_S`) podle razítka v N2. Není to
-zámek sešitu — zúží okno, kdy dva lidé přepíšou list naráz. Určit jednoho
-člověka na tlačítko provozně nejde; tahle pauza je kompromis, který Excel
-na SharePointu umí.
+**Souběh Aktualizovat:** hned po startu skript zapíše **N2** + do F2
+*Aktualizace běží — neklikejte znovu*. Pauza **`PAUZA_S` = 60 s** — druhé
+kliknutí v té době skončí hláškou. Není to zámek sešitu; zúží okno, kdy
+dva běhy přepíšou list naráz. Dva skoro současné kliky (oba dřív než N2)
+Office Script spolehlivě nezastaví — po kliknutí počkejte na konec běhu.
 
 ---
 
@@ -246,12 +247,12 @@ Tlačítko **2. Aktualizovat**. Zdroj kódu: [`office-scripts/aktualizovat.ts`](
 
 Postup běhu:
 
-1. Pauza 20 s, když N2 říká, že právě běželo
+1. Kontrola N2; hned zápis zámku + F2 *Aktualizace běží* (pauza 60 s)
 2. Najít tabulku dat (ne TabArchiv)
 3. Když je Dotaz1 prázdný nebo se počet řádků ještě mění, počkat / skončit.
    A1 ukáže *Načítají se data — neklikejte na Aktualizovat* (vzorec).
    F2 je razítko nebo hláška ze skriptu (jeden nápis). C2 sleduje Dotaz1.
-   Tlačítko Excel neumí vypnout — ochrana je prázdný Dotaz1 + N2 pauza.
+   Tlačítko Excel neumí vypnout — ochrana je N2 hned na startu + Dotaz1.
 4. Načíst Archiv; když je prázdný, jednorázově naplnit z Přehledu (sl. E)
 5. Přidat soubory, které Archiv ještě nezná; u už známých souborů jen
    **chybějící řádky** (stejný název, v Dotaz1 víc měření — např. kliknutí
@@ -338,10 +339,9 @@ Zjištěno praxí během vývoje. **Toto je nejcennější část dokumentu.**
 - **Živý náhled bez práva zápisu neexistuje** — spoluautorství vyžaduje zápis
 - Automatické ukládání + spoluautorství = riziko, že dva hromadné přepisy listu
   Excel sloučí nepředvídatelně
-- Ochrana v kódu: 20s pauza mezi spuštěními (`PAUZA_S`). Zúží okno rizika,
-  neodstraní ho. Razítko se dnes píše **až na konci** běhu — dva kliky v téže
-  vteřině pauzu minou. Kdyby to začalo vadit, stačí zapsat N2 hned na začátku
-  skriptu (po kontrole pauzy). Zatím nesahejte, dokud to v provozu nebude bolet.
+- Ochrana v kódu: **N2 hned na začátku** + 60s pauza (`PAUZA_S`). Zúží okno
+  rizika, neodstraní ho úplně — dva kliky ve stejné vteřině (oba před zápisem
+  N2) pauzu ještě minou. Při předčasném konci se zámek uvolní za ~3 s.
 
 ---
 
@@ -414,8 +414,7 @@ Archiv je jediné místo, kde data žijí po smazání zdrojů.
   „Přidat zástupce do mých souborů" u sdílené knihovny.
 - **Sdílený souběžný zápis** — odloženo. Řešilo by se přesunem archivu
   do SharePointového seznamu, kde je zápis po záznamech nezávislý.
-- **Razítko N2 na začátku skriptu** — viz sekce 7, souběh. Dělat, až 20s
-  pauza v praxi nestačí.
+- ~~**Razítko N2 na začátku skriptu**~~ — hotovo (`PAUZA_S` 60 s + F2 hláška).
 
 ### Později, až to začne bolet — ne teď
 
