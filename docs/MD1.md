@@ -112,8 +112,8 @@ přepíše z Archivu.
 
 ```
 řádek 1:  (volný)
-řádek 2:  [tlačítko Kontrola] C2=stav  F2=jeden nápis (načítání / razítko)
-          [tlačítko Aktualizovat] N2=čas ISO(skrytý)
+řádek 2:  [tlačítko Kontrola] C2=stav (vzorec × Dotaz1)  F2=načítání / razítko (vzorec)
+          [tlačítko Aktualizovat] G2=text skriptu(skrytý)  N2=čas ISO(skrytý)
 řádek 3:  (volný, ukotvené příčky pod ním)
 řádek 4+: data — A=Hodnota, B=Rozsah, C=Čas, D=Popis, E=značka souboru (šířka 0)
 ```
@@ -248,9 +248,11 @@ Postup běhu:
 
 1. Pauza 20 s, když N2 říká, že právě běželo
 2. Najít tabulku dat (ne TabArchiv)
-3. Když je Dotaz1 prázdný nebo se počet řádků ještě mění, do F2 napíše
-   *Načítají se data — neklikejte na Aktualizovat*. Když už řádky jsou, sloučí hned.
-   Archiv se při čekání nemění. F2 je vždy text zapsaný skriptem, ne vzorec.
+3. Když je Dotaz1 prázdný nebo se počet řádků ještě mění, počkat.
+   F2 je vzorec: při prvním načtení *Načítají se data…*, jinak razítko z G2.
+   C2 je vzorec proti Dotaz1 — po obnovení dat se přepne samo. Archiv se
+   při čekání nemění. Formát F2/C2 je Obecný (ne text), jinak Excel vzorec
+   ukáže jako text.
 4. Načíst Archiv; když je prázdný, jednorázově naplnit z Přehledu (sl. E)
 5. Přidat soubory, které Archiv ještě nezná; u už známých souborů jen
    **chybějící řádky** (stejný název, v Dotaz1 víc měření — např. kliknutí
