@@ -285,12 +285,9 @@ Kategorie nálezů:
 
 ### Stav v C2 — kdy zmáčknout Aktualizovat
 
-C2 hlásí **Přehled není aktuální**, když má **DataALL** (dříve Dotaz1) víc
-řádků než snímek v AB1. Po 2. Aktualizovat zase **Aktuální** (vzorec ukazuje
-na skutečný list zdroje).
-
-Vzorce jsou jen na Přehledu. Na list DataALL se nedávají — Power Query ho
-při obnovení přepíše.
+C2 hlásí **Přehled není aktuální**, když má **DataALL** víc neprázdných
+řádků v A než snímek **AB1** z posledního sloučení. AB1 skript nastaví
+stejným `POČET2` jako vzorec (ne z těla tabulky). Po Aktualizovat = **Aktuální**.
 
 Postup: [`formulas/C2-stav.txt`](formulas/C2-stav.txt).
 Skript `aktualizovat.ts` maže jen `A4:E`, ne celý list.
