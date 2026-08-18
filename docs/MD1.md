@@ -238,9 +238,9 @@ Postup běhu:
 
 1. Pauza 20 s, když N2 říká, že právě běželo
 2. Najít tabulku dat (ne TabArchiv)
-3. **Počkat, až Power Query dojede** (`getRefreshDate` se změní / je čerstvé).
-   F2: *Čekám na načtení dat…*. N2 se během čekání obnovuje, druhé kliknutí
-   nespustí druhý běh. Archiv se zatím nemění.
+3. Když je Dotaz1 prázdný nebo se počet řádků ještě mění, počkat
+   (F2: *Čekám na načtení dat…*). Když už řádky v Dotaz1 jsou, sloučit hned.
+   Archiv se při čekání nemění.
 4. Načíst Archiv; když je prázdný, jednorázově naplnit z Přehledu (sl. E)
 5. Přidat soubory, které Archiv ještě nezná; u už známých souborů jen
    **chybějící řádky** (stejný název, v Dotaz1 víc měření — např. kliknutí
@@ -378,9 +378,8 @@ Nemá smysl to zkoušet znovu:
    *Aktualizovat data při otevírání souboru* ve vlastnostech dotazu).
    U dotazu **vypnout** *Povolit obnovení na pozadí* — Excel počká na načtení
    a uživatel nemůže kliknout do rozpracovaného souboru.
-2. Kliknout **2. Aktualizovat** — skript počká, až se data načtou, a teprve
-   pak sloučí. Když do ~55 s nedorazí, F2 řekne kliknout znovu. Archiv se
-   v tom případě nemění.
+2. Kliknout **2. Aktualizovat**. Když už jsou v Dotaz1 řádky, sloučí hned.
+   Hláška *Čekám na načtení dat…* jen když je Dotaz1 prázdný nebo se ještě mění.
 3. Uložit (nebo mít zapnuté Automatické ukládání)
 
 **Když tlačítko nereaguje:** Automatizér → skript → Spustit.
@@ -405,8 +404,8 @@ Archiv je jediné místo, kde data žijí po smazání zdrojů.
 - **Skupina Teams MD1** pro správu oprávnění — plán, nerealizováno.
 - **Sdílený souběžný zápis** — odloženo. Řešilo by se přesunem archivu
   do SharePointového seznamu, kde je zápis po záznamech nezávislý.
-- **Razítko N2 během čekání na dotaz** — už se píše, ať druhé kliknutí
-  nespustí souběžný běh.
+- **Razítko N2 na začátku skriptu** — viz sekce 7, souběh. Dělat, až 20s
+  pauza v praxi nestačí.
 
 ### Později, až to začne bolet — ne teď
 
