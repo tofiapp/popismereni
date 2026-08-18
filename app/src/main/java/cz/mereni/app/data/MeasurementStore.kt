@@ -122,7 +122,7 @@ class MeasurementStore(context: Context) {
 
     /**
      * Shrnutí dávky k potvrzení OneDrive: stanice a počty záznamů
-     * (pořadí první návštěvy), např. „Nymburk — 3\\nUnhošť — 1“.
+     * (pořadí první návštěvy), např. „Nymburk — 3“ a „Unhošť — 1“ na dalších řádcích.
      */
     fun pendingExportSummary(): String {
         prefs.getString(KEY_PENDING_EXPORT_SUMMARY, null)?.takeIf { it.isNotBlank() }?.let {
