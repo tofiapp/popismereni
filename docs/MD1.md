@@ -59,10 +59,9 @@ jednorázové migrace.
 (nebo je prázdný), načte stávající Přehled ze sloupce E a zapíše ho do Archivu.
 Stará data se neztratí. Další běhy už Přehled jako zdroj nepoužívají.
 
-**Souběh Aktualizovat:** hned po startu skript zapíše **N2** + do F2
-*Aktualizace běží — neklikejte znovu*. Po **úspěchu se N2 smaže** — žádná
-minutová pauza. Druhý klik během běhu skončí bez přepsání razítka.
-`PAUZA_S` (~25 s) platí jen když skript spadne uprostřed a N2 zůstane.
+**Souběh Aktualizovat:** hned po startu **N2** + **F2** *Aktualizace běží*.
+Po úspěchu N2 pryč. A1 jen při prázdném zdroji (*Načítají se data…*).
+`PAUZA_S` (~25 s) jen když skript spadne uprostřed.
 
 ---
 
