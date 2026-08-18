@@ -248,11 +248,10 @@ Postup běhu:
 
 1. Pauza 20 s, když N2 říká, že právě běželo
 2. Najít tabulku dat (ne TabArchiv)
-3. Když je Dotaz1 prázdný nebo se počet řádků ještě mění, počkat.
-   F2 je vzorec: při prvním načtení *Načítají se data…*, jinak razítko z G2.
-   C2 je vzorec proti Dotaz1 — po obnovení dat se přepne samo. Archiv se
-   při čekání nemění. Formát F2/C2 je General přes setNumberFormat (ne text @),
-   jinak Excel vzorec ukáže jako text.
+3. Když je Dotaz1 prázdný nebo se počet řádků ještě mění, počkat / skončit.
+   A1 ukáže *Načítají se data — neklikejte na Aktualizovat* (vzorec).
+   F2 je razítko nebo hláška ze skriptu (jeden nápis). C2 sleduje Dotaz1.
+   Tlačítko Excel neumí vypnout — ochrana je prázdný Dotaz1 + N2 pauza.
 4. Načíst Archiv; když je prázdný, jednorázově naplnit z Přehledu (sl. E)
 5. Přidat soubory, které Archiv ještě nezná; u už známých souborů jen
    **chybějící řádky** (stejný název, v Dotaz1 víc měření — např. kliknutí

@@ -1,14 +1,12 @@
-C2 a F2 zapisuje skript Aktualizovat. Používá jen KDYŽ a POČET2.
-Formát buněk musí být General (ne text @) — jinak Excel vzorec ukáže jako text.
+C2 a A1 zapisuje skript Aktualizovat. Používá jen KDYŽ a POČET2.
 
 1. Nahradit skript aktualizovat.ts, uložit
 2. Jednou 2. Aktualizovat
 
-AB1 = počet řádků v Dotaz1 ve snímku, který se opravdu sloučil.
+A1 = KDYŽ(POČET2(Dotaz1!A2:A5000)=0; "Načítají se data — neklikejte na Aktualizovat"; "")
 C2 = KDYŽ(POČET2(Dotaz1!A2:A5000)>AB1; "Přehled není aktuální"; "Aktuální")
-F2 = KDYŽ(POČET2(...)=0; KDYŽ(AB1=0; "Načítají se data — neklikejte na Aktualizovat"; G2); G2)
-G2 = skryté razítko ze skriptu
+F2 = razítko / hláška ze skriptu (hodnota, ne vzorec)
+AB1 = počet řádků v Dotaz1 ve snímku, který se sloučil
 
-Nový soubor v Dotaz1 zvýší POČET2 → C2 se přepne samo.
-Po Aktualizovat se AB1 srovná → zase Aktuální.
-Po smazání zdrojů (Dotaz1 prázdný, AB1>0) F2 ukáže razítko, ne načítání.
+Nový soubor v Dotaz1 → C2 se přepne samo.
+Tlačítko Excel neumí vypnout — při prázdném Dotaz1 skript nic nesloučí.
