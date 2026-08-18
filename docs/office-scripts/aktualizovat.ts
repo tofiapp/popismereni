@@ -7,9 +7,10 @@
  * První běh: když Archiv ještě není, načte se stávající Přehled (sloupec E).
  * Než sloučí, počká jen když je DataALL/Dotaz1 prázdný nebo se ještě mění.
  *
- * A1 = VŽDY prázdné (žádný nápis, žádný vzorec).
- * F2 = provozní stav (běží / razítko / chyba) — hodnota ze skriptu.
- * C2 = Aktuální. N2 = zámek jen během běhu, po úspěchu pryč.
+ * A1 = vždy prázdné.
+ * F2 = VŽDY vzorec (živě jako u PQ): N2→běží | prázdný zdroj→načítají se | jinak G2.
+ *     Zápis hodnoty do F2 na začátku skriptu NIC neochrání — Excel to ukáže až na konci.
+ * G2 = razítko / chyba (hodnota). N2 = zámek. C2 = Aktuální.
  *
  * Vložit do Excelu: Automatizér → Nový skript → nahradit obsah.
  */
@@ -19,8 +20,9 @@ function main(workbook: ExcelScript.Workbook) {
   const SL_CAS = 13; // N2
 
   let cil = workbook.getWorksheet("Přehled");
+  const t = najdiTabulkuDat(workbook, SLOUPCE);
 
-  // --- zámek + F2 hned ---
+  // --- zámek N2 PRVNÍ (ochrana proti 2. kliku). F2 se nepřepisuje hodnotou. ---
   if (cil) {
     vycistiA1(cil);
     const posledniIso = String(cil.getRangeByIndexes(1, SL_CAS, 1, 1).getValue() ?? "").trim();
@@ -29,26 +31,27 @@ function main(workbook: ExcelScript.Workbook) {
       if (!isNaN(then)) {
         const rozdil = (Date.now() - then) / 1000;
         if (rozdil >= 0 && rozdil < PAUZA_S) {
-          const f2 = String(cil.getRange("F2").getValue() ?? "");
-          if (f2.indexOf("Aktualizováno") === 0) {
+          const g2 = String(cil.getRange("G2").getValue() ?? "");
+          if (g2.indexOf("Aktualizováno") === 0) {
             console.log("Preruseno: zamek, razitko uz je.");
             return;
           }
-          hlaska(cil, "⚠ Aktualizace ještě běží — neklikejte znovu", "#C00000");
+          // F2 vzorec už hlásí běží přes N2 — nic nepřepisuj
           console.log("Preruseno: zamek N2, pred " + Math.round(rozdil) + " s.");
           return;
         }
       }
     }
     zapisZamek(cil, SL_CAS);
-    hlaska(cil, "Aktualizace běží — neklikejte znovu", "#C00000");
+    // F2 = vzorec hned (reaguje na N2 / prázdný zdroj). Žádné setValue „běží“.
+    zapisF2Vzorec(cil, t);
   }
 
-  const t = najdiTabulkuDat(workbook, SLOUPCE);
   if (!t) {
     if (cil) {
-      hlaska(cil, "⚠ Chybí tabulka s daty", "#C00000");
+      zapisG2(cil, "⚠ Chybí tabulka s daty", "#C00000");
       uvolniZamek(cil, SL_CAS);
+      zapisF2Vzorec(cil, null);
     }
     return;
   }
@@ -56,8 +59,9 @@ function main(workbook: ExcelScript.Workbook) {
   const idx = SLOUPCE.map(s => h.indexOf(s));
   if (idx.some(i => i < 0)) {
     if (cil) {
-      hlaska(cil, "⚠ Chybí sloupce v datech", "#C00000");
+      zapisG2(cil, "⚠ Chybí sloupce v datech", "#C00000");
       uvolniZamek(cil, SL_CAS);
+      zapisF2Vzorec(cil, t);
     }
     console.log("Hlavicky: " + h.join(", "));
     return;
@@ -65,10 +69,13 @@ function main(workbook: ExcelScript.Workbook) {
 
   if (!cil) cil = workbook.addWorksheet("Přehled");
   vycistiA1(cil);
+  zapisF2Vzorec(cil, t);
+
   let dNove = pockejNaNacteni(cil, t, idx[0]);
   if (!dNove) {
-    hlaska(cil, "Počkejte na načtení dat a klikněte znovu", "#C00000");
+    zapisG2(cil, "Počkejte na načtení dat a klikněte znovu", "#C00000");
     uvolniZamek(cil, SL_CAS);
+    zapisF2Vzorec(cil, t);
     return;
   }
   const nDotaz = pocetNepradnych(dNove, idx[0]);
@@ -94,8 +101,9 @@ function main(workbook: ExcelScript.Workbook) {
   let pridano = pridejNoveSoubory(zaznamy, znamSoubory, dNove, idx);
 
   if (zaznamy.length === 0) {
-    hlaska(cil, "⚠ Žádná data", "#C00000");
+    zapisG2(cil, "⚠ Žádná data", "#C00000");
     uvolniZamek(cil, SL_CAS);
+    zapisF2Vzorec(cil, t);
     return;
   }
 
@@ -125,7 +133,7 @@ function main(workbook: ExcelScript.Workbook) {
     dvojcifry(ted.getHours()) + ":" + dvojcifry(ted.getMinutes()) +
     "   (nově: " + pridano + ")";
 
-  hlaska(cil, razitko, "#808080");
+  zapisG2(cil, razitko, "#808080");
   uvolniZamek(cil, SL_CAS);
   zapisStavVzorce(cil, t);
 
@@ -432,27 +440,63 @@ function zapisArchiv(workbook: ExcelScript.Workbook, sloupce: string[], zaznamy:
   list.setVisibility(ExcelScript.SheetVisibility.hidden);
 }
 
-function hlaska(list: ExcelScript.Worksheet, text: string, barva: string) {
-  // Jediný viditelný provozní nápis = F2 (hodnota). G2 vyčistit (starý překryv).
-  list.getRange("G2").clear(ExcelScript.ClearApplyTo.all);
-  list.getRange("H2").clear(ExcelScript.ClearApplyTo.all);
+function zapisG2(list: ExcelScript.Worksheet, text: string, barva: string) {
+  // Razítko / chyba — F2 je vzorec a ukáže G2, když neběží zámek a zdroj není prázdný.
+  const g2 = list.getRange("G2");
+  g2.clear(ExcelScript.ClearApplyTo.all);
+  g2.setNumberFormatLocal("@");
+  g2.setValue(text);
+  g2.getFormat().getFont().setName("Calibri");
+  g2.getFormat().getFont().setSize(barva === "#C00000" ? 18 : 11);
+  g2.getFormat().getFont().setBold(barva === "#C00000");
+  g2.getFormat().getFont().setItalic(barva !== "#C00000");
+  g2.getFormat().getFont().setColor(barva);
+  // F2 je vidět; G2 schovat (hodnota zůstane pro vzorec)
   list.getRange("G:G").getFormat().setColumnWidth(0);
   list.getRange("H:H").getFormat().setColumnWidth(0);
+}
 
+/**
+ * F2 vždy vzorec — Excel přepočítá sám (jako u PQ), ne až po konci skriptu.
+ * N2 vyplněné → běží | zdroj prázdný → načítají se | jinak text z G2.
+ */
+function zapisF2Vzorec(list: ExcelScript.Worksheet, t: ExcelScript.Table | null): void {
   const f2 = list.getRange("F2");
   const stare = f2.getConditionalFormats();
   for (let i = stare.length - 1; i >= 0; i--) stare[i].delete();
-  f2.clear(ExcelScript.ClearApplyTo.all);
-  f2.setNumberFormatLocal("@");
-  f2.setValue(text);
+  f2.clear(ExcelScript.ClearApplyTo.formats);
+  f2.clear(ExcelScript.ClearApplyTo.contents);
+  f2.setNumberFormat("General");
+
+  let vzorec: string;
+  if (t) {
+    const pocet = vzorecPocetZdroje(t);
+    vzorec =
+      "=KDYŽ(N2<>\"\";\"Aktualizace běží — neklikejte znovu\";" +
+      "KDYŽ(" + pocet + "=0;\"Načítají se data — neklikejte na Aktualizovat\";G2))";
+  } else {
+    vzorec =
+      "=KDYŽ(N2<>\"\";\"Aktualizace běží — neklikejte znovu\";G2)";
+  }
+  f2.setFormulaLocal(vzorec);
   f2.getFormat().getFont().setName("Calibri");
-  f2.getFormat().getFont().setSize(barva === "#C00000" ? 18 : 11);
-  f2.getFormat().getFont().setBold(barva === "#C00000");
-  f2.getFormat().getFont().setItalic(barva !== "#C00000");
-  f2.getFormat().getFont().setColor(barva);
+  f2.getFormat().getFont().setSize(18);
+  f2.getFormat().getFont().setBold(true);
   f2.getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.left);
   f2.getFormat().setVerticalAlignment(ExcelScript.VerticalAlignment.center);
   list.getRange("F:F").getFormat().setColumnWidth(340);
+
+  const cervena = f2.addConditionalFormat(ExcelScript.ConditionalFormatType.custom);
+  cervena.getCustom().getRule().setFormula(
+    "=NEBO(F2=\"Aktualizace běží — neklikejte znovu\";F2=\"Načítají se data — neklikejte na Aktualizovat\";ZLEVA(F2;1)=\"⚠\")"
+  );
+  cervena.getCustom().getFormat().getFont().setColor("#C00000");
+  cervena.getCustom().getFormat().getFont().setBold(true);
+
+  const seda = f2.addConditionalFormat(ExcelScript.ConditionalFormatType.custom);
+  seda.getCustom().getRule().setFormula("=ZLEVA(F2;12)=\"Aktualizováno\"");
+  seda.getCustom().getFormat().getFont().setColor("#808080");
+  seda.getCustom().getFormat().getFont().setBold(false);
 }
 
 function obarvi(list: ExcelScript.Worksheet, radek: number, barva: string) {
@@ -485,9 +529,7 @@ function formatDatum(iso: string): string {
   return iso;
 }
 
-/**
- * A1 musí zůstat prázdné — žádný stavový nápis ani vzorec.
- */
+/** A1 musí zůstat prázdné. */
 function vycistiA1(list: ExcelScript.Worksheet): void {
   const a1 = list.getRange("A1");
   const stare = a1.getConditionalFormats();
@@ -495,12 +537,10 @@ function vycistiA1(list: ExcelScript.Worksheet): void {
   a1.clear(ExcelScript.ClearApplyTo.all);
 }
 
-/**
- * C2 + AB1: stejný počet jako vzorec (sloupec tabulky).
- * A1 se jen vyčistí.
- */
+/** C2 + AB1 + F2 vzorec. A1 prázdné. */
 function zapisStavVzorce(list: ExcelScript.Worksheet, t: ExcelScript.Table): void {
   vycistiA1(list);
+  zapisF2Vzorec(list, t);
 
   const vzorecPocet = vzorecPocetZdroje(t);
   const n = pocetZdroje(t);

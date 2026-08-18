@@ -59,9 +59,10 @@ jednorázové migrace.
 (nebo je prázdný), načte stávající Přehled ze sloupce E a zapíše ho do Archivu.
 Stará data se neztratí. Další běhy už Přehled jako zdroj nepoužívají.
 
-**Souběh Aktualizovat:** hned po startu **N2** + **F2** *Aktualizace běží*.
-Po úspěchu N2 pryč. **A1 zůstává prázdné** (žádný stavový nápis).
-`PAUZA_S` (~25 s) jen když skript spadne uprostřed.
+**Souběh / nápisy:** **A1 prázdné.** **F2 = vzorec** (N2 → běží | prázdný
+zdroj → načítají se | jinak G2). **G2** = razítko. Zápis textu do F2 na startu
+skriptu Excel ukáže až na konci — to nic nechrání; proto F2 není hodnota.
+N2 po úspěchu pryč. `PAUZA_S` (~25 s) jen při pádu skriptu.
 
 ---
 
@@ -111,8 +112,8 @@ přepíše z Archivu.
 
 ```
 řádek 1:  (volný)
-řádek 2:  [tlačítko Kontrola] C2=stav  F2=běží/razítko
-          [tlačítko Aktualizovat] A1=prázdné  N2=zámek(skrytý)
+řádek 2:  [tlačítko Kontrola] C2=stav  F2=vzorec(běží/PQ/G2)
+          [tlačítko Aktualizovat] A1=prázdné  G2=razítko  N2=zámek
 řádek 3:  (volný, ukotvené příčky pod ním)
 řádek 4+: data — A=Hodnota, B=Rozsah, C=Čas, D=Popis, E=značka souboru (šířka 0)
 ```
@@ -245,10 +246,10 @@ Tlačítko **2. Aktualizovat**. Zdroj kódu: [`office-scripts/aktualizovat.ts`](
 
 Postup běhu:
 
-1. Kontrola N2; hned zápis zámku + F2 *Aktualizace běží* (po úspěchu N2 pryč)
-2. Najít tabulku dat (ne TabArchiv) — preferuje list **DataALL**, pak Dotaz1
-3. Když je zdroj prázdný nebo se počet řádků ještě mění, počkat / skončit.
-   **A1** vždy prázdné. **F2** = běží / razítko / chyba. C2 = stav vs tabulka.
+1. Kontrola N2; zápis zámku; F2 vzorec (ne hodnota „běží“)
+2. Najít tabulku dat — preferuje **DataALL**, pak Dotaz1
+3. Když je zdroj prázdný / se mění, počkat. **A1** prázdné.
+   **F2** vzorec živě. **G2** razítko/chyba. C2 vs tabulka.
 4. Načíst Archiv; když je prázdný, jednorázově naplnit z Přehledu (sl. E)
 5. Přidat soubory, které Archiv ještě nezná; u už známých souborů jen
    **chybějící řádky** (stejný název, v Dotaz1 víc měření — např. kliknutí
