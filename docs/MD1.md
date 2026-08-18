@@ -272,7 +272,7 @@ Kategorie nálezů:
 
 ### Stav v C2 — kdy zmáčknout Aktualizovat
 
-C2 hlásí **Klikněte Aktualizovat**, když je v Dotaz1 soubor, který ještě není
+C2 hlásí **Přehled není aktuální**, když je v Dotaz1 soubor, který ještě není
 ve sloupci E na Přehledu. Po tlačítku 2. Aktualizovat zase **Aktuální**.
 
 Vzorce jsou jen na Přehledu ve sloupci **AA** (mimo A–Z, skript je nemaže).
