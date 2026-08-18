@@ -249,9 +249,9 @@ Postup běhu:
 1. Kontrola N2; hned zápis zámku + F2 *Aktualizace běží* (po úspěchu N2 pryč)
 2. Najít tabulku dat (ne TabArchiv) — preferuje list **DataALL**, pak Dotaz1
 3. Když je zdroj prázdný nebo se počet řádků ještě mění, počkat / skončit.
-   **A1** (vzorec): *Aktualizace běží — neklikejte znovu*, když je DataALL
-   prázdný (PQ) **nebo** je vyplněné N2 (běh skriptu). Přepočet živě jako u dotazu.
-   F2 = razítko / chyba. C2 sleduje DataALL.
+   **A1** (vzorec): jen *Načítají se data…* když je tabulka zdroje prázdná.
+   **F2** (hodnota): *Aktualizace běží…* / razítko / chyba — ne na A1.
+   C2 sleduje počet ve sloupci tabulky (ne A2:A5000).
 4. Načíst Archiv; když je prázdný, jednorázově naplnit z Přehledu (sl. E)
 5. Přidat soubory, které Archiv ještě nezná; u už známých souborů jen
    **chybějící řádky** (stejný název, v Dotaz1 víc měření — např. kliknutí
