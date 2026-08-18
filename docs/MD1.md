@@ -237,14 +237,17 @@ Tlačítko **2. Aktualizovat**. Zdroj kódu: [`office-scripts/aktualizovat.ts`](
 Postup běhu:
 
 1. Pauza 20 s, když N2 říká, že právě běželo
-2. Najít tabulku **TabNove** (ne TabArchiv — proto se nebere `getTables()[0]`)
-3. Načíst Archiv; když je prázdný, jednorázově naplnit z Přehledu (sl. E)
-4. Přidat jen soubory, které Archiv ještě nezná (všechny jejich řádky)
-5. Doplnit datum, seřadit
-6. **Zapsat Archiv** (až sem jsou data v bezpečí i při chybě kreslení)
-7. Smazat Přehled od řádku 4 a vykreslit z Archivu
-8. Znovu načíst Dotaz1 — stejné pravidlo: jen neznámé soubory, nic v Archivu se nepřepisuje
-9. Razítko + stav
+2. Najít tabulku dat (ne TabArchiv)
+3. **Počkat, až Power Query dojede** (`getRefreshDate` se změní / je čerstvé).
+   F2: *Čekám na načtení dat…*. N2 se během čekání obnovuje, druhé kliknutí
+   nespustí druhý běh. Archiv se zatím nemění.
+4. Načíst Archiv; když je prázdný, jednorázově naplnit z Přehledu (sl. E)
+5. Přidat jen soubory, které Archiv ještě nezná (všechny jejich řádky)
+6. Doplnit datum, seřadit
+7. **Zapsat Archiv** (až sem jsou data v bezpečí i při chybě kreslení)
+8. Smazat Přehled od řádku 4 a vykreslit z Archivu
+9. Znovu načíst Dotaz1 — stejné pravidlo: jen neznámé soubory, nic v Archivu se nepřepisuje
+10. Razítko + stav
 
 Vložení: Automatizér → otevřít stávající skript Aktualizovat → nahradit celý
 obsah souborem `aktualizovat.ts` → Uložit. Tlačítko v listu přemapovat nemusíte,
@@ -373,13 +376,10 @@ Nemá smysl to zkoušet znovu:
    *Aktualizovat data při otevírání souboru* ve vlastnostech dotazu).
    U dotazu **vypnout** *Povolit obnovení na pozadí* — Excel počká na načtení
    a uživatel nemůže kliknout do rozpracovaného souboru.
-2. Když je Dotaz1 prázdný, A1 hlásí načítání a Aktualizovat se nespustí.
-3. Kliknout **2. Aktualizovat**
-4. Uložit (nebo mít zapnuté Automatické ukládání)
-
-**Když soubor zůstal v Dotaz1 a není v Přehledu ani Archivu:** data se nenačetla
-včas. Počkat až Dotaz1 drží řádky, znovu **2. Aktualizovat**. Archiv se
-nepřepisuje — jen se doplní soubory, které tam ještě nejsou.
+2. Kliknout **2. Aktualizovat** — skript počká, až se data načtou, a teprve
+   pak sloučí. Když do ~55 s nedorazí, F2 řekne kliknout znovu. Archiv se
+   v tom případě nemění.
+3. Uložit (nebo mít zapnuté Automatické ukládání)
 
 **Když tlačítko nereaguje:** Automatizér → skript → Spustit.
 
@@ -403,8 +403,8 @@ Archiv je jediné místo, kde data žijí po smazání zdrojů.
 - **Skupina Teams MD1** pro správu oprávnění — plán, nerealizováno.
 - **Sdílený souběžný zápis** — odloženo. Řešilo by se přesunem archivu
   do SharePointového seznamu, kde je zápis po záznamech nezávislý.
-- **Razítko N2 na začátku skriptu** — viz sekce 7, souběh. Dělat, až 20s
-  pauza v praxi nestačí.
+- **Razítko N2 během čekání na dotaz** — už se píše, ať druhé kliknutí
+  nespustí souběžný běh.
 
 ### Později, až to začne bolet — ne teď
 

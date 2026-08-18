@@ -8,4 +8,5 @@ C2 = KDYŽ(POČET2(Dotaz1!A2:A5000)>AB1; "Klikněte Aktualizovat"; "Aktuální")
 
 Nový soubor v Dotaz1 zvýší POČET2 → C2 se přepne samo.
 Po Aktualizovat se AB1 srovná → zase Aktuální.
+Aktualizovat nejdřív počká, až Power Query dojede, a teprve pak sloučí.
 Když C2 hlásí Klikněte Aktualizovat, stačí tlačítko znovu — Archiv se nepřepisuje.
