@@ -3,10 +3,16 @@ Stavy zapisuje skript Aktualizovat.
 1. Nahradit skript aktualizovat.ts, uložit
 2. Jednou 2. Aktualizovat
 
-A1 = prázdné. Vždy. Žádný nápis, žádný vzorec.
+A1 = prázdné. Vždy.
 
-F2 = hodnota ze skriptu: „Aktualizace běží…“ / razítko / chyba
+F2 = VŽDY vzorec (Excel přepočítá sám, ne až po konci skriptu):
+  =KDYŽ(N2<>""; "Aktualizace běží — neklikejte znovu";
+       KDYŽ(POČET2(TabNove[ZdrojovySoubor])=0; "Načítají se data — neklikejte na Aktualizovat"; G2))
+
+G2 = razítko / chyba (hodnota, sloupec skrytý). F2 ho ukáže, když neběží N2 a zdroj má data.
 
 C2 = KDYŽ(POČET2(TabNove[ZdrojovySoubor])>AB1; "Přehled není aktuální"; "Aktuální")
-AB1 = počet řádků zdroje v okamžiku sloučení
 N2 = zámek během běhu; po úspěchu prázdné
+
+Proč dřív „běží“ až na konci: setValue do F2 na začátku skriptu Excel typicky
+vykreslí až po doběhnutí → nápis nic neochránil. Vzorec + N2 / prázdný zdroj ano.
