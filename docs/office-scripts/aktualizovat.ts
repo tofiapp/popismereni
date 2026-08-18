@@ -5,7 +5,7 @@
  * Přehled se z Archivu jen vykreslí. Zdrojové .xlsx lze mazat.
  *
  * První běh: když Archiv ještě není, načte se stávající Přehled (sloupec E).
- * Než sloučí, počká až Power Query dojde (F2: Čekám na načtení dat…).
+ * Než sloučí, počká až Power Query dojede (F2: Čekám na načtení dat…).
  * Archiv se při čekání nemění. Už uložené soubory se nepřepisují.
  *
  * Vložit do Excelu: Automatizér → Nový skript → nahradit obsah.
