@@ -6,7 +6,8 @@
  *
  * První běh: když Archiv ještě není, načte se stávající Přehled (sloupec E).
  * Než sloučí, počká jen když je Dotaz1 prázdný nebo se ještě mění.
- * Když už v Dotaz1 řádky jsou, sloučí hned. Už uložené soubory se nepřepisují.
+ * A1 = varování při prázdném Dotaz1. F2 = razítko/hláška. C2 = Aktuální.
+ * Tlačítko Excel neumí vypnout — při prázdném Dotaz1 skript skončí hned.
  *
  * Vložit do Excelu: Automatizér → Nový skript → nahradit obsah.
  */
@@ -49,11 +50,16 @@ function main(workbook: ExcelScript.Workbook) {
 
   if (cil) zapisNacitani(cil, t.getWorksheet().getName());
 
+  // Během běhu zablokovat druhé kliknutí (20s pauza přes N2).
+  if (cil) {
+    cil.getRangeByIndexes(1, SL_CAS, 1, 1).setValue(new Date().toISOString());
+    cil.getRangeByIndexes(1, SL_CAS, 1, 1).getFormat().getFont().setColor("#FFFFFF");
+  }
+
   if (!cil) cil = workbook.addWorksheet("Přehled");
   let dNove = pockejNaNacteni(cil, t, idx[0]);
   if (!dNove) {
     hlaska(cil, "Počkejte na načtení dat a klikněte znovu", "#C00000");
-    zapisNacitani(cil, t.getWorksheet().getName());
     return;
   }
   const nDotaz = pocetNepradnych(dNove, idx[0]);
@@ -114,7 +120,6 @@ function main(workbook: ExcelScript.Workbook) {
   cil.getRangeByIndexes(1, SL_CAS, 1, 1).getFormat().getFont().setColor("#FFFFFF");
 
   zapisStavVzorce(cil, t.getWorksheet().getName(), dNove, idx[0]);
-  zapisNacitani(cil, t.getWorksheet().getName());
 
   cil.activate();
   cil.setPosition(0);
@@ -410,14 +415,26 @@ function zapisArchiv(workbook: ExcelScript.Workbook, sloupce: string[], zaznamy:
 }
 
 function hlaska(list: ExcelScript.Worksheet, text: string, barva: string) {
-  // Razítko / hláška jen do skrytého G2. Viditelné F2 je vzorec (zapisNacitani).
-  const g = list.getRange("G2");
-  g.clear(ExcelScript.ClearApplyTo.contents);
-  g.setNumberFormatLocal("@");
-  g.setValue(text);
-  g.getFormat().getFont().setColor(barva === "#C00000" ? "#C00000" : "#FFFFFF");
+  // Jediný viditelný provozní nápis = F2 (hodnota). G2 vyčistit (starý překryv).
+  list.getRange("G2").clear(ExcelScript.ClearApplyTo.all);
+  list.getRange("H2").clear(ExcelScript.ClearApplyTo.all);
   list.getRange("G:G").getFormat().setColumnWidth(0);
   list.getRange("H:H").getFormat().setColumnWidth(0);
+
+  const f2 = list.getRange("F2");
+  const stare = f2.getConditionalFormats();
+  for (let i = stare.length - 1; i >= 0; i--) stare[i].delete();
+  f2.clear(ExcelScript.ClearApplyTo.all);
+  f2.setNumberFormatLocal("@");
+  f2.setValue(text);
+  f2.getFormat().getFont().setName("Calibri");
+  f2.getFormat().getFont().setSize(barva === "#C00000" ? 18 : 11);
+  f2.getFormat().getFont().setBold(barva === "#C00000");
+  f2.getFormat().getFont().setItalic(barva !== "#C00000");
+  f2.getFormat().getFont().setColor(barva);
+  f2.getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.left);
+  f2.getFormat().setVerticalAlignment(ExcelScript.VerticalAlignment.center);
+  list.getRange("F:F").getFormat().setColumnWidth(340);
 }
 
 function obarvi(list: ExcelScript.Worksheet, radek: number, barva: string) {
@@ -451,33 +468,18 @@ function formatDatum(iso: string): string {
 }
 
 function zapisNacitani(list: ExcelScript.Worksheet, listDat: string): void {
+  // Varování při prázdném Dotaz1 (typicky při otevírání). Tlačítko Excel neumí vypnout.
   const odkaz = /[\s'()]/.test(listDat) ? "'" + listDat.replace(/'/g, "''") + "'" : listDat;
-  list.getRange("A1").clear(ExcelScript.ClearApplyTo.all);
-
-  const f2 = list.getRange("F2");
-  const stare = f2.getConditionalFormats();
-  for (let i = stare.length - 1; i >= 0; i--) stare[i].delete();
-
-  // Nejdřív General — při textovém formátu (@) se setFormulaLocal zapíše jako text.
-  f2.clear(ExcelScript.ClearApplyTo.all);
-  f2.setNumberFormat("General");
-  f2.setFormulaLocal(
-    "=KDYŽ(POČET2(" + odkaz + "!A2:A5000)=0;KDYŽ(AB1=0;\"Načítají se data — neklikejte na Aktualizovat\";G2);G2)"
+  const a1 = list.getRange("A1");
+  a1.clear(ExcelScript.ClearApplyTo.all);
+  a1.setNumberFormat("General");
+  a1.setFormulaLocal(
+    "=KDYŽ(POČET2(" + odkaz + "!A2:A5000)=0;\"Načítají se data — neklikejte na Aktualizovat\";\"\")"
   );
-  f2.getFormat().getFont().setName("Calibri");
-  f2.getFormat().getFont().setSize(18);
-  f2.getFormat().getFont().setBold(true);
-  f2.getFormat().getFont().setColor("#808080");
-  f2.getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.left);
-  f2.getFormat().setVerticalAlignment(ExcelScript.VerticalAlignment.center);
-  list.getRange("F:F").getFormat().setColumnWidth(340);
-  list.getRange("G:G").getFormat().setColumnWidth(0);
-  list.getRange("H:H").getFormat().setColumnWidth(0);
-
-  const cervena = f2.addConditionalFormat(ExcelScript.ConditionalFormatType.custom);
-  cervena.getCustom().getRule().setFormula("=F2=\"Načítají se data — neklikejte na Aktualizovat\"");
-  cervena.getCustom().getFormat().getFont().setColor("#C00000");
-  cervena.getCustom().getFormat().getFont().setBold(true);
+  a1.getFormat().getFont().setName("Calibri");
+  a1.getFormat().getFont().setSize(18);
+  a1.getFormat().getFont().setBold(true);
+  a1.getFormat().getFont().setColor("#C00000");
 }
 
 function zapisStavVzorce(

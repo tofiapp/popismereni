@@ -112,8 +112,8 @@ přepíše z Archivu.
 
 ```
 řádek 1:  (volný)
-řádek 2:  [tlačítko Kontrola] C2=stav (vzorec × Dotaz1)  F2=načítání / razítko (vzorec)
-          [tlačítko Aktualizovat] G2=text skriptu(skrytý)  N2=čas ISO(skrytý)
+řádek 2:  [tlačítko Kontrola] C2=stav (vzorec × Dotaz1)  F2=razítko/hláška
+          [tlačítko Aktualizovat] A1=varování při prázdném Dotaz1  N2=čas ISO(skrytý)
 řádek 3:  (volný, ukotvené příčky pod ním)
 řádek 4+: data — A=Hodnota, B=Rozsah, C=Čas, D=Popis, E=značka souboru (šířka 0)
 ```
