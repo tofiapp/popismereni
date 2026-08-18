@@ -952,17 +952,6 @@ fun MereniApp(
                         textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        "Ulož přes appku OneDrive do ${MeasurementStore.DNY_HINT_PATH}.\n" +
-                            "OneDrive = xlsx · Edge = ZIP.\n\n" +
-                            "✕ — nic se nesmaže, tlačítko zůstane červené.\n" +
-                            "ANO — vymazat místní záznamy (zelená).",
-                        color = MereniColors.TextMuted,
-                        fontSize = 12.sp,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
                     Spacer(modifier = Modifier.height(16.dp))
                     Button(
                         onClick = {
@@ -971,7 +960,7 @@ fun MereniApp(
                             dayRecordNum = day
                             showOneDriveConfirm = false
                             oneDriveSynced = true
-                            exportMessage = "Uloženo — místní záznamy vymazány"
+                            exportMessage = "Uloženo — místní dávka vymazána (záloha zůstává)"
                         },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MereniColors.Vyhybka,

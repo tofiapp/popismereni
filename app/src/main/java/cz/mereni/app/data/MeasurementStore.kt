@@ -11,6 +11,9 @@ import java.util.Locale
 /**
  * Excel úložiště měření (.xlsx), 4 sloupce.
  *
+ * Pracovní soubor `mereni_working.xlsx` = aktuální dávka (maže se po ANO na OneDrive).
+ * Lokální záloha `mereni_zaloha.xlsx` = všechny záznamy, nemaže se.
+ *
  * Export na OneDrive: `YYMMDD_N_MD1.xlsx` do složky
  * `Popis_měření_MD1/Dny/` — na work profilu jen přes share sheet
  * do appky OneDrive (ve Files OneDrive často není).
@@ -24,6 +27,7 @@ class MeasurementStore(context: Context) {
         appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     val workingFile: File = File(docsDir, WORKING_NAME)
+    val archiveFile: File = File(docsDir, ARCHIVE_NAME)
 
     var lastExportFile: File? = null
         private set
@@ -35,6 +39,7 @@ class MeasurementStore(context: Context) {
         } else {
             ensureDateRow()
         }
+        ensureArchiveReady()
     }
 
     fun count(): Int =
@@ -69,6 +74,7 @@ class MeasurementStore(context: Context) {
             role = SimpleXlsx.Role.DATA,
         )
         SimpleXlsx.write(workingFile, rows)
+        appendToArchive(stationName, stationUdu, pole1, pole2, casMereni, poznamka)
         prefs.edit()
             .putBoolean(KEY_SYNCED, false)
             .putBoolean(KEY_PENDING_CONFIRM, false)
@@ -224,6 +230,59 @@ class MeasurementStore(context: Context) {
         SimpleXlsx.write(workingFile, listOf(dateRow()))
     }
 
+    private fun ensureArchiveReady() {
+        if (archiveFile.exists()) return
+        if (workingFile.exists() && SimpleXlsx.read(workingFile).any { it.role == SimpleXlsx.Role.DATA && hasMeasurement(it) }) {
+            workingFile.copyTo(archiveFile, overwrite = false)
+        } else {
+            SimpleXlsx.write(archiveFile, listOf(dateRow()))
+        }
+    }
+
+    /** Trvalá lokální záloha — stejný formát jako working, nemaže se po OneDrive. */
+    private fun appendToArchive(
+        stationName: String,
+        stationUdu: String,
+        pole1: String,
+        pole2: String,
+        casMereni: String,
+        poznamka: String,
+    ) {
+        ensureArchiveReady()
+        val rows = SimpleXlsx.read(archiveFile).toMutableList()
+        ensureArchiveDateIn(rows)
+
+        val name = stationName.trim().ifBlank { stationUdu.trim() }
+        val lastStation = rows.lastOrNull { it.role == SimpleXlsx.Role.STATION }?.a?.trim()
+        if (name.isNotEmpty() && lastStation != name) {
+            rows += SimpleXlsx.Row(role = SimpleXlsx.Role.BLANK)
+            rows += SimpleXlsx.Row(a = name, role = SimpleXlsx.Role.STATION)
+        }
+        rows += SimpleXlsx.Row(
+            a = pole1.trim(),
+            b = pole2.trim(),
+            c = casMereni.trim(),
+            d = poznamka.trim(),
+            role = SimpleXlsx.Role.DATA,
+        )
+        SimpleXlsx.write(archiveFile, rows)
+    }
+
+    private fun ensureArchiveDateIn(rows: MutableList<SimpleXlsx.Row>) {
+        val today = DATE_DISPLAY_FMT.format(Date())
+        if (rows.isEmpty()) {
+            rows += dateRow()
+            return
+        }
+        val lastDate = rows.lastOrNull { it.role == SimpleXlsx.Role.DATE }?.a?.trim()
+        if (lastDate == today) return
+        if (rows.last().role != SimpleXlsx.Role.BLANK) {
+            rows += SimpleXlsx.Row(role = SimpleXlsx.Role.BLANK)
+            rows += SimpleXlsx.Row(role = SimpleXlsx.Role.BLANK)
+        }
+        rows += dateRow()
+    }
+
     private fun ensureDateRow() {
         val rows = SimpleXlsx.read(workingFile).toMutableList()
         ensureDateRowIn(rows)
@@ -252,6 +311,7 @@ class MeasurementStore(context: Context) {
     companion object {
         private const val PREFS = "measurement_xlsx"
         private const val WORKING_NAME = "mereni_working.xlsx"
+        private const val ARCHIVE_NAME = "mereni_zaloha.xlsx"
         private const val KEY_LAST_STATION_UDU = "last_station_udu"
         private const val KEY_SYNCED = "synced_onedrive"
         private const val KEY_PENDING_CONFIRM = "pending_onedrive_confirm"
