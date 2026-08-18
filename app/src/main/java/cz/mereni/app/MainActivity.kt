@@ -167,8 +167,8 @@ class MainActivity : ComponentActivity() {
                 onIsPendingOneDriveConfirm = {
                     store.isPendingOneDriveConfirm()
                 },
-                onPendingExportName = {
-                    store.pendingExportFileName()
+                onPendingExportSummary = {
+                    store.pendingExportSummary()
                 },
                 onShareOneDrive = { file ->
                     OneDriveShare.shareExport(this@MainActivity, file)
@@ -204,7 +204,7 @@ fun MereniApp(
     onConfirmOneDriveSaved: () -> Pair<Int, Int>,
     onCancelOneDriveConfirm: () -> Unit,
     onIsPendingOneDriveConfirm: () -> Boolean,
-    onPendingExportName: () -> String,
+    onPendingExportSummary: () -> String,
     onShareOneDrive: (File) -> Unit,
     onReload: suspend () -> PasportLoadResult,
     onKeysForStation: suspend (Station?, List<PasportKey>) -> List<PasportKey>,
@@ -232,7 +232,7 @@ fun MereniApp(
     var oneDriveSynced by remember { mutableStateOf(initialOneDriveSynced) }
     var leftForOneDriveShare by remember { mutableStateOf(false) }
     var showOneDriveConfirm by remember { mutableStateOf(false) }
-    var pendingExportName by remember { mutableStateOf(onPendingExportName()) }
+    var pendingExportSummary by remember { mutableStateOf(onPendingExportSummary()) }
     var reorderPole1 by remember { mutableStateOf(false) }
     var reorderPole2 by remember { mutableStateOf(false) }
     var usedPole1A by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -249,7 +249,7 @@ fun MereniApp(
 
     LaunchedEffect(Unit) {
         if (onIsPendingOneDriveConfirm()) {
-            pendingExportName = onPendingExportName()
+            pendingExportSummary = onPendingExportSummary()
             showOneDriveConfirm = true
         }
     }
@@ -260,7 +260,7 @@ fun MereniApp(
             if (event == Lifecycle.Event.ON_RESUME && leftForOneDriveShare) {
                 leftForOneDriveShare = false
                 if (onIsPendingOneDriveConfirm()) {
-                    pendingExportName = onPendingExportName()
+                    pendingExportSummary = onPendingExportSummary()
                     showOneDriveConfirm = true
                 }
             }
@@ -418,12 +418,12 @@ fun MereniApp(
         scope.launch {
             val file = onPrepareOneDriveFile()
             oneDriveSynced = false
-            pendingExportName = file.name
+            pendingExportSummary = onPendingExportSummary()
             // Work profil: OneDrive ve Files / SAF není — jen share sheet → appka OneDrive.
             leftForOneDriveShare = true
             onShareOneDrive(file)
             exportMessage =
-                "Sdílení ${file.name}… vyber OneDrive (xlsx) nebo Edge (ZIP). " +
+                "Sdílení… vyber OneDrive (xlsx) nebo Edge (ZIP). " +
                     "Ve Files OneDrive neuvidíš — to je omezení profilu, ne appky."
         }
     }
@@ -940,12 +940,19 @@ fun MereniApp(
                         )
                     }
                     Spacer(modifier = Modifier.height(4.dp))
+                    if (pendingExportSummary.isNotBlank()) {
+                        Text(
+                            pendingExportSummary,
+                            color = MereniColors.Text,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 17.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                    }
                     Text(
-                        if (pendingExportName.isNotBlank()) {
-                            "Soubor $pendingExportName — je v OneDrive / MD1?"
-                        } else {
-                            "Soubor — je v OneDrive / MD1?"
-                        },
+                        "Je v OneDrive / MD1?",
                         color = MereniColors.Text,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 17.sp,

@@ -1,14 +1,14 @@
-# Měření v0.50.3
+# Měření v0.50.4
 
 ## Aktualizace
 ```bash
-adb install -r artifacts/mereni-v0.50.3-debug.apk
+adb install -r artifacts/mereni-v0.50.4-debug.apk
 ```
 
 ## OneDrive (work profil)
 **Uložit na OneDrive** = share sheet → appka **OneDrive** (xlsx) nebo **Edge** (ZIP).
 
-Po sdílení: *Soubor YYMMDD_N_MD1.xlsx — je v OneDrive / MD1?* · ✕ / ANO.
+Po sdílení: seznam stanic a počtů záznamů · *Je v OneDrive / MD1?* · ✕ / ANO.
 
 ## Lokální záloha
 Každý záznam se ukládá i do `mereni_zaloha.xlsx` v Documents appky.
