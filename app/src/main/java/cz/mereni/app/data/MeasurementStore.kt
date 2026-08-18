@@ -109,6 +109,11 @@ class MeasurementStore(context: Context) {
 
     fun isPendingOneDriveConfirm(): Boolean = prefs.getBoolean(KEY_PENDING_CONFIRM, false)
 
+    /** Název posledního exportu čekajícího na potvrzení (např. 260818_2_MD1.xlsx). */
+    fun pendingExportFileName(): String =
+        prefs.getString(KEY_PENDING_EXPORT_NAME, null)?.takeIf { it.isNotBlank() }
+            ?: lastExportFile?.name.orEmpty()
+
     fun getDnyTreeUri(): Uri? =
         prefs.getString(KEY_DNY_TREE_URI, null)?.takeIf { it.isNotBlank() }?.let(Uri::parse)
 
@@ -165,6 +170,7 @@ class MeasurementStore(context: Context) {
         prefs.edit()
             .putBoolean(KEY_PENDING_CONFIRM, true)
             .putBoolean(KEY_SYNCED, false)
+            .putString(KEY_PENDING_EXPORT_NAME, name)
             .apply()
         return dest
     }
@@ -197,7 +203,10 @@ class MeasurementStore(context: Context) {
     }
 
     fun cancelPendingOneDriveConfirm() {
-        prefs.edit().putBoolean(KEY_PENDING_CONFIRM, false).apply()
+        prefs.edit()
+            .putBoolean(KEY_PENDING_CONFIRM, false)
+            .remove(KEY_PENDING_EXPORT_NAME)
+            .apply()
     }
 
     /** ANO po uložení — smaže lokál (nová dávka). */
@@ -206,6 +215,7 @@ class MeasurementStore(context: Context) {
         prefs.edit()
             .putBoolean(KEY_SYNCED, true)
             .putBoolean(KEY_PENDING_CONFIRM, false)
+            .remove(KEY_PENDING_EXPORT_NAME)
             .remove(KEY_LAST_STATION_UDU)
             .apply()
     }
@@ -245,6 +255,7 @@ class MeasurementStore(context: Context) {
         private const val KEY_LAST_STATION_UDU = "last_station_udu"
         private const val KEY_SYNCED = "synced_onedrive"
         private const val KEY_PENDING_CONFIRM = "pending_onedrive_confirm"
+        private const val KEY_PENDING_EXPORT_NAME = "pending_onedrive_export_name"
         private const val KEY_DAY_COUNT_PREFIX = "export_count_"
         private const val KEY_DNY_TREE_URI = "dny_tree_uri"
         private const val KEY_DNY_FOLDER_LABEL = "dny_folder_label"
