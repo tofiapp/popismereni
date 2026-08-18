@@ -217,16 +217,26 @@ in
   Nové exporty ukládat do složky **MD1**. Starý PowerShell (`Dny/sloučeno/`, `Zalohy/`)
   k tomu nepřidávat — jinak se do dotazu vrátí už zpracované soubory.
 
+### Sdílení přes skupinu Teams
+
+Složku MD1 nesdílet po jednom člověku. Vytvořit skupinu Teams (např. MD1)
+a každému měřiči nasdílet jeho MD1 **té skupině**. Přístup mají všichni,
+kdo ve skupině jsou. Nový člověk = přidat do skupiny. Kdo odejde, přístup ztratí.
+
+`personal/login_…` v adrese dotazu není přihlášení — jen cesta k OneDrivu
+toho člověka. Do cizího účtu se nikdo neloguje.
+
+Kdo jen čte Přehled, stačí mu sdílený sešit. Do cizího MD1 nemusí.
+MD1 nasdílet skupině kvůli obnovení Dotaz1 ze všech OneDrivů.
+
 ### Přidání dalšího uživatele
 
-1. Kolega nasdílí složku MD1 (Spravovat přístup → Přímý přístup → `+`, bez e-mailu)
-2. Duplikovat dotaz, přejmenovat na `Zdroj_Prijmeni`
-3. Změnit `Web` na `https://szdc-my.sharepoint.com/personal/login_domena_cz/`
-4. Nastavit na **Pouze připojení** (panel Dotazy a připojení → Načíst do…)
-5. Přidat do `Table.Combine` ve spojeném dotazu
-
-**Doporučení:** vytvořit skupinu Teams a sdílet jí místo jednotlivcům — pak se
-nový člověk přidává jen do skupiny.
+1. Přidat ho do skupiny Teams MD1
+2. On nasdílí svou složku MD1 té skupině (Spravovat přístup → Přímý přístup → skupina)
+3. Duplikovat zdrojový dotaz, přejmenovat na `Zdroj_Prijmeni`
+4. Změnit `Web` na `https://szdc-my.sharepoint.com/personal/login_domena_cz/`
+5. Nastavit na **Pouze připojení** (panel Dotazy a připojení → Načíst do…)
+6. Přidat do `Table.Combine` ve spojeném dotazu
 
 ---
 
@@ -402,7 +412,6 @@ Archiv je jediné místo, kde data žijí po smazání zdrojů.
   (jeden dotaz místo N, oprávnění přes skupinu). Blokuje to, že z mobilní
   aplikace OneDrive se špatně vybírá jako cíl exportu. Nevyzkoušeno:
   „Přidat zástupce do mých souborů" u sdílené knihovny.
-- **Skupina Teams MD1** pro správu oprávnění — plán, nerealizováno.
 - **Sdílený souběžný zápis** — odloženo. Řešilo by se přesunem archivu
   do SharePointového seznamu, kde je zápis po záznamech nezávislý.
 - **Razítko N2 během čekání na dotaz** — už se píše, ať druhé kliknutí
