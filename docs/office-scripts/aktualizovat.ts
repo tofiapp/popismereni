@@ -7,8 +7,8 @@
  * První běh: když Archiv ještě není, načte se stávající Přehled (sloupec E).
  * Než sloučí, počká jen když je DataALL/Dotaz1 prázdný nebo se ještě mění.
  *
- * A1 = jen když je zdroj PRÁZDNÝ (PQ): „Načítají se data…“ (lehký vzorec na tabulku).
- * F2 = „Aktualizace běží…“ / razítko / chyba (hodnota ze skriptu) — NE na A1.
+ * A1 = VŽDY prázdné (žádný nápis, žádný vzorec).
+ * F2 = provozní stav (běží / razítko / chyba) — hodnota ze skriptu.
  * C2 = Aktuální. N2 = zámek jen během běhu, po úspěchu pryč.
  *
  * Vložit do Excelu: Automatizér → Nový skript → nahradit obsah.
@@ -20,8 +20,9 @@ function main(workbook: ExcelScript.Workbook) {
 
   let cil = workbook.getWorksheet("Přehled");
 
-  // --- zámek + F2 hned (A1 sem nepatří) ---
+  // --- zámek + F2 hned ---
   if (cil) {
+    vycistiA1(cil);
     const posledniIso = String(cil.getRangeByIndexes(1, SL_CAS, 1, 1).getValue() ?? "").trim();
     if (posledniIso !== "") {
       const then = Date.parse(posledniIso);
@@ -62,9 +63,8 @@ function main(workbook: ExcelScript.Workbook) {
     return;
   }
 
-  if (cil) zapisNacitani(cil, t);
-
   if (!cil) cil = workbook.addWorksheet("Přehled");
+  vycistiA1(cil);
   let dNove = pockejNaNacteni(cil, t, idx[0]);
   if (!dNove) {
     hlaska(cil, "Počkejte na načtení dat a klikněte znovu", "#C00000");
@@ -486,28 +486,22 @@ function formatDatum(iso: string): string {
 }
 
 /**
- * A1 jen při prázdném zdroji (otevření / PQ ještě bez dat).
- * „Aktualizace běží“ patří do F2, ne sem.
- * POČET2 na sloupec tabulky — ne A2:A5000 (to brzdí sešit).
+ * A1 musí zůstat prázdné — žádný stavový nápis ani vzorec.
  */
-function zapisNacitani(list: ExcelScript.Worksheet, t: ExcelScript.Table): void {
-  const vzorecPocet = vzorecPocetZdroje(t);
+function vycistiA1(list: ExcelScript.Worksheet): void {
   const a1 = list.getRange("A1");
+  const stare = a1.getConditionalFormats();
+  for (let i = stare.length - 1; i >= 0; i--) stare[i].delete();
   a1.clear(ExcelScript.ClearApplyTo.all);
-  a1.setNumberFormat("General");
-  a1.setFormulaLocal(
-    "=KDYŽ(" + vzorecPocet + "=0;\"Načítají se data — neklikejte na Aktualizovat\";\"\")"
-  );
-  a1.getFormat().getFont().setName("Calibri");
-  a1.getFormat().getFont().setSize(18);
-  a1.getFormat().getFont().setBold(true);
-  a1.getFormat().getFont().setColor("#C00000");
 }
 
 /**
- * C2 + AB1: stejný počet jako vzorec (sloupec tabulky), bez calculate()/A2:A5000.
+ * C2 + AB1: stejný počet jako vzorec (sloupec tabulky).
+ * A1 se jen vyčistí.
  */
 function zapisStavVzorce(list: ExcelScript.Worksheet, t: ExcelScript.Table): void {
+  vycistiA1(list);
+
   const vzorecPocet = vzorecPocetZdroje(t);
   const n = pocetZdroje(t);
 
@@ -542,8 +536,6 @@ function zapisStavVzorce(list: ExcelScript.Worksheet, t: ExcelScript.Table): voi
   cervena.getCustom().getRule().setFormula("=C2=\"Přehled není aktuální\"");
   cervena.getCustom().getFormat().getFont().setColor("#C00000");
   cervena.getCustom().getFormat().getFont().setBold(true);
-
-  zapisNacitani(list, t);
 }
 
 /** POČET2(TabNove[ZdrojovySoubor]) — rychlé; fallback na list!A:A jen když nejde sloupec. */

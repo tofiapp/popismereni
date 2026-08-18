@@ -60,7 +60,7 @@ jednorázové migrace.
 Stará data se neztratí. Další běhy už Přehled jako zdroj nepoužívají.
 
 **Souběh Aktualizovat:** hned po startu **N2** + **F2** *Aktualizace běží*.
-Po úspěchu N2 pryč. A1 jen při prázdném zdroji (*Načítají se data…*).
+Po úspěchu N2 pryč. **A1 zůstává prázdné** (žádný stavový nápis).
 `PAUZA_S` (~25 s) jen když skript spadne uprostřed.
 
 ---
@@ -111,8 +111,8 @@ přepíše z Archivu.
 
 ```
 řádek 1:  (volný)
-řádek 2:  [tlačítko Kontrola] C2=stav (vzorec × Dotaz1)  F2=razítko/hláška
-          [tlačítko Aktualizovat] A1=varování při prázdném Dotaz1  N2=čas ISO(skrytý)
+řádek 2:  [tlačítko Kontrola] C2=stav  F2=běží/razítko
+          [tlačítko Aktualizovat] A1=prázdné  N2=zámek(skrytý)
 řádek 3:  (volný, ukotvené příčky pod ním)
 řádek 4+: data — A=Hodnota, B=Rozsah, C=Čas, D=Popis, E=značka souboru (šířka 0)
 ```
@@ -248,9 +248,7 @@ Postup běhu:
 1. Kontrola N2; hned zápis zámku + F2 *Aktualizace běží* (po úspěchu N2 pryč)
 2. Najít tabulku dat (ne TabArchiv) — preferuje list **DataALL**, pak Dotaz1
 3. Když je zdroj prázdný nebo se počet řádků ještě mění, počkat / skončit.
-   **A1** (vzorec): jen *Načítají se data…* když je tabulka zdroje prázdná.
-   **F2** (hodnota): *Aktualizace běží…* / razítko / chyba — ne na A1.
-   C2 sleduje počet ve sloupci tabulky (ne A2:A5000).
+   **A1** vždy prázdné. **F2** = běží / razítko / chyba. C2 = stav vs tabulka.
 4. Načíst Archiv; když je prázdný, jednorázově naplnit z Přehledu (sl. E)
 5. Přidat soubory, které Archiv ještě nezná; u už známých souborů jen
    **chybějící řádky** (stejný název, v Dotaz1 víc měření — např. kliknutí

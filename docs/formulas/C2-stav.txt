@@ -1,16 +1,12 @@
-A1 / F2 / C2 zapisuje skript Aktualizovat.
+Stavy zapisuje skript Aktualizovat.
 
 1. Nahradit skript aktualizovat.ts, uložit
 2. Jednou 2. Aktualizovat
 
-A1 = KDYŽ(POČET2(TabNove[ZdrojovySoubor])=0; "Načítají se data — neklikejte na Aktualizovat"; "")
-     → jen když je zdroj PRÁZDNÝ (otevření / PQ bez dat). Nic jiného na A1.
+A1 = prázdné. Vždy. Žádný nápis, žádný vzorec.
 
 F2 = hodnota ze skriptu: „Aktualizace běží…“ / razítko / chyba
-     → NE vzorec. Sem patří běh aktualizace.
 
 C2 = KDYŽ(POČET2(TabNove[ZdrojovySoubor])>AB1; "Přehled není aktuální"; "Aktuální")
-AB1 = počet řádků zdroje v okamžiku sloučení (stejný sloupec tabulky)
+AB1 = počet řádků zdroje v okamžiku sloučení
 N2 = zámek během běhu; po úspěchu prázdné
-
-Žádné POČET2(A2:A5000) ani calculate() — brzdilo sešit.
