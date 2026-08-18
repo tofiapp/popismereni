@@ -60,10 +60,9 @@ jednorázové migrace.
 Stará data se neztratí. Další běhy už Přehled jako zdroj nepoužívají.
 
 **Souběh Aktualizovat:** hned po startu skript zapíše **N2** + do F2
-*Aktualizace běží — neklikejte znovu*. Pauza **`PAUZA_S` = 60 s** — druhé
-kliknutí v té době skončí hláškou. Není to zámek sešitu; zúží okno, kdy
-dva běhy přepíšou list naráz. Dva skoro současné kliky (oba dřív než N2)
-Office Script spolehlivě nezastaví — po kliknutí počkejte na konec běhu.
+*Aktualizace běží — neklikejte znovu*. Po **úspěchu se N2 smaže** — žádná
+minutová pauza. Druhý klik během běhu skončí bez přepsání razítka.
+`PAUZA_S` (~25 s) platí jen když skript spadne uprostřed a N2 zůstane.
 
 ---
 
@@ -247,12 +246,12 @@ Tlačítko **2. Aktualizovat**. Zdroj kódu: [`office-scripts/aktualizovat.ts`](
 
 Postup běhu:
 
-1. Kontrola N2; hned zápis zámku + F2 *Aktualizace běží* (pauza 60 s)
-2. Najít tabulku dat (ne TabArchiv)
-3. Když je Dotaz1 prázdný nebo se počet řádků ještě mění, počkat / skončit.
+1. Kontrola N2; hned zápis zámku + F2 *Aktualizace běží* (po úspěchu N2 pryč)
+2. Najít tabulku dat (ne TabArchiv) — preferuje list **DataALL**, pak Dotaz1
+3. Když je zdroj prázdný nebo se počet řádků ještě mění, počkat / skončit.
    A1 ukáže *Načítají se data — neklikejte na Aktualizovat* (vzorec).
-   F2 je razítko nebo hláška ze skriptu (jeden nápis). C2 sleduje Dotaz1.
-   Tlačítko Excel neumí vypnout — ochrana je N2 hned na startu + Dotaz1.
+   F2 je razítko nebo hláška ze skriptu (jeden nápis). C2 sleduje DataALL.
+   Tlačítko Excel neumí vypnout — ochrana je N2 jen během běhu.
 4. Načíst Archiv; když je prázdný, jednorázově naplnit z Přehledu (sl. E)
 5. Přidat soubory, které Archiv ještě nezná; u už známých souborů jen
    **chybějící řádky** (stejný název, v Dotaz1 víc měření — např. kliknutí
@@ -286,12 +285,12 @@ Kategorie nálezů:
 
 ### Stav v C2 — kdy zmáčknout Aktualizovat
 
-C2 hlásí **Přehled není aktuální**, když je v Dotaz1 soubor, který ještě není
-ve sloupci E na Přehledu. Po tlačítku 2. Aktualizovat zase **Aktuální**.
+C2 hlásí **Přehled není aktuální**, když má **DataALL** (dříve Dotaz1) víc
+řádků než snímek v AB1. Po 2. Aktualizovat zase **Aktuální** (vzorec ukazuje
+na skutečný list zdroje).
 
-Vzorce jsou jen na Přehledu ve sloupci **AA** (mimo A–Z, skript je nemaže).
-Na list Dotaz1 se nedávají — Power Query ho při obnovení přepíše.
-List Dotaz1 (2) se k C2 nepřipojuje.
+Vzorce jsou jen na Přehledu. Na list DataALL se nedávají — Power Query ho
+při obnovení přepíše.
 
 Postup: [`formulas/C2-stav.txt`](formulas/C2-stav.txt).
 Skript `aktualizovat.ts` maže jen `A4:E`, ne celý list.
@@ -339,9 +338,8 @@ Zjištěno praxí během vývoje. **Toto je nejcennější část dokumentu.**
 - **Živý náhled bez práva zápisu neexistuje** — spoluautorství vyžaduje zápis
 - Automatické ukládání + spoluautorství = riziko, že dva hromadné přepisy listu
   Excel sloučí nepředvídatelně
-- Ochrana v kódu: **N2 hned na začátku** + 60s pauza (`PAUZA_S`). Zúží okno
-  rizika, neodstraní ho úplně — dva kliky ve stejné vteřině (oba před zápisem
-  N2) pauzu ještě minou. Při předčasném konci se zámek uvolní za ~3 s.
+- Ochrana v kódu: **N2 jen během běhu**, po úspěchu se maže. `PAUZA_S` (~25 s)
+  jen při pádu skriptu. Druhý klik po hotovém razítku F2 nepřepisuje.
 
 ---
 
@@ -414,7 +412,8 @@ Archiv je jediné místo, kde data žijí po smazání zdrojů.
   „Přidat zástupce do mých souborů" u sdílené knihovny.
 - **Sdílený souběžný zápis** — odloženo. Řešilo by se přesunem archivu
   do SharePointového seznamu, kde je zápis po záznamech nezávislý.
-- ~~**Razítko N2 na začátku skriptu**~~ — hotovo (`PAUZA_S` 60 s + F2 hláška).
+- ~~**Razítko N2 na začátku skriptu**~~ — hotovo; po úspěchu se N2 maže
+  (žádná minutová pauza).
 
 ### Později, až to začne bolet — ne teď
 
