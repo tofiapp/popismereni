@@ -5,6 +5,8 @@
  * Přehled se z Archivu jen vykreslí. Zdrojové .xlsx lze mazat.
  *
  * První běh: když Archiv ještě není, načte se stávající Přehled (sloupec E).
+ * Než sloučí, počká až Power Query dojede (F2: Čekám na načtení dat…).
+ * Archiv se při čekání nemění. Už uložené soubory se nepřepisují.
  *
  * Vložit do Excelu: Automatizér → Nový skript → nahradit obsah.
  */
@@ -47,20 +49,13 @@ function main(workbook: ExcelScript.Workbook) {
 
   if (cil) zapisNacitani(cil, t.getWorksheet().getName());
 
-  let dNove = nactiTeloTabulky(t);
-  let nDotaz = pocetNepradnych(dNove, idx[0]);
-  if (nDotaz === 0) {
-    if (cil) hlaska(cil, "Počkejte na načtení dat a klikněte znovu", "#C00000");
+  if (!cil) cil = workbook.addWorksheet("Přehled");
+  let dNove = pockejNaNacteni(workbook, cil, t, idx[0], SL_CAS);
+  if (!dNove) {
+    hlaska(cil, "Počkejte na načtení dat a klikněte znovu", "#C00000");
     return;
   }
-  const dNoveHned = nactiTeloTabulky(t);
-  const nHned = pocetNepradnych(dNoveHned, idx[0]);
-  if (nHned !== nDotaz) {
-    if (cil) hlaska(cil, "Počkejte na načtení dat a klikněte znovu", "#C00000");
-    return;
-  }
-  dNove = dNoveHned;
-  nDotaz = nHned;
+  const nDotaz = pocetNepradnych(dNove, idx[0]);
 
   // --- Archiv = zdroj pravdy; prazdny Archiv = jednorazova migrace z Prehledu ---
   let zaznamy = nactiArchiv(workbook, SLOUPCE);
@@ -89,8 +84,6 @@ function main(workbook: ExcelScript.Workbook) {
 
   // --- Archiv zapsat driv nez Prehled, at se pri chybe kresleni neztrati ---
   zapisArchiv(workbook, SLOUPCE, zaznamy);
-
-  if (!cil) cil = workbook.addWorksheet("Přehled");
   vykresliPrehled(cil, zaznamy);
 
   // Druhé čtení: jen soubory, které Archiv pořád nezná. Už uložené se nepřepisují.
@@ -158,6 +151,120 @@ function pocetNepradnych(data: (string | number | boolean)[][], idxSoubor: numbe
     if (String(data[i][idxSoubor] ?? "").trim() !== "") n++;
   }
   return n;
+}
+
+function casDotazu(hodnota: Date | string | number | boolean): number {
+  if (hodnota === null || hodnota === undefined || hodnota === "" || typeof hodnota === "boolean") return 0;
+  if (typeof hodnota === "number") {
+    if (hodnota > 20000 && hodnota < 80000) return Math.round((hodnota - 25569) * 86400000);
+    return hodnota;
+  }
+  const t = Date.parse(String(hodnota));
+  return isNaN(t) ? 0 : t;
+}
+
+function najdiDotazTabulky(workbook: ExcelScript.Workbook): ExcelScript.Query | null {
+  try {
+    const queries = workbook.getQueries();
+    if (!queries || queries.length === 0) return null;
+    let nej: ExcelScript.Query | null = null;
+    let nejRadku = -1;
+    for (let i = 0; i < queries.length; i++) {
+      const q = queries[i];
+      let kam = ExcelScript.LoadToType.connectionOnly;
+      try { kam = q.getLoadedTo(); } catch (e) { continue; }
+      if (kam !== ExcelScript.LoadToType.table) continue;
+      if (q.getName() === "Zdroj_MD1") return q;
+      const n = q.getRowsLoadedCount();
+      if (n > nejRadku) {
+        nejRadku = n;
+        nej = q;
+      }
+    }
+    return nej;
+  } catch (e) {
+    return null;
+  }
+}
+
+function zapisAc1(list: ExcelScript.Worksheet, ms: number): void {
+  const ac = list.getRange("AC1");
+  ac.setValue(ms > 0 ? new Date(ms).toISOString() : "");
+  ac.getFormat().getFont().setColor("#FFFFFF");
+  list.getRange("AC:AC").getFormat().setColumnWidth(0);
+}
+
+function oznacBezi(list: ExcelScript.Worksheet, slCas: number): void {
+  list.getRangeByIndexes(1, slCas, 1, 1).setValue(new Date().toISOString());
+  list.getRangeByIndexes(1, slCas, 1, 1).getFormat().getFont().setColor("#FFFFFF");
+}
+
+function pockejNaNacteni(
+  workbook: ExcelScript.Workbook,
+  cil: ExcelScript.Worksheet,
+  t: ExcelScript.Table,
+  idxSoubor: number,
+  slCas: number,
+): (string | number | boolean)[][] | null {
+  const MAX_MS = 55000;
+  const CESTVE_MS = 180000;
+  const start = Date.now();
+  const minuly = casDotazu(cil.getRange("AC1").getValue());
+  const ab1 = Number(cil.getRange("AB1").getValue()) || 0;
+  const q0 = najdiDotazTabulky(workbook);
+  const startRefresh = q0 ? casDotazu(q0.getRefreshDate()) : 0;
+  const maDotaz = q0 !== null && startRefresh > 0;
+
+  let lastN = -1;
+  let stable = 0;
+  let data: (string | number | boolean)[][] = [];
+  let refreshTed = startRefresh;
+
+  while (Date.now() - start < MAX_MS) {
+    oznacBezi(cil, slCas);
+    hlaska(cil, "Čekám na načtení dat…", "#C00000");
+
+    const q = najdiDotazTabulky(workbook);
+    if (q) {
+      refreshTed = casDotazu(q.getRefreshDate());
+      if (q.getRowsLoadedCount() < 0) return null;
+    }
+
+    data = nactiTeloTabulky(t);
+    const n = pocetNepradnych(data, idxSoubor);
+    if (n > 0 && n === lastN) stable++;
+    else {
+      lastN = n;
+      stable = n > 0 ? 1 : 0;
+    }
+
+    const tabulkaStabilni = n > 0 && stable >= 2;
+    const cerstvy = refreshTed > 0 && Math.abs(Date.now() - refreshTed) < CESTVE_MS;
+    const nactenoNove = refreshTed > 0 && (
+      (minuly > 0 && refreshTed > minuly + 500) ||
+      (minuly === 0 && cerstvy) ||
+      (startRefresh > 0 && refreshTed > startRefresh + 500)
+    );
+    const praveZpracovano = minuly > 0 &&
+      Math.abs(refreshTed - minuly) < 2000 &&
+      Date.now() - minuly < 600000;
+
+    if (tabulkaStabilni && (nactenoNove || n > ab1 || praveZpracovano)) {
+      zapisAc1(cil, refreshTed);
+      return data;
+    }
+    if (tabulkaStabilni && !maDotaz && (n > ab1 || Date.now() - start >= 25000)) {
+      zapisAc1(cil, refreshTed);
+      return data;
+    }
+  }
+
+  data = nactiTeloTabulky(t);
+  if (pocetNepradnych(data, idxSoubor) > 0) {
+    zapisAc1(cil, refreshTed);
+    return data;
+  }
+  return null;
 }
 
 function pridejNoveSoubory(
