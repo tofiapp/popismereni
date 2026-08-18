@@ -4,9 +4,9 @@ C2 zapisuje skript Aktualizovat. Používá jen KDYŽ a POČET2.
 2. Jednou 2. Aktualizovat
 
 AB1 = počet řádků v Dotaz1 ve snímku, který se opravdu sloučil.
-C2 = KDYŽ(POČET2(Dotaz1!A2:A5000)>AB1; "Klikněte Aktualizovat"; "Aktuální")
+C2 = KDYŽ(POČET2(Dotaz1!A2:A5000)>AB1; "Přehled není aktuální"; "Aktuální")
 
 Nový soubor v Dotaz1 zvýší POČET2 → C2 se přepne samo.
 Po Aktualizovat se AB1 srovná → zase Aktuální.
 Aktualizovat nejdřív počká, až Power Query dojede, a teprve pak sloučí.
-Když C2 hlásí Klikněte Aktualizovat, stačí tlačítko znovu — Archiv se nepřepisuje.
+Když C2 hlásí Přehled není aktuální, stačí tlačítko znovu — Archiv se nepřepisuje.
