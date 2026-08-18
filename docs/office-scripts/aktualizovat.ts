@@ -482,7 +482,6 @@ function zapisNacitani(list: ExcelScript.Worksheet, listDat: string): void {
   seda.getCustom().getFormat().getFont().setColor("#808080");
   seda.getCustom().getFormat().getFont().setBold(false);
   seda.getCustom().getFormat().getFont().setItalic(true);
-  seda.getCustom().getFormat().getFont().setSize(11);
 }
 
 function zapisStavVzorce(
